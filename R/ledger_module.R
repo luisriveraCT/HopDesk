@@ -1867,7 +1867,7 @@ ledgerModuleServer <- function(id, config, shared) {
         if (is.null(matches) || !nrow(matches)) return(NULL)
         pick_id <- ns("sap_prov_pick")
         div(class = "prov-suggest-box",
-            style = paste("border:1px solid #dee2e6; border-radius:6px;",
+            style = paste("border:1px solid var(--hd-leg-borde-dee2e6); border-radius:6px;",
                           "margin-top:-8px; margin-bottom:8px; overflow:hidden;"),
             lapply(seq_len(nrow(matches)), function(i) {
               m       <- matches[i, ]
@@ -1876,8 +1876,8 @@ ledgerModuleServer <- function(id, config, shared) {
                 auto_unbox = TRUE
               )
               tags$div(
-                style = "padding:6px 10px; cursor:pointer; border-bottom:1px solid #eee;",
-                onmouseover = "this.style.background='#f0f4ff'",
+                style = "padding:6px 10px; cursor:pointer; border-bottom:1px solid var(--hd-leg-borde-eeeeee);",
+                onmouseover = "this.style.background='var(--hd-hover)'",
                 onmouseout  = "this.style.background=''",
                 onclick = paste0("Shiny.setInputValue('", pick_id, "',",
                                  payload, ",{priority:'event'})"),

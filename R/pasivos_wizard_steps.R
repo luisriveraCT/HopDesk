@@ -496,7 +496,7 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
                   ),
                   shiny::div(
                     class = "d-flex align-items-center",
-                    style = "padding-top: 22px; font-size: 18px; color: #adb5bd;",
+                    style = "padding-top: 22px; font-size: 18px; color: var(--hd-leg-borde-fuerte-adb5bd);",
                     "⇌"
                   ),
                   shiny::div(

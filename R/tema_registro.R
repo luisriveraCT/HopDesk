@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 20L
+HD_TEMAS_CSS_VERSION <- 21L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -305,6 +305,7 @@ HD_TEMAS <- list(
   `borde-e4eaf4` = "#E4EAF4",
   `borde-e8ecf2` = "#E8ECF2",
   `borde-e8ecf4` = "#E8ECF4",
+  `borde-eeeeee` = "#EEEEEE",
   `borde-f0f0f0` = "#F0F0F0",
   `borde-f3f4f6` = "#F3F4F6",
   `borde-fuerte-adb5bd` = "#ADB5BD",

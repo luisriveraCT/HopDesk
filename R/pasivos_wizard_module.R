@@ -1546,7 +1546,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
         shiny::div(
           class = "d-flex align-items-start gap-2 py-1 px-1 rounded",
           style = "cursor:pointer;",
-          onmouseover = "this.style.background='#f0f4ff'",
+          onmouseover = "this.style.background='var(--hd-hover)'",
           onmouseout  = "this.style.background=''",
           onclick = sprintf(
             "Shiny.setInputValue('pwiz_parte_pick',%s,{priority:'event'})", payload),
@@ -1557,7 +1557,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
           ),
           shiny::tags$span(
             class = "badge rounded-pill ms-auto",
-            style = "background:#6c757d; font-size:11px; align-self:center;",
+            style = "background:var(--hd-leg-texto-2-6c757d); font-size:11px; align-self:center;",
             paste0(sc, "%")
           )
         )

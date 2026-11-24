@@ -52,6 +52,7 @@
   --hd-leg-borde-e4eaf4: var(--hd-borde);
   --hd-leg-borde-e8ecf2: var(--hd-borde);
   --hd-leg-borde-e8ecf4: var(--hd-borde);
+  --hd-leg-borde-eeeeee: var(--hd-borde);
   --hd-leg-borde-f0f0f0: var(--hd-borde);
   --hd-leg-borde-f3f4f6: var(--hd-borde);
   --hd-leg-borde-fuerte-adb5bd: var(--hd-borde-fuerte);
@@ -279,6 +280,7 @@
   --hd-leg-borde-e4eaf4: #E4EAF4;
   --hd-leg-borde-e8ecf2: #E8ECF2;
   --hd-leg-borde-e8ecf4: #E8ECF4;
+  --hd-leg-borde-eeeeee: #EEEEEE;
   --hd-leg-borde-f0f0f0: #F0F0F0;
   --hd-leg-borde-f3f4f6: #F3F4F6;
   --hd-leg-borde-fuerte-adb5bd: #ADB5BD;

@@ -176,7 +176,7 @@ pasivos_table_module_server <- function(id, shared) {
           shiny::div(
             class = "d-flex align-items-start gap-2 py-1 px-1 rounded",
             style = "cursor:pointer;",
-            onmouseover = "this.style.background='#f0f4ff'",
+            onmouseover = "this.style.background='var(--hd-hover)'",
             onmouseout  = "this.style.background=''",
             onclick = sprintf(
               "Shiny.setInputValue('%s',%s,{priority:'event'})",
@@ -189,7 +189,7 @@ pasivos_table_module_server <- function(id, shared) {
             ),
             shiny::tags$span(
               class = "badge rounded-pill ms-auto",
-              style = "background:#6c757d; font-size:11px; align-self:center;",
+              style = "background:var(--hd-leg-texto-2-6c757d); font-size:11px; align-self:center;",
               paste0(sc, "%")
             )
           )
@@ -554,7 +554,7 @@ pasivos_table_module_server <- function(id, shared) {
         shiny::tags$span(
           class = "badge rounded-1",
           style = sprintf(
-            "background:%s; color:#fff; font-size:11px; font-weight:500; padding:3px 9px;",
+            "background:%s; color:var(--hd-texto-inverso); font-size:11px; font-weight:500; padding:3px 9px;",
             col),
           tr("tablas.pasivos.resumen.proximas", monto = monto_moneda(total, cur), n = n)   # the code after (T55b)
         )

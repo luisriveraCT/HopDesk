@@ -9,7 +9,7 @@ proveedoresUI <- function(id) {
   ns <- NS(id)
   tagList(
     tags$style(HTML("
-      .prov-conflict-card { border:1px solid #e5e7eb; border-radius:8px; padding:16px; margin-bottom:12px; }
+      .prov-conflict-card { border:1px solid var(--hd-borde); border-radius:8px; padding:16px; margin-bottom:12px; }
       /* Without can_manage_proveedores the catalog's bar (Inactivar selección) isn't shown. */
       .prov-solo-lectura .hdt-acciones { display: none !important; }
     ")),
