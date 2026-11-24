@@ -302,8 +302,11 @@ HD_REACTIVOS_TESORERIA <- list(
   forecasting_subscriptions_db       = "FC",
   forecasting_manual_curves_db       = "FC")
 # Shared by Panorama and Requisiciones (and every screen): never gated.
+# usuarios_db / invitaciones_db (T83) are signals, not data: a number that
+# changes when another session saved accounts or invitations. What Usuarios
+# and Invitaciones then read is behind their own gates (can_view_tiers, T87-M6).
 HD_REACTIVOS_COMUNES <- c("empresas_db", "grupos_db", "proveedores_db", "proveedores_inactivos_db",
-                          "hop_grants_db")
+                          "hop_grants_db", "usuarios_db", "invitaciones_db")
 
 # TRUE when a session of `tier` may read reactive `nombre`. Unknown tier: no.
 # A name in neither list is not gated by app.R (the guardian test keeps the
