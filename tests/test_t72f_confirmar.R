@@ -205,6 +205,24 @@ for (ledger in c("AP", "AR")) {
   ok(sprintf("%s 4 (a) control: when it worked, no abono_error key (the success row of always)", ledger),
      is.null(final(con, ledger)[[1]]$metadata$abono_error) && grepl("abono(s) aplicado(s)", final(con, ledger)[[1]]$description, fixed = TRUE))
 
+  # ── 5 (b): the archive link fails (bancos_confirmados' 2nd write and its fallback)
+  FALLA <- list(key = k("bancos_confirmados"), n = 2:3)
+  r <- correr(ledger); FALLA <- NULL
+  fl <- Filter(function(x) identical(x$action, "enlazar_archivo_fallido"), r$logs)
+  ok(sprintf("%s 5 (b) the archive link fails: enlazar_archivo_fallido in the log, with the action it belonged to", ledger),
+     length(fl) == 1L && identical(fl[[1]]$metadata$accion, a) && identical(fl[[1]]$target_id, EMP))
+  ok(sprintf("%s 5 (b) …and the user is told (comun.error_guardar), not only the console", ledger),
+     tr("comun.error_guardar") %in% r$avisos)
+  ok(sprintf("%s 5 (b) …the confirmation itself still logs once", ledger), length(final(r, ledger)) == 1L)
+
+  # ── 5 (b): save_manual fails ────────────────────────────────────────────
+  FALLA <- list(key = k("manual"), n = 0L)
+  r <- correr(ledger); FALLA <- NULL
+  fl <- Filter(function(x) identical(x$action, "guardar_manual_fallido"), r$logs)
+  ok(sprintf("%s 5 (b) save_manual fails: guardar_manual_fallido in the log for each of its two saves", ledger),
+     length(fl) == 2L && all(vapply(fl, function(x) identical(x$metadata$accion, a), NA)))
+  ok(sprintf("%s 5 (b) …and the user keeps its notice of before (error_eliminar_manual)", ledger),
+     sum(startsWith(r$avisos, substr(tr("tablas.agenda.aviso.error_eliminar_manual", error = ""), 1, 20))) == 2L)
 }
 
 utils::assignInNamespace("UUIDgenerate", .uuid_orig, "uuid")

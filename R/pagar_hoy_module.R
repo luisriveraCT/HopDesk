@@ -230,6 +230,24 @@ pagarHoyServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
+    # T72-F (b): a write of Confirmar after the confirmation itself (the
+    # archive link, the manual entries) that fails is shown to the user and
+    # logged as <accion>_fallido, with the action it belonged to. `aviso`:
+    # the text the user sees (a dictionary text, already translated).
+    .ph_fallido <- function(accion, de, emp, e, aviso = tr("comun.error_guardar")) {
+      message("[pagar_hoy] ", accion, " failed: ", conditionMessage(e))
+      showNotification(aviso, type = "warning")
+      tryCatch(log_action(
+        shared$current_user(), "pagar_hoy", paste0(accion, "_fallido"),
+        conditionMessage(e),
+        target_id             = emp,
+        metadata              = list(accion = de, empresa = emp),
+        client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+        error = function(e2) NULL)
+      NULL
+    }
+
     # The client's base currency (monedas fase 3, T34): Ajustes generales, or
     # MONEDA_BASE_OMISION while nobody chose one (or when this shared has no
     # moneda_base_cliente, as in the test apps). Only here, never global.
@@ -2035,13 +2053,13 @@ pagarHoyServer <- function(id, shared) {
                              error = function(e2) NULL)
                          })
                 conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ap),
-                                     error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
+                                     error = function(e) .ph_fallido("enlazar_archivo", "confirmar_pago", emp, e))
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
                 tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap),
-                         error = function(e) showNotification(
-                           tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
+                         error = function(e) .ph_fallido("guardar_manual", "confirmar_pago", emp, e,
+                                                         tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
               }
             }
 
@@ -2083,14 +2101,14 @@ pagarHoyServer <- function(id, shared) {
                              error = function(e2) NULL)
                          })
                 conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ap),
-                                     error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
+                                     error = function(e) .ph_fallido("enlazar_archivo", "confirmar_pago", emp, e))
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
                 tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap),
-                         error = function(e) showNotification(
-                           tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
+                         error = function(e) .ph_fallido("guardar_manual", "confirmar_pago", emp, e,
+                                                         tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
               }
             }
           }
@@ -2410,13 +2428,13 @@ pagarHoyServer <- function(id, shared) {
                              error = function(e2) NULL)
                          })
                 conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ar),
-                                     error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
+                                     error = function(e) .ph_fallido("enlazar_archivo", "confirmar_cobro", emp, e))
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
                 mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
                 shared$manual_inv(mi)
                 tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ar),
-                         error = function(e) showNotification(
-                           tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
+                         error = function(e) .ph_fallido("guardar_manual", "confirmar_cobro", emp, e,
+                                                         tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
               }
             }
 
@@ -2458,14 +2476,14 @@ pagarHoyServer <- function(id, shared) {
                              error = function(e2) NULL)
                          })
                 conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ar),
-                                     error = function(e) { message("[pagar_hoy] archive link: ", conditionMessage(e)); NULL })
+                                     error = function(e) .ph_fallido("enlazar_archivo", "confirmar_cobro", emp, e))
                 if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
 
                 mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
                 shared$manual_inv(mi_updated)
                 tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ar),
-                         error = function(e) showNotification(
-                           tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message), type = "warning"))
+                         error = function(e) .ph_fallido("guardar_manual", "confirmar_cobro", emp, e,
+                                                         tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
               }
             }
           }
