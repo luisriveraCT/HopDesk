@@ -125,12 +125,14 @@ ok("D7: the tab's badge says 8 (overdue in the last 7 days, T89)",
 ok("S1: sections by currency (MXN first), then Cobros / Pagos",
    identical(l[startsWith(l, "banda:")], c("banda:1:MXN", "banda:2:cobro", "banda:2:pago", "banda:1:USD", "banda:2:cobro", "banda:2:pago")))
 bd <- bandas()
-ok("S2/S3: each band counts its invoices without the paid one and adds up (MXN 10 / $123,391.25)",
-   grepl("^MXN10 facturasMXN \\$123,391.25$", bd[1]) && grepl("^Cobros5 facturas", bd[2]))
+# T55: amounts are monto_moneda() -- the band's total with its code, never
+# "$" (these four expected the old "$" format and failed on master too).
+ok("S2/S3: each band counts its invoices without the paid one and adds up (MXN 10 / 123,391.25 MXN)",
+   identical(bd[1], "MXN10 facturas123,391.25 MXN") && grepl("^Cobros5 facturas", bd[2]))
 escribir(sprintf("document.querySelector('#%s .hdt-buscar')", A), "acme")
 bd <- bandas()
 ok("S5: subtotals follow the search (bug fixed: they never did)",
-   length(bd) == 2L && grepl("^MXN3 facturasMXN \\$20,400.00$", bd[1]) && identical(contador(), "3 facturas vencidas o con vencimiento hoy"))
+   length(bd) == 2L && identical(bd[1], "MXN3 facturas20,400.00 MXN") && identical(contador(), "3 facturas vencidas o con vencimiento hoy"))
 ok("S6: sections with nothing left are hidden", !any(grepl("USD", bd)))
 escribir(sprintf("document.querySelector('#%s .hdt-buscar')", A), "")
 
@@ -140,9 +142,10 @@ acme <- acme[!grepl("F-1001-B", acme)]
 g_acme <- sprintf("document.querySelector('#%s tr.hdt-grupo[data-primera=\"%s\"]')", A, acme[1])
 ok("G1/G2: ACME's three invoices of the same company, date and currency make one group, closed",
    isTRUE(ev(sprintf("!!%s", g_acme))) && any(startsWith(lista(), "grupo:cerrado:")))
-ok("G3: the group's row counts 2 (the paid one doesn't) and adds $20,000.00",
+# Inside a currency's band a row's amount carries no code (the band says it).
+ok("G3: the group's row counts 2 (the paid one doesn't) and adds 20,000.00",
    identical(ev(sprintf("%s.querySelector('.hdt-grupo-n').textContent", g_acme)), "2") &&
-     identical(ev(sprintf("%s.children[5].textContent", g_acme)), "$20,000.00"))
+     identical(ev(sprintf("%s.children[5].textContent", g_acme)), "20,000.00"))
 clic(sprintf("%s.querySelector('.hdt-grupo-abrir')", g_acme))
 ok("G5: ▶ opens it and marks nothing", any(startsWith(lista(), "grupo:abierto:")) && !length(sel()))
 clic(sprintf("%s.querySelector('.hdt-grupo-abrir')", g_acme))
@@ -165,10 +168,10 @@ deseleccionar()
 clic(celda(acme[3]))
 ok("L4: a paid (ghost) invoice is struck through and can't be marked",
    !length(sel()) && isTRUE(ev(sprintf("%s.classList.contains('hdt-bloq')", fila(acme[3])))))
-ok("L4/confirmar siempre cierra: the paid ERP invoice shows $0.00 in Importe",
+ok("L4/confirmar siempre cierra: the paid ERP invoice shows 0.00 in Importe",
    identical(ev(sprintf("(function(){ var ths = [].slice.call(document.querySelectorAll('#%s thead th'));
      var j = ths.findIndex(function (th) { return th.firstChild && th.firstChild.textContent === 'Importe'; });
-     return %s.children[j].textContent; })()", A, fila(acme[3]))), "$0.00"))
+     return %s.children[j].textContent; })()", A, fila(acme[3]))), "0.00"))
 clic(sprintf("document.querySelector('#%s .hdt-todos')", A))
 ok("L5: Seleccionar todos takes the 13 open invoices, closed groups included, never the paid one",
    length(sel()) == 13L && !acme[3] %in% sel())
