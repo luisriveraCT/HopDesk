@@ -767,28 +767,6 @@ if (!exists(".s3_preload_done", envir = globalenv())) {
   .app_data_cache[[.cache_scoped_key(key, client_id)]] <<- value
 }
 
-# Calendar visual theme
-CALENDAR_THEME <- list(
-  bg           = "white",
-  tile_empty   = "white",
-  tile_has     = "white",
-  weekend      = "#F4F8FF",
-  border       = "#0A58CA",
-  daynum       = "#CD4F39",
-  text         = "#0B2038",
-  divider      = "#B6C8FF",
-  title        = "#CD4F39",
-  subtitle     = "#8B3626",
-  today_border = "#0A58CA",
-  # Tag highlight colours
-  tag_imp_bg     = "#FFF4E5",
-  tag_imp_border = "#FFC107",
-  tag_urg_bg     = "#FFE5E5",
-  tag_urg_border = "#DC3545",
-  tag_both_bg    = "#FFE0CC",
-  tag_both_border= "#FF6B35"
-)
-
 # ── Formatting helpers ─────────────────────────────────────────────────────────
 
 # Kept only for the activity log's text (pagar_hoy_module.R, saldo de
