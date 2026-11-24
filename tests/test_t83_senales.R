@@ -61,10 +61,12 @@ ok("B1 auth_save_usuarios signals usuarios_db for cid",
 ok("B2 ... only after s3saveRDS (a refused or failed save signals nothing)",
    regexpr("s3saveRDS", b, fixed = TRUE) < regexpr("avisar_senal", b, fixed = TRUE))
 ok("B3 every writer of usuarios.rds goes through auth_save_usuarios (no other s3saveRDS of it)", {
+  # Code only: a comment that names both (T72-G's, persistence.R) is not a writer.
+  codigo <- function(f) sub("#.*$", "", readLines(f, warn = FALSE))
   fs <- c("app.R", list.files("R", pattern = "\\.R$", full.names = TRUE))
-  hits <- unlist(lapply(fs, function(f) { x <- readLines(f, warn = FALSE)
+  hits <- unlist(lapply(fs, function(f) { x <- codigo(f)
     i <- grep("s3saveRDS", x, fixed = TRUE); if (length(i)) paste(f, i) else character() }))
-  ctx <- vapply(hits, function(h) { p <- strsplit(h, " ")[[1]]; x <- readLines(p[1], warn = FALSE)
+  ctx <- vapply(hits, function(h) { p <- strsplit(h, " ")[[1]]; x <- codigo(p[1])
     n <- as.integer(p[2]); paste(x[max(1, n - 3):n], collapse = " ") }, "")
   !any(grepl("usuarios", ctx) & !grepl("auth\\.R", names(ctx)))
 })
