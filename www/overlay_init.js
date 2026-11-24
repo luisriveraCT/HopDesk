@@ -2,6 +2,31 @@
  * Loading overlay: shared state survives the shinymanager session swap.
  * Sourced via tags$script(src=) so R never needs to parse the JS content.
  */
+
+/* 0 -- When the overlay may go (T88). It used to stay a fixed 30 s after the
+   100 % (nothing sent calFadeNow any more, section 9): the app was ready at
+   ~28 s and the overlay left at ~45 s. Now it goes once the app is really
+   done, never half-loaded:
+     - the 100 % came (Phase 2 finished);
+     - the client's theme came (the server's hdTema message);
+     - the open tab has content and nothing in it is recalculating;
+     - Shiny has been idle for SILENCIO ms (no shiny:busy since).
+   TOPE ms after the 100 % it goes anyway, as it always did. Pure (state and
+   a clock in, a verdict out) for tests/test_overlay_salida.R. */
+window.hldSalida = {
+  SILENCIO: 1500,
+  TOPE: 30000,
+  /* s: {pct100At, temaAt, busy, idleAt, pestanaLista}; times in ms.
+     'esperar' | 'quitar' | 'tope' */
+  decidir: function(s, ahora) {
+    if (!s || !s.pct100At) return 'esperar';
+    if (ahora - s.pct100At >= this.TOPE) return 'tope';
+    if (!s.temaAt || s.busy || !s.pestanaLista) return 'esperar';
+    if (ahora - Math.max(s.idleAt || 0, s.pct100At) < this.SILENCIO) return 'esperar';
+    return 'quitar';
+  }
+};
+
 $(function() {
 
   /* 1 -- Shared state across shinymanager UI swaps */
@@ -14,6 +39,17 @@ $(function() {
     };
   }
   var H = window._hld;
+  if (!H.salida) H.salida = { pct100At: 0, temaAt: 0, busy: false, idleAt: 0, pestanaLista: false };
+
+  /* 1a -- What section 0 needs: the theme message and Shiny's busy/idle.
+     A listener on shiny:message, not a second hdTema handler (that would
+     replace R/tema_registro.R's). */
+  $(document).on('shiny:message', function(e) {
+    var c = e.message && e.message.custom;
+    if (c && c.hdTema) H.salida.temaAt = Date.now();
+  });
+  $(document).on('shiny:busy', function() { H.salida.busy = true; });
+  $(document).on('shiny:idle', function() { H.salida.busy = false; H.salida.idleAt = Date.now(); });
 
   /* 1b -- Texts: the dictionary (cuentas.carga.*). The sign-in page carries
      only these keys (i18n_head_parcial() in app.R), without www/i18n.js:
@@ -155,6 +191,43 @@ $(function() {
     if (_pct()) _pct().textContent = '8%';
   }
 
+  /* 5b -- The open tab: the outermost active pane. Ready when nothing in it
+     is recalculating and at least one of its outputs has something drawn. */
+  function _pestanaLista() {
+    var panes = document.querySelectorAll('.tab-pane.active');
+    var pane = null;
+    for (var i = 0; i < panes.length; i++) {
+      if (!panes[i].parentElement || !panes[i].parentElement.closest('.tab-pane')) { pane = panes[i]; break; }
+    }
+    if (!pane) return false;
+    if (pane.querySelector('.recalculating, .shiny-output-recalculating')) return false;
+    var outs = pane.querySelectorAll('.shiny-bound-output');
+    for (var j = 0; j < outs.length; j++) {
+      if (outs[j].children.length || (outs[j].textContent || '').trim()) return true;
+    }
+    return false;
+  }
+  function _quitar(motivo) {
+    if (H.salidaT) { clearInterval(H.salidaT); H.salidaT = null; }
+    if (H.ov.classList.contains('hld-fadeout')) return;
+    H.salida.motivo = motivo;
+    H.salida.quitadaAt = Date.now();
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        H.ov.classList.add('hld-fadeout');
+        setTimeout(function() { H.ov.style.display = 'none'; }, 950);
+      });
+    });
+  }
+  function _vigilarSalida() {
+    if (H.salidaT) return;
+    H.salidaT = setInterval(function() {
+      H.salida.pestanaLista = _pestanaLista();
+      var v = window.hldSalida.decidir(H.salida, Date.now());
+      if (v !== 'esperar') _quitar(v);
+    }, 250);
+  }
+
   /* 6 -- Intercept login button */
   function _wireBtn() {
     var btn = document.querySelector(
@@ -191,6 +264,7 @@ $(function() {
   Shiny.addCustomMessageHandler('showOverlay', function() {
     if (H.failObs) { H.failObs.disconnect(); H.failObs = null; }
     H.done = false;
+    H.salida.pct100At = 0; H.salida.motivo = null; H.salida.quitadaAt = 0;
     H.ov.classList.remove('hld-fadeout');
     H.active = true;
     H.ov.style.display = 'flex';
@@ -202,6 +276,8 @@ $(function() {
     _setPct(d.pct);
     if (d.pct >= 100) {
       H.done = true;
+      if (!H.salida.pct100At) H.salida.pct100At = Date.now();
+      _vigilarSalida();
       if (H.msgT)   clearInterval(H.msgT);
       if (H.creepT) clearInterval(H.creepT);
       if (_bar()) _bar().style.width = '100%';
@@ -212,13 +288,6 @@ $(function() {
       setTimeout(function() {
         if (h) { h.textContent = hdT('cuentas.carga.listo.titulo');  h.style.opacity = '1'; }
         if (s) { s.textContent = hdT('cuentas.carga.listo.detalle'); s.style.opacity = '1'; }
-        /* Hard fallback -- calFadeNow should arrive well before 30 s */
-        setTimeout(function() {
-          if (!H.ov.classList.contains('hld-fadeout')) {
-            H.ov.classList.add('hld-fadeout');
-            setTimeout(function() { H.ov.style.display = 'none'; }, 950);
-          }
-        }, 30000);
       }, 380);
     }
   });
