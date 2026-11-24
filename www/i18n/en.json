@@ -709,6 +709,7 @@
   "tablas.archivos_pago.empresa": "Company",
   "tablas.archivos_pago.moneda": "Currency",
   "tablas.archivos_pago.cuenta_origen": "Source account",
+  "tablas.archivos_pago.cuenta_no_registrada": "Not recorded",
   "tablas.archivos_pago.cantidad": "Qty.",
   "tablas.archivos_pago.total": "Total",
   "tablas.archivos_pago.origen": "Origin",

@@ -709,6 +709,7 @@
   "tablas.archivos_pago.empresa": "Empresa",
   "tablas.archivos_pago.moneda": "Moneda",
   "tablas.archivos_pago.cuenta_origen": "Cuenta origen",
+  "tablas.archivos_pago.cuenta_no_registrada": "No registrada",
   "tablas.archivos_pago.cantidad": "Cant.",
   "tablas.archivos_pago.total": "Total",
   "tablas.archivos_pago.origen": "Origen",

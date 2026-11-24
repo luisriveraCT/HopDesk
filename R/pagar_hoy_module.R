@@ -172,6 +172,20 @@ pagarHoyUI <- function(id) {
     cid       <- tryCatch(shared$effective_client_id(), error = function(e) NULL) %||% Sys.getenv("CLIENT_ID")
     home_cid  <- tryCatch(shared$home_client_id(),      error = function(e) NULL)
     user      <- tryCatch(shared$current_user(),        error = function(e) NULL) %||% "unknown"
+    # T92: a payment file is never logged without its origin account (CM30
+    # stops the file before this). If a path ever gets here without one, it
+    # is logged as such and said in the server log -- never silent again,
+    # as in October 2026 (4 files with no account in pagos_generados).
+    if (!length(cuenta_origen) || is.na(cuenta_origen[1]) || !nzchar(trimws(as.character(cuenta_origen[1])))) {
+      message("[PAGOS_AUDIT] payment file logged WITHOUT an origin account: ", emp, " ", moneda)
+      tryCatch(log_action(user, "pagar_hoy", "generar_archivo_pago_sin_cuenta",
+                          sprintf("Archivo de pago sin cuenta origen registrada: %s (%s)", emp, moneda),
+                          target_id = emp,
+                          metadata  = list(empresa = emp, moneda = moneda, source = source_type,
+                                           archivo = as.character(fname %||% NA_character_)),
+                          client_id = cid, viewer_home_client_id = home_cid),
+               error = function(e) NULL)
+    }
     add_pago_generado(
       list(
         id            = uuid::UUIDgenerate(),

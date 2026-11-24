@@ -42,6 +42,25 @@
                         reporte_excel = "tablas.archivos_pago.tipo.reporte_excel",
                         reporte_pdf = "tablas.archivos_pago.tipo.reporte_pdf",
                         bancos_libro_excel = "tablas.archivos_pago.tipo.bancos_libro_excel")
+# T92: a payment file's origin account as shown -- masked in the table and
+# its Excel, whole in the detail (ℹ) and the PDFs (their rule). A payment
+# file logged without one (October 2026: get_cuenta_ppl() gave "" through
+# the global company map, and the PPL carried zeros) says so, "No
+# registrada", never a guessed account; a file that is not a payment has
+# none: "". tipo NA reads as a payment file, as is_pago does here.
+pagos_cuenta_origen_texto <- function(cuenta, tipo, enmascarar = FALSE) {
+  n <- length(cuenta)
+  if (!n) return(character(0))
+  cuenta  <- as.character(cuenta)
+  tipo    <- rep_len(as.character(tipo %||% NA_character_), n)
+  es_pago <- is.na(tipo) | tipo == "pago_ppl"
+  vacia   <- is.na(cuenta) | !nzchar(trimws(ifelse(is.na(cuenta), "", cuenta)))
+  out <- if (enmascarar) mask_clabe(cuenta) else trimws(ifelse(is.na(cuenta), "", cuenta))
+  out[vacia] <- ""
+  out[vacia & es_pago] <- tr("tablas.archivos_pago.cuenta_no_registrada")
+  out
+}
+
 .tipo_label <- function(tipo) {
   t <- as.character(tipo)
   clave <- unname(.PAGOS_TIPO_LABELS[t])
@@ -177,8 +196,8 @@ pagosAuditViewerServer <- function(id, shared) {
         tipo      = as.character(df$tipo),
         empresa   = as.character(df$empresa),
         moneda    = as.character(df$moneda),
-        # mask_clabe(character(0)) gives one "" (its %||%), not zero values.
-        cuenta    = if (nrow(df)) mask_clabe(df$cuenta_origen) else character(0),
+        # Masked; "No registrada" for a payment file logged without one (T92).
+        cuenta    = pagos_cuenta_origen_texto(df$cuenta_origen, df$tipo, enmascarar = TRUE),
         n_pagos   = ifelse(is.na(df$n_pagos), 0L, df$n_pagos),
         total     = as.numeric(df$total),
         # Only meaningful for pago_ppl (individual vs. bulk-ZIP generation) --
@@ -247,7 +266,7 @@ pagosAuditViewerServer <- function(id, shared) {
           tags$div(tags$strong("Fecha: "), format(as.POSIXct(row$ts[1]), "%d/%m/%Y %H:%M:%S")),
           tags$div(tags$strong("Tipo: "), .tipo_label(row$tipo[1])),
           tags$div(tags$strong("Empresa: "), row$empresa[1], " (", row$moneda[1], ")"),
-          if (is_pago) tags$div(tags$strong("Cuenta origen: "), row$cuenta_origen[1]),
+          if (is_pago) tags$div(tags$strong("Cuenta origen: "), pagos_cuenta_origen_texto(row$cuenta_origen[1], row$tipo[1])),
           if (is_pago) tags$div(tags$strong("Origen: "),
                                 if (identical(row$source[1], "zip_bulk")) "ZIP (todos)" else "Individual"),
           tags$div(tags$strong("Archivo: "), row$archivo[1])
@@ -455,7 +474,7 @@ pagosAuditViewerServer <- function(id, shared) {
                           tr_n("tablas.archivos_pago.recibo.total_pagos", as.integer(row$n_pagos[1] %||% 0L),
                                total = monto_moneda(row$total[1] %||% NA, row$moneda[1] %||% NA_character_)))
     extra_meta <- sprintf('<div><strong>%s</strong> %s</div>', T("cuenta_origen"),
-                          htmltools::htmlEscape(row$cuenta_origen[1] %||% ""))
+                          htmltools::htmlEscape(pagos_cuenta_origen_texto(row$cuenta_origen[1], row$tipo[1])))
     title_txt <- T("titulo_pagos")
   } else {
     det <- parse_pago_detalle(row$detalle[1])
@@ -553,7 +572,7 @@ pagosAuditViewerServer <- function(id, shared) {
       tags$div(tags$strong("Empresa: "), row$empresa[1] %||% "",
                if (!is.na(row$moneda[1]) && nzchar(row$moneda[1] %||% ""))
                  paste0(" (", row$moneda[1], ")") else ""),
-      if (is_pago) tags$div(tags$strong("Cuenta origen: "), row$cuenta_origen[1] %||% ""),
+      if (is_pago) tags$div(tags$strong("Cuenta origen: "), pagos_cuenta_origen_texto(row$cuenta_origen[1], row$tipo[1])),
       if (is_pago) tags$div(tags$strong("Origen: "),
                             if (identical(row$source[1], "zip_bulk")) "ZIP (todos)" else "Individual"),
       tags$div(tags$strong("Archivo: "), row$archivo[1] %||% ""),
@@ -648,7 +667,7 @@ generate_pagos_audit_html_doc <- function(export_df, meta_info = list(), tema = 
           tags$td(sub$user[i] %||% ""),
           tags$td(sub$empresa[i] %||% ""),
           tags$td(sub$moneda[i] %||% ""),
-          tags$td(if (!is.na(sub$cuenta_origen[i])) sub$cuenta_origen[i] else ""),
+          tags$td(pagos_cuenta_origen_texto(sub$cuenta_origen[i], sub$tipo[i])),
           tags$td(class = "text-end", as.character(sub$n_pagos[i] %||% "")),
           tags$td(sub$archivo[i] %||% "")
         )))
