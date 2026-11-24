@@ -399,8 +399,11 @@ library(scrypt)     # Stage 7: password hashing (R/auth.R)
 # htmltools loaded transitively by Shiny; htmltools::HTML() used directly in calendar_html()
 
 # ── Early utility definitions ─────────────────────────────────────────────────
+# NULL, empty, or a single NA -> y (a vector or a list, as before). A function
+# or an environment is returned as it is without asking is.na(), which warned
+# "is.na() applied to ... 'closure'" for every reactive passed (T88-3c).
 `%||%` <- function(x, y) {
-  if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
+  if (is.null(x) || length(x) == 0L || (length(x) == 1L && (is.atomic(x) || is.list(x)) && isTRUE(is.na(x)))) y else x
 }
 
 strip_accents <- function(x) {

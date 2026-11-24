@@ -1629,7 +1629,10 @@ server <- function(input, output, session) {
     attr(f, "crudo") <- rv
     f
   }
-  crudo <- function(x) attr(x, "crudo") %||% x
+  # The raw reactive is a function: not through %||%, which looked at it with
+  # is.na() -- the "is.na() applied to ... 'closure'" warnings in prod's log,
+  # 20 per sign-in (T88-3c). Same result, no warning.
+  crudo <- function(x) { r <- attr(x, "crudo"); if (is.null(r)) x else r }
   # …and a session may write a treasury table only if it may read it:
   # .s3_write() asks this before writing (a whole-copy save from the empty
   # value would wipe the table). Fail closed while the tier is unknown.

@@ -32,7 +32,7 @@ EXPORT_LANG_CHOICES <- c("Español" = "es", "English" = "en")
 
   # Reproduce %||% from global.R
   `%||%` <- function(x, y) {
-    if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
+    if (is.null(x) || length(x) == 0L || (length(x) == 1L && (is.atomic(x) || is.list(x)) && isTRUE(is.na(x)))) y else x   # T88-3c
   }
 
   # Source this module in an isolated env so shiny-dependent server functions
