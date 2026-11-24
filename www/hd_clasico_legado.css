@@ -9,6 +9,7 @@
 :root {
   --hd-leg-acento-00c4a7: var(--hd-acento);
   --hd-leg-acento-7c3aed: var(--hd-acento);
+  --hd-leg-acento-c2185b: var(--hd-acento);
   --hd-leg-acento-f97316: var(--hd-acento);
   --hd-leg-acento-p35-fed7aa: color-mix(in srgb, var(--hd-acento) 35%, var(--hd-superficie));
   --hd-leg-acento-p8-fff7ed: color-mix(in srgb, var(--hd-acento) 8%, var(--hd-superficie));
@@ -105,6 +106,7 @@
   --hd-leg-exito-texto-1a5c2e: var(--hd-exito-texto);
   --hd-leg-exito-texto-1b3a2a: var(--hd-exito-texto);
   --hd-leg-exito-texto-2d6a4f: var(--hd-exito-texto);
+  --hd-leg-exito-texto-2e7d32: var(--hd-exito-texto);
   --hd-leg-foco-4a88c7-21e45b: var(--hd-foco);
   --hd-leg-foco-color-1e3a5f: var(--hd-foco-color);
   --hd-leg-foco-color-4a88c7: var(--hd-foco-color);
@@ -112,9 +114,11 @@
   --hd-leg-hover-f0f4fa: var(--hd-hover);
   --hd-leg-info-0dcaf0: var(--hd-info);
   --hd-leg-info-0ea5e9: var(--hd-info);
+  --hd-leg-info-1565c0: var(--hd-info);
   --hd-leg-info-2456d6: var(--hd-info);
   --hd-leg-info-suave-e6edff: var(--hd-info-suave);
   --hd-leg-info-suave-e8f4fd: var(--hd-info-suave);
+  --hd-leg-modo-pago-6a1b9a: var(--hd-modo-pago);
   --hd-leg-modo-pago-p19-ede0d6: color-mix(in srgb, var(--hd-modo-pago) 19%, var(--hd-superficie));
   --hd-leg-modo-pago-p20-f0e0d5: color-mix(in srgb, var(--hd-modo-pago) 20%, var(--hd-superficie));
   --hd-leg-modo-pago-p4-fdf8f5: color-mix(in srgb, var(--hd-modo-pago) 4%, var(--hd-superficie));
@@ -190,8 +194,10 @@
   --hd-leg-superficie-2-e9ecef: var(--hd-superficie-2);
   --hd-leg-superficie-2-eef1f5: var(--hd-superficie-2);
   --hd-leg-superficie-2-eef1f8: var(--hd-superficie-2);
+  --hd-leg-superficie-2-f0f7ff: var(--hd-superficie-2);
   --hd-leg-superficie-2-f1f3f5: var(--hd-superficie-2);
   --hd-leg-superficie-2-f2f2f2: var(--hd-superficie-2);
+  --hd-leg-superficie-2-f8f9ff: var(--hd-superficie-2);
   --hd-leg-superficie-f5f0e8: var(--hd-superficie);
   --hd-leg-texto-000000: var(--hd-texto);
   --hd-leg-texto-07090d: var(--hd-texto);
@@ -231,12 +237,14 @@
   --hd-leg-texto-tenue-999999: var(--hd-texto-tenue);
   --hd-leg-texto-tenue-9ba8b5: var(--hd-texto-tenue);
   --hd-leg-texto-tenue-aaaaaa: var(--hd-texto-tenue);
+  --hd-leg-texto-tenue-bbbbbb: var(--hd-texto-tenue);
 }
 
 /* Clasico: today's exact value */
 [data-hd-tema="clasico"], :root:not([data-hd-tema]) {
   --hd-leg-acento-00c4a7: #00C4A7;
   --hd-leg-acento-7c3aed: #7C3AED;
+  --hd-leg-acento-c2185b: #C2185B;
   --hd-leg-acento-f97316: #F97316;
   --hd-leg-acento-p35-fed7aa: #FED7AA;
   --hd-leg-acento-p8-fff7ed: #FFF7ED;
@@ -333,6 +341,7 @@
   --hd-leg-exito-texto-1a5c2e: #1A5C2E;
   --hd-leg-exito-texto-1b3a2a: #1B3A2A;
   --hd-leg-exito-texto-2d6a4f: #2D6A4F;
+  --hd-leg-exito-texto-2e7d32: #2E7D32;
   --hd-leg-foco-4a88c7-21e45b: 0 0 0 2px rgba(74,136,199,0.3);
   --hd-leg-foco-color-1e3a5f: #1E3A5F;
   --hd-leg-foco-color-4a88c7: #4A88C7;
@@ -340,9 +349,11 @@
   --hd-leg-hover-f0f4fa: #F0F4FA;
   --hd-leg-info-0dcaf0: #0DCAF0;
   --hd-leg-info-0ea5e9: #0EA5E9;
+  --hd-leg-info-1565c0: #1565C0;
   --hd-leg-info-2456d6: #2456D6;
   --hd-leg-info-suave-e6edff: #E6EDFF;
   --hd-leg-info-suave-e8f4fd: #E8F4FD;
+  --hd-leg-modo-pago-6a1b9a: #6A1B9A;
   --hd-leg-modo-pago-p19-ede0d6: #EDE0D6;
   --hd-leg-modo-pago-p20-f0e0d5: #F0E0D5;
   --hd-leg-modo-pago-p4-fdf8f5: #FDF8F5;
@@ -418,8 +429,10 @@
   --hd-leg-superficie-2-e9ecef: #E9ECEF;
   --hd-leg-superficie-2-eef1f5: #EEF1F5;
   --hd-leg-superficie-2-eef1f8: #EEF1F8;
+  --hd-leg-superficie-2-f0f7ff: #F0F7FF;
   --hd-leg-superficie-2-f1f3f5: #F1F3F5;
   --hd-leg-superficie-2-f2f2f2: #F2F2F2;
+  --hd-leg-superficie-2-f8f9ff: #F8F9FF;
   --hd-leg-superficie-f5f0e8: #F5F0E8;
   --hd-leg-texto-000000: #000000;
   --hd-leg-texto-07090d: #07090D;
@@ -459,5 +472,6 @@
   --hd-leg-texto-tenue-999999: #999999;
   --hd-leg-texto-tenue-9ba8b5: #9BA8B5;
   --hd-leg-texto-tenue-aaaaaa: #AAAAAA;
+  --hd-leg-texto-tenue-bbbbbb: #BBBBBB;
 }
 

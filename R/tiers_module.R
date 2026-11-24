@@ -98,8 +98,8 @@ tiersUI <- function(id) {
                 div(
                   id = ns("create_form_wrap"),
                   class = "card-body border-bottom",
-                  style = "background:#f8f9ff;",
-                  tags$h6(class = "fw-semibold mb-3", style = "color:#0a58ca;",
+                  style = "background:var(--hd-leg-superficie-2-f8f9ff);",
+                  tags$h6(class = "fw-semibold mb-3", style = "color:var(--hd-primario);",
                           tagList(icon("user-plus"), " Nueva cuenta")),
                   fluidRow(
                     column(6,
@@ -313,11 +313,11 @@ tiersUI <- function(id) {
     class = "card border-0 shadow-sm",
     div(
       class = "card-header py-3",
-      style = "background: linear-gradient(120deg,#1a1a2e 0%,#16213e 100%); color:#fff; border-radius:8px 8px 0 0;",
+      style = "background: linear-gradient(120deg,var(--hd-leg-oscuro-fondo-2-1a1a2e) 0%,var(--hd-leg-oscuro-fondo-16213e) 100%); color:var(--hd-texto-inverso); border-radius:8px 8px 0 0;",
       div(
         class = "d-flex align-items-center gap-3",
         div(class = "rounded-circle d-flex align-items-center justify-content-center flex-shrink-0",
-            style = "width:42px; height:42px; background:rgba(255,255,255,.15); font-size:1.1rem;",
+            style = "width:42px; height:42px; background:color-mix(in srgb, var(--hd-texto-inverso) 15%, transparent); font-size:1.1rem;",
             icon("user-pen")),
         div(
           tags$p(class = "mb-0",
@@ -326,7 +326,7 @@ tiersUI <- function(id) {
           tags$h5(class = "mb-0 fw-bold", style = "font-size:1.05rem;", display_name),
           div(class = "d-flex align-items-center gap-2 mt-1",
               tags$span(
-                style = sprintf("font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:%s; border:1px solid rgba(255,255,255,.3); padding:2px 8px; border-radius:20px;",
+                style = sprintf("font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:%s; border:1px solid color-mix(in srgb, var(--hd-texto-inverso) 30%, transparent); padding:2px 8px; border-radius:20px;",
                                 .tier_color(tier)),
                 nivel_nombre(tier)),
               tags$span(style = "font-size:.75rem; opacity:.6;",
@@ -439,11 +439,11 @@ tiersUI <- function(id) {
     }
 
     div(
-      style = "display:flex; align-items:center; gap:6px; padding:5px 10px; border-bottom:1px solid #f0f0f0;",
+      style = "display:flex; align-items:center; gap:6px; padding:5px 10px; border-bottom:1px solid var(--hd-leg-borde-f0f0f0);",
       cb,
       tags$span(permiso_nombre(k), style = "font-size:.82rem;"),
       if (is_sys_locked)
-        tags$span(style = "color:#198754; font-size:.65rem; margin-left:auto; white-space:nowrap;",
+        tags$span(style = "color:var(--hd-exito); font-size:.65rem; margin-left:auto; white-space:nowrap;",
                   icon("lock", class = "fa-xs"))
     )
   })
@@ -451,7 +451,7 @@ tiersUI <- function(id) {
   div(
     class = "card border-0 shadow-sm h-100",
     div(class = "card-header py-2 px-3",
-        style = sprintf("background:%s; color:#fff;", .tier_color(tier_key)),
+        style = sprintf("background:%s; color:var(--hd-texto-inverso);", .tier_color(tier_key)),
         tags$span(class = "fw-bold small", tier_label)),
     div(class = "card-body p-0 tiers-cfg-body", div(perm_rows))
   )
@@ -1083,8 +1083,8 @@ tiersServer <- function(id, shared) {
       tags$div(
         class = "ms-auto d-flex align-items-center gap-2",
         tags$span(
-          style = "font-size:.75rem; color:#555; white-space:nowrap;",
-          icon("circle-nodes", style = "color:#c2185b; margin-right:3px;"),
+          style = "font-size:.75rem; color:var(--hd-leg-texto-2-555555); white-space:nowrap;",
+          icon("circle-nodes", style = "color:var(--hd-leg-acento-c2185b); margin-right:3px;"),
           "Cliente: ",
           tags$strong(ctx_label)
         ),
@@ -1494,7 +1494,7 @@ tiersServer <- function(id, shared) {
           tags$strong(dname), tags$span(class = "text-muted ms-2", paste0("@", uname)),
           tags$span(
             class = "badge ms-2",
-            style = sprintf("background:%s; color:#fff;", .tier_color(tier)),
+            style = sprintf("background:%s; color:var(--hd-texto-inverso);", .tier_color(tier)),
             nivel_nombre(tier))
         ),
         extra_warning,
@@ -1817,7 +1817,7 @@ tiersServer <- function(id, shared) {
         # ── Lock a new account ───────────────────────────────────────────────
         div(class = "card border-0 shadow-sm mb-3",
           div(class = "card-header py-2 fw-semibold",
-              style = "background:#fff3cd;",
+              style = "background:var(--hd-aviso-suave);",
               tagList(icon("lock"), " Bloquear cuenta de emergencia")),
           div(class = "card-body",
             tags$p(class = "small text-muted",
@@ -2090,7 +2090,7 @@ tiersServer <- function(id, shared) {
         if (isTRUE(is_principal())) {
           div(class = "card border-warning shadow-sm mb-3",
             div(class = "card-header py-2 fw-semibold",
-                style = "background:#fff3cd;",
+                style = "background:var(--hd-aviso-suave);",
                 tagList(icon("clock"), " ", tr("niveles.tablas.solicitudes.titulo"))),
             div(class = "card-body p-0", tiers_solicitudes_ui(ns("solic")))
           )
@@ -2527,7 +2527,7 @@ tiersServer <- function(id, shared) {
               tagList(
                 tags$span(class = "text-muted", old_max), " → ",
                 tags$strong(
-                  style = if (new_max < old_max) "color:#dc2626" else "color:#16a34a",
+                  style = if (new_max < old_max) "color:var(--hd-peligro)" else "color:var(--hd-leg-exito-16a34a)",
                   new_max
                 )
               )
@@ -2778,7 +2778,7 @@ tiersServer <- function(id, shared) {
         # ── Add new contact form ─────────────────────────────────────────
         div(class = "card border-0 shadow-sm",
           div(class = "card-header py-2 fw-semibold small",
-              style = "background:#f0f7ff;",
+              style = "background:var(--hd-leg-superficie-2-f0f7ff);",
               tagList(icon("user-plus"), " Agregar contacto")),
           div(class = "card-body",
             fluidRow(
@@ -2985,7 +2985,7 @@ tiersServer <- function(id, shared) {
                 div(
                   class = "card border-0 shadow-sm",
                   div(class = "card-header bg-white py-2 fw-semibold",
-                      tagList(icon("triangle-exclamation", style = "color:#e65100"), " ",
+                      tagList(icon("triangle-exclamation", style = "color:var(--hd-leg-aviso-fuerte-e65100)"), " ",
                               tr("niveles.tablas.cola.titulo"))),
                   div(class = "card-body p-0", tiers_cola_ui(ns("cola")))
                 )
@@ -3570,7 +3570,7 @@ tiersServer <- function(id, shared) {
                 ),
                 if (nzchar(req_row$message %||% ""))
                   tags$p(class = "mb-2 small fst-italic text-muted",
-                         tagList(icon("comment", style = "color:#bbb"), " ",
+                         tagList(icon("comment", style = "color:var(--hd-leg-texto-tenue-bbbbbb)"), " ",
                                  tags$q(req_row$message))),
                 do.call(tagList, client_rows)
               )
@@ -3602,7 +3602,7 @@ tiersServer <- function(id, shared) {
             class = "card-body py-3 px-3",
             tags$h6(
               class = "fw-semibold mb-3",
-              tagList(icon("circle-arrow-right", style = "color:#c2185b"), " Conceder acceso directo")
+              tagList(icon("circle-arrow-right", style = "color:var(--hd-leg-acento-c2185b)"), " Conceder acceso directo")
             ),
             if (length(staff_choices)) {
               tagList(
@@ -4198,13 +4198,13 @@ tiersServer <- function(id, shared) {
                                 error = function(e) character(0))
             is_read <- viewer %in% read_by
             type_icon <- switch(n$type %||% "",
-              user_limit_warning = icon("triangle-exclamation", style = "color:#e65100"),
-              user_limit_reached = icon("circle-xmark",         style = "color:#dc2626"),
-              user_request       = icon("user-plus",            style = "color:#1565c0"),
-              cambio_limite      = icon("sliders",              style = "color:#6a1b9a"),
-              hop_request        = icon("key",                  style = "color:#c2185b"),
-              hop_resolved       = icon("key",                  style = "color:#2e7d32"),
-              icon("bell",                                       style = "color:#555")
+              user_limit_warning = icon("triangle-exclamation", style = "color:var(--hd-leg-aviso-fuerte-e65100)"),
+              user_limit_reached = icon("circle-xmark",         style = "color:var(--hd-peligro)"),
+              user_request       = icon("user-plus",            style = "color:var(--hd-leg-info-1565c0)"),
+              cambio_limite      = icon("sliders",              style = "color:var(--hd-leg-modo-pago-6a1b9a)"),
+              hop_request        = icon("key",                  style = "color:var(--hd-leg-acento-c2185b)"),
+              hop_resolved       = icon("key",                  style = "color:var(--hd-leg-exito-texto-2e7d32)"),
+              icon("bell",                                       style = "color:var(--hd-leg-texto-2-555555)")
             )
             div(
               class = paste("card border-0 shadow-sm",
@@ -4339,18 +4339,18 @@ tiersServer <- function(id, shared) {
 
         div(
           class = "tiers-cfg-row",
-          style = "display:flex; align-items:center; gap:8px; padding:7px 14px; border-bottom:1px solid #f0f0f0;",
+          style = "display:flex; align-items:center; gap:8px; padding:7px 14px; border-bottom:1px solid var(--hd-leg-borde-f0f0f0);",
           cb,
           tags$span(permiso_nombre(k), style = "font-size:.85rem; flex-grow:1;"),
           if (is_sys_locked)
-            tags$span(style = "color:#198754; font-size:.65rem; white-space:nowrap;",
+            tags$span(style = "color:var(--hd-exito); font-size:.65rem; white-space:nowrap;",
                       icon("lock", class = "fa-xs"), " obligatorio")
         )
       })
 
       nav_btn_style <- paste0(
-        "background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.35);",
-        " color:#fff; padding:4px 12px; border-radius:6px; line-height:1;"
+        "background:color-mix(in srgb, var(--hd-texto-inverso) 18%, transparent); border:1px solid color-mix(in srgb, var(--hd-texto-inverso) 35%, transparent);",
+        " color:var(--hd-texto-inverso); padding:4px 12px; border-radius:6px; line-height:1;"
       )
 
       tryCatch({
@@ -4368,7 +4368,7 @@ tiersServer <- function(id, shared) {
             div(
               class = "card-header d-flex align-items-center justify-content-center gap-2 py-2 px-3",
               style = sprintf(
-                "background:%s; color:#fff; border-radius:8px 8px 0 0;",
+                "background:%s; color:var(--hd-texto-inverso); border-radius:8px 8px 0 0;",
                 .tier_color(sel_tier)
               ),
               if (has_prev)

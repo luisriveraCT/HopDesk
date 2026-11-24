@@ -262,6 +262,7 @@ HD_TEMAS <- list(
 .HD_LEGADO <- list(
   `acento-00c4a7` = "#00C4A7",
   `acento-7c3aed` = "#7C3AED",
+  `acento-c2185b` = "#C2185B",
   `acento-f97316` = "#F97316",
   `acento-p35-fed7aa` = "#FED7AA",
   `acento-p8-fff7ed` = "#FFF7ED",
@@ -358,6 +359,7 @@ HD_TEMAS <- list(
   `exito-texto-1a5c2e` = "#1A5C2E",
   `exito-texto-1b3a2a` = "#1B3A2A",
   `exito-texto-2d6a4f` = "#2D6A4F",
+  `exito-texto-2e7d32` = "#2E7D32",
   `foco-4a88c7-21e45b` = "0 0 0 2px rgba(74,136,199,0.3)",
   `foco-color-1e3a5f` = "#1E3A5F",
   `foco-color-4a88c7` = "#4A88C7",
@@ -365,9 +367,11 @@ HD_TEMAS <- list(
   `hover-f0f4fa` = "#F0F4FA",
   `info-0dcaf0` = "#0DCAF0",
   `info-0ea5e9` = "#0EA5E9",
+  `info-1565c0` = "#1565C0",
   `info-2456d6` = "#2456D6",
   `info-suave-e6edff` = "#E6EDFF",
   `info-suave-e8f4fd` = "#E8F4FD",
+  `modo-pago-6a1b9a` = "#6A1B9A",
   `modo-pago-p19-ede0d6` = "#EDE0D6",
   `modo-pago-p20-f0e0d5` = "#F0E0D5",
   `modo-pago-p4-fdf8f5` = "#FDF8F5",
@@ -443,8 +447,10 @@ HD_TEMAS <- list(
   `superficie-2-e9ecef` = "#E9ECEF",
   `superficie-2-eef1f5` = "#EEF1F5",
   `superficie-2-eef1f8` = "#EEF1F8",
+  `superficie-2-f0f7ff` = "#F0F7FF",
   `superficie-2-f1f3f5` = "#F1F3F5",
   `superficie-2-f2f2f2` = "#F2F2F2",
+  `superficie-2-f8f9ff` = "#F8F9FF",
   `superficie-f5f0e8` = "#F5F0E8",
   `texto-000000` = "#000000",
   `texto-07090d` = "#07090D",
@@ -483,7 +489,8 @@ HD_TEMAS <- list(
   `texto-tenue-94a3b8` = "#94A3B8",
   `texto-tenue-999999` = "#999999",
   `texto-tenue-9ba8b5` = "#9BA8B5",
-  `texto-tenue-aaaaaa` = "#AAAAAA"
+  `texto-tenue-aaaaaa` = "#AAAAAA",
+  `texto-tenue-bbbbbb` = "#BBBBBB"
 )
 
 # Roles whose value is a whole box-shadow, not a colour.
