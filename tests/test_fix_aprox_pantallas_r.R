@@ -124,7 +124,15 @@ dd <- data.frame(Fecha = DIA, Moneda = "MXN", Parte = c("ACEROS", "RENTA USD"), 
 BOTON_NOTAS <- paste0('<button type="button" class="notes-bar-btn cal-notes-btn" ',
   'onclick="var b=document.getElementById(\'toggle_notes\'); if(b) b.click();">',
   as.character(shiny::icon("sticky-note")), ' Notas del mes</button>')
+# TEMA 6-1 (one more change, applied the same way): the currency pill no
+# longer has a hex fallback of its own. Here global.R is loaded by pieces,
+# without R/bancos_module.R's .currency_color(), so the pill takes the text's
+# colour (currentColor) and its 13 % tint by color-mix, where the old code
+# wrote the grey #5F5E5A and rgba(95,94,90,0.13).
+PASTILLA_ANTES   <- "background:rgba(95,94,90,0.13);color:#5F5E5A;"
+PASTILLA_DESPUES <- "background:color-mix(in srgb, currentColor 13%, transparent);color:currentColor;"
 t55 <- function(h, cur = "MXN") {
+  h <- gsub(PASTILLA_ANTES, PASTILLA_DESPUES, h, fixed = TRUE)
   h <- gsub('(<span class="cal-amount"[^>]*>(≈ )?)\\$ ', "\\1", h)
   h <- gsub('(<div class="cal-total"><span>Total</span><span[^>]*>(≈ )?)\\$ ([0-9,]+)</span>', paste0("\\1\\3 ", cur, "</span>"), h)
   sub('(<button class="cf-preview-toggle-btn"[^>]*>&#8250;</button>)', paste0("\\1", BOTON_NOTAS), h)

@@ -33,8 +33,9 @@ for (ex in parse("R/bancos_module.R", keep.source = FALSE))
 ok("2: the currency helper is in R/bancos_module.R", is.function(b$.currency_color))
 g <- paste(leer("R/global.R"), collapse = "\n")
 cuerpo <- regmatches(g, regexpr("calendar_html <- function\\([\\s\\S]*?\\n\\}\\n", g, perl = TRUE))
-ok("2: calendar_html() takes the colour from .currency_color() alone (no second fallback of its own)",
-   length(cuerpo) == 1L && grepl("cur_col  <- .currency_color(cur)", cuerpo, fixed = TRUE) &&
+ok("2: calendar_html() takes the colour from .currency_color(), with no hex fallback of its own (currentColor if the helper is not loaded)",
+   length(cuerpo) == 1L &&
+     grepl('cur_col  <- tryCatch(.currency_color(cur), error = function(e) "currentColor")', cuerpo, fixed = TRUE) &&
      !grepl("#[0-9A-Fa-f]{6}", cuerpo) && !grepl("rgba(", cuerpo, fixed = TRUE))
 tinte <- function(cur) sprintf("color-mix(in srgb, %s 13%%, transparent)", b$.currency_color(cur))
 ok("2: the tint is color-mix at 13 % over transparent (the same colour at alpha 0.13 as before)",

@@ -862,8 +862,10 @@ calendar_html <- function(
   cur      <- toupper(trimws(currency))
   # Currency-specific color for the badge: the one helper (R/bancos_module.R,
   # sourced above; its fallback is the "other currency" grey), and its tint
-  # by color-mix: the same colour at 13 % alpha as before (TEMA 6-1).
-  cur_col  <- .currency_color(cur)
+  # by color-mix: the same colour at 13 % alpha as before (TEMA 6-1). A
+  # fixture that loads global.R by pieces may not have the helper: then the
+  # text's own colour (currentColor), never a hex of its own.
+  cur_col  <- tryCatch(.currency_color(cur), error = function(e) "currentColor")
   cur_tint <- sprintf("color-mix(in srgb, %s 13%%, transparent)", cur_col)
   today <- Sys.Date()
   # T55: the amounts in whole units as monto_moneda() writes them, the
