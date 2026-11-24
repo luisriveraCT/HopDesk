@@ -293,12 +293,17 @@
 
     /* 5b -- The open tab: the outermost active pane. Ready when nothing in it
        is recalculating and at least one of its outputs has something drawn --
-       counting only what is laid out (offsetParent): an output inside a
-       hidden panel is suspended by Shiny and keeps .recalculating forever
-       (Panorama's "Publicar" outputs, seen in Chrome, T88-1b). The cover
-       uses visibility:hidden, which keeps offsetParent, so it never hides
-       anything from this check. */
-    function _visible(e) { return e.offsetParent !== null || getComputedStyle(e).position === 'fixed'; }
+       leaving out what is hidden (it or a container up to the tab has
+       display:none): an output inside a hidden panel is suspended by Shiny
+       and keeps .recalculating forever (Panorama's "Publicar" outputs, seen
+       in Chrome, T88-1b). Not offsetParent: Panorama's outputs are
+       display:contents and have none while showing. The cover uses
+       visibility:hidden, never display:none, so it hides nothing here. */
+    function _oculto(e, hasta) {
+      for (var h = e; h && h !== hasta; h = h.parentElement)
+        if (getComputedStyle(h).display === 'none') return true;
+      return false;
+    }
     function _pestanaLista() {
       var panes = document.querySelectorAll('.tab-pane.active');
       var pane = null;
@@ -307,10 +312,10 @@
       }
       if (!pane) return false;
       var rec = pane.querySelectorAll('.recalculating, .shiny-output-recalculating');
-      for (var r = 0; r < rec.length; r++) if (_visible(rec[r])) return false;
+      for (var r = 0; r < rec.length; r++) if (!_oculto(rec[r], pane)) return false;
       var outs = pane.querySelectorAll('.shiny-bound-output');
       for (var j = 0; j < outs.length; j++) {
-        if (_visible(outs[j]) && (outs[j].children.length || (outs[j].textContent || '').trim())) return true;
+        if (!_oculto(outs[j], pane) && (outs[j].children.length || (outs[j].textContent || '').trim())) return true;
       }
       return false;
     }
