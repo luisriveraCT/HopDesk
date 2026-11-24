@@ -225,6 +225,36 @@ nivel_tabla_permitida <- function(tier, tabla) {
   arch[1] %in% unlist(HD_PESTANA_ARCHIVOS[lista], use.names = FALSE)
 }
 
+# ── Screens behind a permission (T87-M6) ─────────────────────────────────────
+# The tier gate above says which TABS a tier has; a screen the tier has but
+# the person may not open is a permission. Usuarios (with its Actividad, its
+# Invitaciones, and the staff tabs) is built in every session (tiersServer),
+# and its tables pushed their rows to the browser of anyone -- Admin and
+# Finanzas received the whole activity log with the tab hidden. A table whose
+# module file is listed here travels only to a session that holds the
+# permission. tests/test_t87_m6_tablas_permiso.R: every file is a module of
+# hd_registro, every permission exists.
+HD_ARCHIVOS_PERMISO <- list(
+  "tiers_module.R"            = "can_view_tiers",
+  "audit_log_viewer_module.R" = "can_view_tiers")
+
+# nivel_tabla_permitida() for one session: `usuario` as usuario_sesion()
+# builds it (app.R) -- tier = the EFFECTIVE tier and permisos resolved for it.
+# So "ver como" holds as it does for the tier gate: staff viewing a client as
+# Admin gets exactly what that Admin tier gets (its permissions as that client
+# configured them, no personal overrides); staff at home, by its own tier.
+# No exception by identity. Pure, and fails closed: a user or tier not
+# resolved yet, or puede() missing (a fixture that loads this file without
+# R/permisos.R), means no.
+nivel_tabla_permitida_usuario <- function(usuario, tabla) {
+  if (!is.list(usuario)) return(FALSE)
+  if (!nivel_tabla_permitida(usuario$tier, tabla)) return(FALSE)
+  arch <- tryCatch(hd_registro[[tabla]]$archivo, error = function(e) NULL)
+  permiso <- if (length(arch) && !is.na(arch[1])) HD_ARCHIVOS_PERMISO[[arch[1]]] else NULL
+  if (is.null(permiso)) return(TRUE)
+  isTRUE(tryCatch(puede(usuario, permiso), error = function(e) FALSE))
+}
+
 # TRUE when a session of `tier` may receive what tab `tab` pushes on its own
 # (the Agenda's badges). Same rule: unknown tier = no; no list = every tab.
 nivel_pestana_permitida <- function(tier, tab) {

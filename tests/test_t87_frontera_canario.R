@@ -55,14 +55,12 @@ DEUDA <- c(
   "1.7"         = "A1: el detalle vuelca la metadata (home_client: hd-admin)",
   "1.8"         = "M2: Invitaciones nombra RESEND_API_KEY / .Renviron / runbook",
   "2.1"         = "M1: el diccionario completo va en la página",
-  "3.0 admin"   = "M6: el log de Actividad viaja a quien no ve Usuarios",
   "3.1 admin"   = "M5: la pestaña Usuarios se construye para todos",
   "3.2 admin"   = "M5: el rechazo nombra el permiso que falta",
-  "3.3 admin"   = "A1/M6: rastro del staff en la sesión",
-  "3.0 finance" = "M6",
+  "3.3 admin"   = "M1 (diccionario) y un home_client en lo enviado: rastro del staff en la sesión",
   "3.1 finance" = "M5",
   "3.2 finance" = "M5",
-  "3.3 finance" = "A1/M6")
+  "3.3 finance" = "M1")
 
 .pass <- 0L; .fail <- 0L; .pend <- 0L
 ok <- function(label, cond, detalle = NULL) {
@@ -171,6 +169,19 @@ ACCIONES_S <- if (exists("ACCIONES_STAFF")) names(Filter(function(a) identical(a
   .salida$todo <- c(.salida$todo, txt)
   .salida[[tipo]] <- c(.salida[[tipo]], list(x))
 }
+# The session's user as app.R's usuario_sesion() builds it for a client user
+# (own tier, own overrides from usuarios.rds).
+sesion_usuario <- function() {
+  us <- .mem_get("acme/usuarios.rds")
+  ov <- us$permisos[us$username == quien$user][1] %||% "{}"
+  list(user = quien$user, tier = quien$tier, is_staff = FALSE, viendo_como = FALSE,
+       permisos = permisos_resueltos(quien$tier, ov))
+}
+# The canary measures app.R's gate only if it reproduces it: once the M6 gate
+# exists, app.R must be using it on usuario_sesion().
+if (exists("nivel_tabla_permitida_usuario"))
+  stopifnot("app.R no usa la puerta de T87-M6; el canario ya no la reproduce" = any(grepl(
+    "nivel_tabla_permitida_usuario(usuario_sesion(), tabla)", readLines("app.R", warn = FALSE), fixed = TRUE)))
 # The test session's own senders, replaced before the app's server runs, so
 # nothing it sends (from its very first flush) goes unseen.
 server_capturado <- function(input, output, session) {
@@ -178,6 +189,11 @@ server_capturado <- function(input, output, session) {
   session$sendModal         <- function(type, message) .anotar("modal", message)
   session$sendNotification  <- function(type, message) .anotar("notif", message)
   session$sendInsertUI      <- function(selector, multiple, where, content, ...) .anotar("insert", content)
+  # The table gate app.R puts in every session (the fixture has none): as
+  # app.R builds it -- the T87-M6 one once it exists, the tier's (T69) before.
+  u <- sesion_usuario()
+  session$userData$hd_tabla_permitida <- if (exists("nivel_tabla_permitida_usuario"))
+    function(tabla) nivel_tabla_permitida_usuario(u, tabla) else function(tabla) nivel_tabla_permitida(u$tier, tabla)
   server(input, output, session)
 }
 

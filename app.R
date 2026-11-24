@@ -1469,7 +1469,8 @@ server <- function(input, output, session) {
   # it before every push). By the effective tier, so a staff "ver como" sees
   # exactly what that tier gets. A tier with a tab list only gets its tabs'
   # tables (nivel_tabla_permitida(), R/tier_registry.R).
-  session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida(tier_efectivo(), tabla)
+  # T87-M6: and a screen behind a permission (Usuarios) only to who may open it.
+  session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida_usuario(usuario_sesion(), tabla)
   # The same rule for a whole tab, for modules that push something of their
   # own without a bound output (the Agenda's badges).
   # Both fail closed while the tier is not known yet (the session's start).
