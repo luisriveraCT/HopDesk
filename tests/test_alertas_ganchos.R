@@ -126,7 +126,8 @@ NO_ACTIVIDAD <- c(
   "R/auth_reset.R"                = "security alert on password resets (T31): staff in hd-admin, a client's Dev; never switched off",
   "R/avisos_umbrales.R" = "system alert when a company's past-due CxC moves more than usual (D, umbrales)",
   "R/app_audit.R"       = "system alert when the activity log cannot be saved (T72): staff in hd-admin, once an hour per client",
-  "R/persistence.R"     = "system alert when a write with no event comes from outside the known debt (T72-B): staff in hd-admin, once an hour per client")
+  "R/persistence.R"     = "system alert when a write with no event comes from outside the known debt (T72-B): staff in hd-admin, once an hour per client",
+  "R/notes_handlers.R"  = "a public note is news for the whole client (T81): every client tier, never switched off by the activity matrix")
 ok(!length(setdiff(directos, names(NO_ACTIVIDAD))),
    sprintf("S nadie llama avisos_agregar() directo para la actividad (%s)",
            paste(setdiff(directos, names(NO_ACTIVIDAD)), collapse = ", ")))
