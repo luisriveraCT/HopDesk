@@ -21,7 +21,8 @@
 # No email alert (T80b, Luis): when the email has not gone out, HopDesk
 # says so in Panorama (R/avisos_correo_vigia.R). No SNS here.
 #
-# Creates (region us-east-1 by default, AWS_REGION to change it):
+# Creates (region us-east-1, where the token lives; --region <r> to change it.
+# AWS_REGION is NOT read: CloudShell sets it to the console's region):
 #   - IAM role hopdesk-avisos-disparo-lambda: logs, read THAT parameter
 #   - Lambda hopdesk-avisos-disparo (python3.12, lambda_function.py)
 #   - IAM role hopdesk-avisos-disparo-scheduler: invoke THAT Lambda
@@ -30,18 +31,18 @@
 # =============================================================================
 set -euo pipefail
 
-PARAM=""; APLICAR=0
+PARAM=""; APLICAR=0; REGION="us-east-1"
 while [ $# -gt 0 ]; do
   case "$1" in
     --param)   PARAM="${2:-}"; shift 2 ;;
     --aplicar) APLICAR=1; shift ;;
+    --region)  REGION="${2:-}"; shift 2 ;;
     *) echo "argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$PARAM" ] || { echo "uso: $0 --param <nombre ssm> [--aplicar]" >&2; exit 2; }
 case "$PARAM" in /*) ;; *) echo "--param es el NOMBRE del parámetro (empieza con /), nunca el token" >&2; exit 2 ;; esac
 
-REGION="${AWS_REGION:-us-east-1}"
 REPO="luisriveraCT/HopDesk"; WORKFLOW="avisos.yml"; REF="master"
 FUNCION="hopdesk-avisos-disparo"
 ROL_LAMBDA="hopdesk-avisos-disparo-lambda"
@@ -50,6 +51,9 @@ GRUPO="hopdesk-avisos"
 ZONA="America/Mexico_City"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# python3 where only python3 exists (AWS CloudShell), python elsewhere.
+PY="$(command -v python3 || command -v python || true)"
+[ -n "$PY" ] || { echo "falta python3 (o python)" >&2; exit 2; }
 
 # name|cron (Mexico time)|event. The 17:00 Monday and 17:50 Friday ones are
 # the last try (same call: it does nothing if the email already went out).
@@ -102,7 +106,7 @@ hacer "adjuntar AWSLambdaBasicExecutionRole (logs)" \
   aws_ iam attach-role-policy --role-name "$ROL_LAMBDA" --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
 # ── 2. The Lambda ───────────────────────────────────────────────────────────
-python -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.write(sys.argv[2],'lambda_function.py'); z.close()" \
+"$PY" -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1],'w'); z.write(sys.argv[2],'lambda_function.py'); z.close()" \
   "$TMP/funcion.zip" "$DIR/lambda_function.py"
 ENTORNO="Variables={REPO=$REPO,WORKFLOW=$WORKFLOW,REF=$REF,TOKEN_PARAM=$PARAM}"
 FUNCION_ARN="arn:aws:lambda:$REGION:$CUENTA:function:$FUNCION"
@@ -137,7 +141,7 @@ if existe aws_ scheduler get-schedule-group --name "$GRUPO"; then echo "  YA EXI
 else hacer "crear grupo de horarios $GRUPO" aws_ scheduler create-schedule-group --name "$GRUPO"; fi
 for h in "${HORARIOS[@]}"; do
   IFS='|' read -r nombre expr evento <<< "$h"
-  python -c "import json,sys; print(json.dumps({'Arn':sys.argv[1],'RoleArn':sys.argv[2],'Input':sys.argv[3],
+  "$PY" -c "import json,sys; print(json.dumps({'Arn':sys.argv[1],'RoleArn':sys.argv[2],'Input':sys.argv[3],
 'RetryPolicy':{'MaximumRetryAttempts':3,'MaximumEventAgeInSeconds':1800}}))" \
     "$FUNCION_ARN" "arn:aws:iam::$CUENTA:role/$ROL_SCHED" "$evento" > "$TMP/objetivo_$nombre.json"
   args=(--name "$nombre" --group-name "$GRUPO" --schedule-expression "$expr" --schedule-expression-timezone "$ZONA"

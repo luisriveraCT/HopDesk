@@ -34,8 +34,10 @@ ok "vista previa: ninguna llamada que escriba" "[ \"\$(escrituras)\" = 0 ]"
 ok "vista previa: dice HARÍA y lista los 11 horarios" "[ \"\$(grep -c 'HARÍA:    crear horario' $T/out1)\" = 11 ]"
 
 : > "$FAKE_LOG"
-bash "$DIR/desplegar.sh" --param /hopdesk/avisos/github_token --aplicar > "$T/out2" 2>&1; st=$?
+AWS_REGION=us-east-2 bash "$DIR/desplegar.sh" --param /hopdesk/avisos/github_token --aplicar > "$T/out2" 2>&1; st=$?
 ok "aplicar sale 0" "[ $st = 0 ]"
+ok "siempre us-east-1 (donde vive el token), aunque AWS_REGION diga otra (CloudShell)" \
+  "! grep -q 'us-east-2' $FAKE_LOG && [ \"\$(grep -c -- '--region us-east-1' $FAKE_LOG)\" = \"\$(wc -l < $FAKE_LOG)\" ]"
 ok "aplicar crea 2 roles, Lambda, grupo y 11 horarios" \
   "[ \"\$(grep -c 'iam create-role' $FAKE_LOG)\" = 2 ] && grep -q 'lambda create-function' $FAKE_LOG && grep -q 'create-schedule-group' $FAKE_LOG && [ \"\$(grep -c 'scheduler create-schedule --name' $FAKE_LOG)\" = 11 ]"
 ok "los horarios van en hora de México, sin ventana flexible" \
