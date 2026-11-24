@@ -57,6 +57,7 @@ cat("\n-- Panorama's data --\n")
 for (f in c("R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/avisos.R",
             "R/avisos_alertas_module.R", "R/panorama_publicar_module.R", "R/panorama_module.R"))
   suppressMessages(source(f))
+source("tests/helpers/ic_filtro_piezas.R")   # T89: panorama_filas_vigentes() needs the IC filter
 HOY <- Sys.Date()
 ar <- data.frame(FechaEff = HOY + c(0, -1, -30, 1), Moneda = c("MXN", "MXN", "USD", "MXN"),
                  `Saldo vencido` = c(100, 500, 7, 900), check.names = FALSE, stringsAsFactors = FALSE)
@@ -93,7 +94,13 @@ ok("the Agenda's payments are 'Programado para pagar hoy', with what they are an
    tiene(es$hoy, "Programado para pagar hoy") && tiene(es$hoy, "300.00 MXN") &&
      tiene(es$hoy, "Lo que está en la Agenda de Hoy, incluidos atrasados · 2 pagos") &&
      tiene(es$hoy, "Ver en Agenda de Hoy →"))
-ok("never 'Por pagar' on screen: another measure, another word", !tiene(es$hoy, "Por pagar"))
+# T89 (Luis): "Por pagar hoy" is now the ERP's supplier invoices due today,
+# the twin of "Por cobrar hoy". The Agenda's card still never says it.
+ok("the Agenda's card never says 'Por pagar': another measure, another word (T89: only the ERP's card does)", {
+  h <- as.character(es$hoy)
+  tarjeta_agenda <- regmatches(h, regexpr("(?s)Programado para pagar hoy.*?Ver en Agenda de Hoy", h, perl = TRUE))
+  length(tarjeta_agenda) == 1L && !grepl("Por pagar", tarjeta_agenda, fixed = TRUE)
+})
 ok("'Por cobrar hoy' explains itself with the email's own words (semana.tarjeta.por_cobrar.*)",
    tiene(es$hoy, "Por cobrar hoy") && tiene(es$hoy, "100.00 MXN") &&
      tiene(es$hoy, paste(tr("semana.tarjeta.por_cobrar.explica", idioma = "es", rango = "hoy"), "·",

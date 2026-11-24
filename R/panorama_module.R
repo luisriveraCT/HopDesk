@@ -119,18 +119,35 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     # ── Data already in the session ───────────────────────────────────────────
     pagos  <- shiny::reactive(panorama_pagos_hoy(tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(),
                                                  base = base_cli()))
-    ver_cxc <- shiny::reactive(is.null(nivel_calendario(tryCatch(shared$tier_efectivo(), error = function(e) NULL))))
+    tier_ef <- shiny::reactive(tryCatch(shared$tier_efectivo(), error = function(e) NULL))
+    ver_cxc <- shiny::reactive(nivel_ve_libro(tier_ef(), "AR"))
+    ver_cxp <- shiny::reactive(nivel_ve_libro(tier_ef(), "AP"))   # T89
+    # T89: the ledger's rows as the Calendar counts them (IC and confirmed
+    # out, panorama_filas_vigentes()); NULL when the ledger cannot be read.
+    vigentes <- function(ledger) {
+      f <- shared[[paste0("df_combined_", ledger)]]
+      tryCatch(panorama_filas_vigentes(if (is.function(f)) f() else NULL, ledger, shared),
+               error = function(e) { message("[panorama] filas ", ledger, ": ", conditionMessage(e)); NULL })
+    }
+    filas_ar <- shiny::reactive(if (ver_cxc()) vigentes("AR") else NULL)
+    filas_ap <- shiny::reactive(if (ver_cxp()) vigentes("AP") else NULL)
     cobros <- shiny::reactive({
       if (!ver_cxc()) return(NULL)
-      f <- shared$df_combined_AR
-      panorama_cobros_hoy(if (is.function(f)) tryCatch(f(), error = function(e) NULL) else NULL, hoy(),
-                          base = base_cli())
+      panorama_cobros_hoy(filas_ar(), hoy(), base = base_cli())
     })
     cobros_atrasados <- shiny::reactive({
       if (!ver_cxc()) return(NULL)
-      f <- shared$df_combined_AR
-      panorama_cobros_atrasados(if (is.function(f)) tryCatch(f(), error = function(e) NULL) else NULL, hoy(),
-                                base = base_cli())
+      panorama_cobros_atrasados(filas_ar(), hoy(), base = base_cli())
+    })
+    # T89: "Por pagar hoy", the ERP's supplier invoices due today (the twin of
+    # Por cobrar hoy; the Agenda's is "Programado para pagar hoy").
+    por_pagar <- shiny::reactive({
+      if (!ver_cxp()) return(NULL)
+      panorama_cobros_hoy(filas_ap(), hoy(), base = base_cli())
+    })
+    por_pagar_atrasados <- shiny::reactive({
+      if (!ver_cxp()) return(NULL)
+      panorama_cobros_atrasados(filas_ap(), hoy(), base = base_cli())
     })
     pasivos <- shiny::reactive(panorama_pasivos_pronto(
       tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL), hoy(), base = base_cli()))
@@ -273,23 +290,32 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       # The weekly emails' words (semana.tarjeta.*, T45) where the measure is
       # the same; another measure, another word (T46b): the Agenda's payments
       # are "Programado para pagar hoy", not the ledger's "Por pagar".
+      # T89 order: the ERP's pair (Por cobrar hoy, Por pagar hoy: "vencen
+      # hoy"), then what the team already scheduled (the Agenda), then what
+      # is coming (Pasivos). A tier that does not see a ledger does not get
+      # its card (nivel_ve_libro()).
       pp <- pasivos()
-      atras <- if (ver_cxc()) cobros_atrasados() else NULL
-      excluye <- if (!is.null(atras) && nrow(atras) && any(atras$total > 0)) {
+      excluye <- function(atras) {
+        if (is.null(atras) || !nrow(atras) || !any(atras$total > 0)) return(NULL)
         a <- atras[atras$total > 0, , drop = FALSE]
         paste(tr("semana.tarjeta.por_cobrar.excluye",
                  monto = paste(monto_moneda(a$total, a$moneda), collapse = " · ")),
               "·", tr("semana.tarjeta.por_cobrar.excluye_ver", destino = tr("panorama.destino.ven")))
       }
       tarjetas <- list(
+        if (ver_cxc()) .pan_tarjeta_hoy(tr("panorama.hoy.por_cobrar"), cobros(),
+          tr_n("semana.tarjeta.por_cobrar.n", sum(cobros()$n)), "CAL", ns, base = base_cli(),
+          explica = tr("semana.tarjeta.por_cobrar.explica", rango = tr("panorama.hoy.rango")),
+          extra = excluye(cobros_atrasados())),
+        if (ver_cxp()) .pan_tarjeta_hoy(tr("panorama.hoy.por_pagar"), por_pagar(),
+          tr_n("semana.tarjeta.por_cobrar.n", sum(por_pagar()$n)), "CAL", ns, base = base_cli(),
+          explica = tr("panorama.hoy.por_pagar_explica", rango = tr("panorama.hoy.rango")),
+          extra = excluye(por_pagar_atrasados())),
         .pan_tarjeta_hoy(tr("panorama.hoy.programado"), pagos(),
           tr_n("semana.tarjeta.por_pagar.n", sum(pagos()$n)), "PH", ns, base = base_cli(),
           explica = tr("panorama.hoy.programado_explica"),
           extra = .pan_desglose_texto(panorama_pagos_desglose(
             tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(), base = base_cli()))),
-        if (ver_cxc()) .pan_tarjeta_hoy(tr("panorama.hoy.por_cobrar"), cobros(),
-          tr_n("semana.tarjeta.por_cobrar.n", sum(cobros()$n)), "CAL", ns, base = base_cli(),
-          explica = tr("semana.tarjeta.por_cobrar.explica", rango = tr("panorama.hoy.rango")), extra = excluye),
         .pan_tarjeta_hoy(tr("panorama.hoy.pasivos_titulo", n = as.character(PANORAMA_DIAS_PASIVOS)), pp$totales,
           if (nrow(pp$totales))
             tr_n("panorama.hoy.pasivos_n", sum(pp$totales$n), fecha = .pan_fecha_corta(pp$primera, zona()))

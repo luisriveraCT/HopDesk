@@ -1836,6 +1836,8 @@
   "panorama.hoy.desglose.anticipados.uno": "{n} paid early ({monto})",
   "panorama.hoy.desglose.anticipados.otros": "{n} paid early ({monto})",
   "panorama.hoy.por_cobrar": "To collect today",
+  "panorama.hoy.por_pagar": "To pay today",
+  "panorama.hoy.por_pagar_explica": "Supplier invoices due {rango}",
   "panorama.hoy.rango": "today",
   "panorama.hoy.pasivos_titulo": "Upcoming liabilities ({n} days)",
   "panorama.hoy.pasivos_explica": "Open provisions due from today to {fecha}",

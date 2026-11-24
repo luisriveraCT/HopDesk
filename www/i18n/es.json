@@ -1836,6 +1836,8 @@
   "panorama.hoy.desglose.anticipados.uno": "{n} anticipado ({monto})",
   "panorama.hoy.desglose.anticipados.otros": "{n} anticipados ({monto})",
   "panorama.hoy.por_cobrar": "Por cobrar hoy",
+  "panorama.hoy.por_pagar": "Por pagar hoy",
+  "panorama.hoy.por_pagar_explica": "Facturas de proveedores que vencen {rango}",
   "panorama.hoy.rango": "hoy",
   "panorama.hoy.pasivos_titulo": "Pasivos próximos ({n} días)",
   "panorama.hoy.pasivos_explica": "Provisiones abiertas que vencen de hoy al {fecha}",

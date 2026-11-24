@@ -329,8 +329,34 @@ panorama_pagos_desglose <- function(ph, hoy, base = MONEDA_BASE_OMISION) {
        anticipados = parte(!is.na(venc) & venc > hoy))
 }
 
-# Cobros que vencen hoy: the Calendar's own CxC rows (df_combined_AR, same
-# filters as the Calendar and Vencidos) whose effective date is today.
+# T89: the ledger's rows that still count, the way the Calendar counts them.
+# df_combined_AR/AP (R/ledger_module.R) only MARK a confirmed invoice
+# (confirmed = TRUE) and do not apply the intercompany filter: the Calendar
+# does both afterwards (df_calendar: apply_ic_filter() with the ledger's IC
+# mode, then to_calendar_data() drops confirmed). Panorama read df_combined
+# raw, so "Por cobrar hoy" added confirmed (already paid) and IC invoices.
+# Every Panorama figure on the ERP's invoices goes through here.
+PANORAMA_CODIGO_COL <- c(AR = "Código de cliente", AP = "Código de proveedor")
+
+panorama_filas_vigentes <- function(df, ledger, shared) {
+  if (is.null(df) || !is.data.frame(df) || !nrow(df)) return(df)
+  if ("confirmed" %in% names(df)) df <- df[is.na(df[["confirmed"]]) | !df[["confirmed"]], , drop = FALSE]
+  if (!nrow(df)) return(df)
+  # A session always has these; a test fixture without them has no IC
+  # registry, which apply_ic_filter() reads as "nothing to filter by" (as the
+  # Calendar would). One that is there and fails stops: never IC let in.
+  modo <- tryCatch(shared$ic_mode[[ledger]](), error = function(e) "exclude")
+  reg  <- if (is.function(shared$interco_v2)) shared$interco_v2() else NULL
+  cmap <- if (is.function(shared$company_map)) shared$company_map() else character()
+  rfcs <- unique(toupper(trimws(unname(reg$rfcs %||% character()))))
+  apply_ic_filter(df, mode = modo, code_col = PANORAMA_CODIGO_COL[[ledger]],
+                  ic_codes = build_ic_fullcodes(reg, ledger), ic_rfcs = rfcs[nzchar(rfcs)],
+                  cmap = cmap, empresas = ic_empresas_de(shared))
+}
+
+# Cobros que vencen hoy: the Calendar's own CxC rows (df_combined_AR through
+# panorama_filas_vigentes(): IC and confirmed out) whose effective date is
+# today. Generic in the ledger: "Por pagar hoy" (T89) passes the AP rows.
 panorama_cobros_hoy <- function(df_ar, hoy = Sys.Date(), base = MONEDA_BASE_OMISION) {
   if (is.null(df_ar) || !is.data.frame(df_ar) || !nrow(df_ar) || !"FechaEff" %in% names(df_ar))
     return(.pan_por_moneda(character(), numeric(), base))

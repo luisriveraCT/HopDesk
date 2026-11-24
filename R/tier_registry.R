@@ -365,6 +365,16 @@ nivel_escritura_permitida <- function(tier, key) {
 # NULL = the tier switches between Cobros and Pagos freely.
 nivel_calendario <- function(tier) .nivel(tier)$calendario
 
+# T89: does `tier` see the `libro` ledger ("AR" = CxC, "AP" = CxP)? Its
+# calendario fixed to that ledger, or NULL (both, T69). Fail-closed: an
+# unknown, empty or NULL tier sees neither (.nivel() of it is NULL, and its
+# NULL calendario would otherwise read as "both").
+nivel_ve_libro <- function(tier, libro) {
+  if (!.nivel_conocido(tier)) return(FALSE)
+  fijo <- nivel_calendario(tier)
+  is.null(fijo) || identical(fijo, libro)
+}
+
 # TRUE when `tier` ranks at or above `referencia`.
 nivel_al_menos <- function(tier, referencia) {
   a <- tier_rank(tier); b <- tier_rank(referencia)

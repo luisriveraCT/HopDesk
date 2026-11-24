@@ -130,6 +130,7 @@ ok("the SAP change checks read crudo(sap_data)",
 for (f in c("R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/avisos.R",
             "R/avisos_alertas_module.R", "R/panorama_publicar_module.R", "R/panorama_module.R"))
   suppressMessages(source(f))
+source("tests/helpers/ic_filtro_piezas.R")   # T89: panorama_filas_vigentes() needs the IC filter
 HOY <- Sys.Date()
 ph_lleno <- data.frame(ledger = "AP", status = "pending", tipo_item = "factura", Moneda = "MXN",
                        Importe = c(123456, 200), FechaVenc = HOY, stringsAsFactors = FALSE)

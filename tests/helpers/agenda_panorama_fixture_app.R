@@ -13,6 +13,7 @@ invisible(source(file.path(raiz, "tests/helpers/agenda_fixture_app.R"), local = 
 for (f in c("R/tier_registry.R", "R/permisos.R", "R/avisos.R", "R/avisos_alertas_module.R", "R/avisos_correo_vigia.R",
             "R/panorama_datos.R", "R/panorama_publicar_module.R", "R/panorama_module.R"))
   suppressMessages(sys.source(file.path(raiz, f), envir = globalenv()))
+source(file.path(raiz, "tests/helpers/ic_filtro_piezas.R"))   # T89: panorama_filas_vigentes() needs the IC filter
 # The fixture's stubs again (some files above define the real ones), and
 # Panorama's own reads: no avisos, no last visit.
 for (n in names(stubs)) assign(n, stubs[[n]], envir = globalenv())
