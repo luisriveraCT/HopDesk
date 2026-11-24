@@ -141,6 +141,12 @@ cat("\n-- Part C: functional -- per-client entries don't duplicate into hd-admin
   queued <- list()
   assign(".audit_queue", function(write_cid, row) { queued[[length(queued) + 1L]] <<- write_cid }, envir = globalenv())
   .extract_fn("R/app_audit.R", "log_action")
+  # T87: log_action() writes a staff row by class (ACCIONES_STAFF and its
+  # helpers, R/app_audit.R) -- extracted with it, as the real file has them.
+  for (e in parse("R/app_audit.R", keep.source = FALSE))
+    if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+        grepl("^(ACCIONES_STAFF|\\.?[tT]87)", as.character(e[[2]])))
+      assign(as.character(e[[2]]), eval(e[[3]], envir = globalenv()), envir = globalenv())
 
   # Mirrors the hd-admin summary call (client_id="hd-admin", home="hd-admin"
   # -- same value, no dual-write) plus 2 per-client loop calls (client_id ==
@@ -165,8 +171,11 @@ cat("\n-- Part C: functional -- per-client entries don't duplicate into hd-admin
   queued <- list()
   log_action(user = "principal", module = "tiers", action = "hop_access_approved",
             description = "test", client_id = "networks", viewer_home_client_id = "hd-admin")
-  ok("hop_access_approved's shape (client_id != viewer_home_client_id) still dual-writes to both logs",
-     length(queued) == 2L && "networks" %in% queued && "hd-admin" %in% queued)
+  # T87 (Luis, 2026-11-24): the client still learns that staff had access, but
+  # from the neutral entry/exit line (acceso_staff_*); the access process
+  # (approved, denied, revoked) is the staff's own (S): hd-admin only.
+  ok("T87: hop_access_approved (S) goes to hd-admin only, never to the client's log",
+     length(queued) == 1L && identical(unlist(queued), "hd-admin"))
 }
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

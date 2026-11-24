@@ -106,6 +106,11 @@ saltar <- function(falla_carga = character(), falla_estricta = character(), fall
   ent$tr <- function(clave, ...) clave
   ent$tr_n <- function(clave, n, ...) paste0(clave, "|", n)
   ent$log_action <- function(...) { registro[[length(registro) + 1L]] <<- list(...); invisible() }
+  # T87: the jump's entry/exit (tests/test_t87_catalogo.R covers it) and the
+  # state it keeps: the client left, and a forced exit's reason.
+  ent$t87_registrar_salto <- function(...) invisible(TRUE)
+  ent$.salto_anterior <- "A"
+  if (!exists("session", envir = ent, inherits = FALSE)) ent$session <- list(userData = new.env())
   error <- tryCatch({ suppressMessages(eval(manejador, ent)); NULL }, error = function(e) conditionMessage(e))
   list(ent = ent, avisos = avisos, registro = registro, error = error)
 }

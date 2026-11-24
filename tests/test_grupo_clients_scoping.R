@@ -167,6 +167,12 @@ cat("\n-- Part C: functional -- log_action() dual-write, exercised the way the f
   queued <- list()
   assign(".audit_queue", function(write_cid, row) { queued[[length(queued) + 1L]] <<- list(cid = write_cid, row = row) }, envir = globalenv())
   .extract_fn("R/app_audit.R", "log_action")
+  # T87: log_action() writes a staff row by class (ACCIONES_STAFF and its
+  # helpers, R/app_audit.R) -- extracted with it, as the real file has them.
+  for (e in parse("R/app_audit.R", keep.source = FALSE))
+    if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+        grepl("^(ACCIONES_STAFF|\\.?[tT]87)", as.character(e[[2]])))
+      assign(as.character(e[[2]]), eval(e[[3]], envir = globalenv()), envir = globalenv())
 
   # Mirrors aprobacion_cliente's exact call shape after the fix: a NEW
   # client as client_id, the reviewer's real home ("hd-admin") as
@@ -175,11 +181,11 @@ cat("\n-- Part C: functional -- log_action() dual-write, exercised the way the f
             description = "test", target_id = "newclient",
             client_id = "newclient", viewer_home_client_id = "hd-admin")
 
-  ok("dual-write fires exactly twice (once per log) when client_id != viewer_home_client_id",
-     length(queued) == 2L)
+  # T87 (Luis, 2026-11-24): approving a client is the staff's own action (S):
+  # hd-admin keeps it whole, the client's folder gets nothing of it.
   cids_written <- vapply(queued, function(q) q$cid, character(1))
-  ok("the new client's OWN log receives the entry", "newclient" %in% cids_written)
-  ok("hd-admin's log ALSO receives the entry (Hopdesk's own record of the approval)", "hd-admin" %in% cids_written)
+  ok("T87: aprobacion_cliente (S) is written once, to hd-admin only", identical(cids_written, "hd-admin"))
+  ok("T87: ...and never to the new client's own log", !"newclient" %in% cids_written)
 
   # Control: when they're the SAME (e.g. a client's own dev user acting in
   # their own vacuum), only one write happens -- dual-write must not fire

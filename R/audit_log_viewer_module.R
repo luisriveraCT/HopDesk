@@ -1005,7 +1005,7 @@ auditLogViewerServer <- function(id, shared, mode,
 
     # T87: Bitácora Global's reads are in the staff log -- which log was read,
     # by whom, at most once per client per minute (consulta_bitacora is S:
-    # log_action() writes it to hd-admin only, never to the client read).
+    # the log writes it to hd-admin only, never to the client read).
     if (identical(mode, "multi_client")) {
       .consultas <- new.env(parent = emptyenv())
       observeEvent(fetched(), {

@@ -113,7 +113,7 @@ Sys.unsetenv("RESEND_API_KEY")
 AJENOS <- c("x@beta.mx", "Beta Uno", "Beta Transportes", "admin@beta.mx", "tok-beta-1")
 
 # The label for staff, from the dictionary once it exists.
-ETIQUETA <- tryCatch({ e <- i18n_dict("es")[["staff.etiqueta"]]; if (is.null(e)) "HD Staff" else e },
+ETIQUETA <- tryCatch({ e <- i18n_dict("es")[["comun.staff.etiqueta"]]; if (is.null(e)) "HD Staff" else e },
                      error = function(e) "HD Staff")
 
 # ── What the canary does inside acme (log_action as each call site does) ────

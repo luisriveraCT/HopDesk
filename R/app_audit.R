@@ -440,15 +440,15 @@ ACCIONES_STAFF <- list(
   reintentar_email        = list(clase = "S"),
   consulta_bitacora       = list(clase = "S"),
   sin_evento              = list(clase = "S"),
-  cambio_limite_usuarios  = list(clase = "N", texto = "actividad.neutral.cambio_limite",
+  cambio_limite_usuarios  = list(clase = "N", texto = "tablas.actividad.neutral.cambio_limite",
                                  params = function(m) list(antes = m$old_max_users %||% m$old_limit %||% "?",
                                                            despues = m$new_max_users %||% m$new_limit %||% "?"),
                                  deja = c("old_max_users", "new_max_users")),
-  user_deactivated_by_limit_reduction = list(clase = "N", texto = "actividad.neutral.cuenta_desactivada",
+  user_deactivated_by_limit_reduction = list(clase = "N", texto = "tablas.actividad.neutral.cuenta_desactivada",
                                  params = function(m) list(nombre = m$nombre %||% m$cuenta %||% "?"),
                                  deja = c("nombre")),
-  acceso_staff_entrada    = list(clase = "A", texto = "actividad.acceso.entrada"),
-  acceso_staff_salida     = list(clase = "A", texto = "actividad.acceso.salida"))
+  acceso_staff_entrada    = list(clase = "A", texto = "tablas.actividad.acceso.entrada"),
+  acceso_staff_salida     = list(clase = "A", texto = "tablas.actividad.acceso.salida"))
 
 # A staff jump, entry and exit (T87): `anterior` is the client being LEFT
 # (the jump's previous value), `nuevo` the one entered (NULL/"" = home). The
