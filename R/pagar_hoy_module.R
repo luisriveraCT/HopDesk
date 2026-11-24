@@ -1899,13 +1899,13 @@ pagarHoyServer <- function(id, shared) {
           # ordering also means a crash/error during generate_ppl()/write_ppl()
           # below can never produce a downloaded file with no matching log
           # entry -- the log always exists first.
+          fname_ind <- paste0("pagos_", emp, "_", format(hoy(), "%d%m%Y"), "_001.txt")
           .log_pago_generado(
             shared, emp, cur_sel, cuenta_origen, ppl_rows,
-            fname = paste0("pagos_", emp, "_", format(hoy(), "%d%m%Y"), "_001.txt"),
+            fname = fname_ind,
             source_type = "individual", banco_origen = banco_origen
           )
-          .ph_log_bancos_como_antes(shared, emp, cur_sel, ppl_rows,
-                                    paste0("pagos_", emp, "_", format(hoy(), "%d%m%Y"), "_001.txt"))
+          .ph_log_bancos_como_antes(shared, emp, cur_sel, ppl_rows, fname_ind)
           # T94: the file's currency and, for SPID, the classification chosen
           # in the preview -- checked against the guide's codes, never used raw.
           lines <- generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur_sel,
