@@ -439,7 +439,10 @@ for (t in con_puente) {
   }
   for (p in list(c("primario", "primario-suave"), c("exito-texto", "exito-suave"), c("peligro-texto", "peligro-suave"),
                  c("aviso-texto", "aviso-suave"), c("info", "info-suave"), c("enlace", "fondo"), c("texto-2", "fondo"),
-                 c("primario", "superficie"), c("texto", "hover"))) {
+                 c("primario", "superficie"), c("texto", "hover"),
+                 # TEMA 6-8: .bg-secondary (white on texto-2), .badge.bg-light and the light /
+                 # secondary alerts (texto-2 / texto on superficie-2).
+                 c("texto-inverso", "texto-2"), c("texto-2", "superficie-2"), c("texto", "superficie-2"))) {
     r <- contraste(tk[[p[1]]], tk[[p[2]]])
     ok(sprintf("[%s] bridge %s on %s = %.2f >= 4.5", t, p[1], p[2], r), r >= 4.5)
   }

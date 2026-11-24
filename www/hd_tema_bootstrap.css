@@ -49,6 +49,54 @@ html[data-hd-tema="marca"] {
   --bs-info-text-emphasis: var(--hd-info);
   --bs-info-bg-subtle: var(--hd-info-suave);
   --bs-info-border-subtle: var(--hd-borde-fuerte);
+  --bs-secondary: var(--hd-texto-2);
+  --bs-secondary-rgb: 90, 100, 116;
+  --bs-secondary-text-emphasis: var(--hd-texto);
+  --bs-secondary-bg-subtle: var(--hd-superficie-2);
+  --bs-secondary-border-subtle: var(--hd-borde);
+  --bs-light: var(--hd-superficie-2);
+  --bs-light-rgb: 243, 241, 234;
+  --bs-light-text-emphasis: var(--hd-texto-2);
+  --bs-light-bg-subtle: var(--hd-superficie);
+  --bs-light-border-subtle: var(--hd-borde);
+  --bs-dark: var(--hd-texto);
+  --bs-dark-rgb: 26, 34, 51;
+  --bs-dark-text-emphasis: var(--hd-texto);
+  --bs-dark-bg-subtle: var(--hd-primario-suave);
+  --bs-dark-border-subtle: var(--hd-borde-fuerte);
+  --bs-secondary-bg: var(--hd-superficie-2);
+  --bs-secondary-bg-rgb: 243, 241, 234;
+  --bs-tertiary-bg: var(--hd-fondo);
+  --bs-tertiary-bg-rgb: 247, 246, 242;
+  --bs-border-color-translucent: var(--hd-borde);
+}
+html[data-hd-tema="marca"] .alert-light {
+  background-color: var(--hd-superficie-2);
+}
+html[data-hd-tema="marca"] .alert-light,
+html[data-hd-tema="marca"] .alert-light a,
+html[data-hd-tema="marca"] .alert-light .alert-link {
+  color: var(--hd-texto);
+}
+html[data-hd-tema="marca"] .alert-secondary {
+  background-color: var(--hd-superficie-2);
+  color: var(--hd-texto);
+}
+html[data-hd-tema="marca"] .bg-light {
+  color: var(--hd-texto);
+  --bslib-color-bg: var(--hd-superficie-2);
+  --bslib-color-fg: var(--hd-texto);
+}
+html[data-hd-tema="marca"] .badge.bg-light {
+  color: var(--hd-texto-2);
+}
+html[data-hd-tema="marca"] .bg-secondary {
+  color: var(--hd-texto-inverso);
+  --bslib-color-bg: var(--hd-texto-2);
+  --bslib-color-fg: var(--hd-texto-inverso);
+}
+html[data-hd-tema="marca"] .text-dark {
+  --bslib-color-fg: var(--hd-texto);
 }
 html[data-hd-tema="marca"] h1,
 html[data-hd-tema="marca"] h2,
