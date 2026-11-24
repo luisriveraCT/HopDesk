@@ -122,6 +122,8 @@ ui <- bslib::page_navbar(
     app_scripts(),
     tags$link(rel = "stylesheet", type = "text/css", href = "cashflow_preview.css?v=7"),
     tema_head(),   # theme tokens (www/hd_temas.css) + <html data-hd-tema>, R/tema_registro.R
+    # T88-1b: the loading overlay on the app page too, in <head> so it paints before the first frame (www/overlay_init.js)
+    tags$head(tags$script(src = "overlay_init.js?v=9", `data-pagina` = "app")),
     # Brand tokens (navy, gold, Fraunces) and Panorama, each under its root class.
     tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=1"),
     tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=1"),
@@ -634,7 +636,7 @@ secured_ui <- shinymanager::secure_app(
 
     # ── Loading overlay (www/overlay_init.js) ────────────────────────────────
     i18n_head_parcial("cuentas.carga."),   # its texts: the sign-in page has no whole dictionary
-    tags$script(src = "overlay_init.js?v=8"),
+    tags$script(src = "overlay_init.js?v=9"),
 
     .hopdesk_brandmark(tr("cuentas.entrar.subtitulo"))
   ),
