@@ -1495,6 +1495,7 @@
   "tablas.agenda.aviso.cobros_quitados": "{n} collection(s) removed.",
   "tablas.agenda.aviso.confirmada_agenda_no": "The confirmation was recorded, but the Agenda could not be updated after {n} attempt(s) (possible connection problem). Reload the page; if the item is still in the Agenda, confirm it again.",
   "tablas.agenda.aviso.error_abono": "Error saving the partial payment: {error}",
+  "tablas.agenda.log.abono_no_aplicado": "{n} partial payment(s) not applied: couldn't save",
   "tablas.agenda.aviso.error_archivar_manual": "Error archiving the manual entry: {error}",
   "tablas.agenda.aviso.error_eliminar_manual": "Error deleting the manual entry: {error}",
   "tablas.agenda.aviso.pagos_confirmados_error": "Payment(s) confirmed, but something failed while processing the related partial payments/archiving: {error}",

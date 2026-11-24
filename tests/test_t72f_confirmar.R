@@ -187,6 +187,24 @@ for (ledger in c("AP", "AR")) {
   ok(sprintf("%s 3 save_pagar_hoy_with_retry: the failed attempt leaves no /parte, the one that wrote leaves one", ledger),
      length(ag_partes) == 1L && length(final(r, ledger)) == 1L)
 
+  # ── 4 (a): the abono's save fails ───────────────────────────────────────
+  FALLA <- list(key = k("abonos"), n = 0L)
+  r <- correr(ledger); FALLA <- NULL
+  f <- final(r, ledger)
+  ok(sprintf("%s 4 (a) control: the abono failed -> its error notice, as before", ledger),
+     any(startsWith(r$avisos, substr(tr("tablas.agenda.aviso.error_abono", error = ""), 1, 20))))
+  ok(sprintf("%s 4 (a) the log no longer says 'aplicado': it says the abono was not applied", ledger),
+     length(f) == 1L && !grepl("aplicado", f[[1]]$description) &&
+       grepl(tr("tablas.agenda.log.abono_no_aplicado", n = 1L), f[[1]]$description, fixed = TRUE))
+  ok(sprintf("%s 4 (a) …the user sees it in the summary notice", ledger),
+     any(grepl(tr("tablas.agenda.log.abono_no_aplicado", n = 1L), r$avisos, fixed = TRUE)) &&
+       !any(grepl("abono(s) aplicado(s)", r$avisos, fixed = TRUE)))
+  ok(sprintf("%s 4 (a) …and the log's metadata says why (abono_error); no abonos /parte", ledger),
+     grepl("simulated S3 write failure", f[[1]]$metadata$abono_error %||% "", fixed = TRUE) &&
+       !any(vapply(partes(r, ledger), function(x) identical(x$metadata$tabla, S3_KEYS$abonos), NA)))
+  ok(sprintf("%s 4 (a) control: when it worked, no abono_error key (the success row of always)", ledger),
+     is.null(final(con, ledger)[[1]]$metadata$abono_error) && grepl("abono(s) aplicado(s)", final(con, ledger)[[1]]$description, fixed = TRUE))
+
 }
 
 utils::assignInNamespace("UUIDgenerate", .uuid_orig, "uuid")

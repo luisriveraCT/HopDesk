@@ -1789,6 +1789,7 @@ pagarHoyServer <- function(id, shared) {
         # T72-F: every write of this action leaves a staff-only "/parte" trace once
         # it worked; the client's one row stays the log_action below (and its
         # _incompleto), word for word.
+        abono_error <- NULL   # T72-F (a): the abono's save error, if it failed
         .parte_ap <- evento_parte_de("confirmar_pago", "pagar_hoy", shared$current_user(),
                                     tryCatch(shared$home_client_id(), error = function(e) NULL))
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
@@ -1958,8 +1959,10 @@ pagarHoyServer <- function(id, shared) {
             shared$abonos_db(modificar_abonos(function(ab) upsert_abono(ab, ab_new),
                                               client_id = shared$effective_client_id(), evento = .parte_ap))
             bump_sync_version("abonos_db", client_id = shared$effective_client_id())
-          }, error = function(e) showNotification(
-                     tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning"))
+          }, error = function(e) {
+            abono_error <<- conditionMessage(e)
+            showNotification(tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning")
+          })
         }
 
         # Plain manual entries (no provision_id): archive instead of
@@ -2108,12 +2111,13 @@ pagarHoyServer <- function(id, shared) {
           n_abono <- nrow(abono_rows)
           msg <- character(0)
           if (n_pago  > 0) msg <- c(msg, paste0(n_pago,  " pago(s) confirmado(s)"))
-          if (n_abono > 0) msg <- c(msg, paste0(n_abono, " abono(s) aplicado(s) al saldo"))
+          if (n_abono > 0) msg <- c(msg, if (is.null(abono_error)) paste0(n_abono, " abono(s) aplicado(s) al saldo")
+                                         else tr("tablas.agenda.log.abono_no_aplicado", n = n_abono))
           showNotification(paste(msg, collapse = " · "), type = "message", duration = 3)
           log_action(shared$current_user(), "pagar_hoy", "confirmar_pago",
                      paste(msg, collapse = " · "),
                      target_id = emp,
-                     metadata = list(empresa = emp, n_pago = n_pago, n_abono = n_abono,
+                     metadata = c(list(empresa = emp, n_pago = n_pago, n_abono = n_abono,
                                      sap_ids = sap_fact_ids, man_ids = man_fact_ids,
                                      moneda = as.character(cur %||% NA_character_),
                                      cuenta_id = as.character(cuenta_sel %||% NA_character_),
@@ -2121,6 +2125,7 @@ pagarHoyServer <- function(id, shared) {
                                      pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago),
                                      secondary_error = if (inherits(secondary_err_ap, "error"))
                                        conditionMessage(secondary_err_ap) else NA_character_),
+                                  if (!is.null(abono_error)) list(abono_error = abono_error)),
                      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
                      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
           avisos_actividad(shared$effective_client_id(), "confirmar_pago", shared$current_user(), list(cuerpo = paste(c(emp, msg), collapse = " · ")))
@@ -2187,6 +2192,7 @@ pagarHoyServer <- function(id, shared) {
         # T72-F: every write of this action leaves a staff-only "/parte" trace once
         # it worked; the client's one row stays the log_action below (and its
         # _incompleto), word for word.
+        abono_error <- NULL   # T72-F (a): the abono's save error, if it failed
         .parte_ar <- evento_parte_de("confirmar_cobro", "pagar_hoy", shared$current_user(),
                                     tryCatch(shared$home_client_id(), error = function(e) NULL))
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AR")
@@ -2328,8 +2334,10 @@ pagarHoyServer <- function(id, shared) {
             shared$abonos_db(modificar_abonos(function(ab) upsert_abono(ab, ab_new),
                                               client_id = shared$effective_client_id(), evento = .parte_ar))
             bump_sync_version("abonos_db", client_id = shared$effective_client_id())
-          }, error = function(e) showNotification(
-                     tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning"))
+          }, error = function(e) {
+            abono_error <<- conditionMessage(e)
+            showNotification(tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning")
+          })
         }
 
         # Plain manual entries (no provision_id): archive instead of
@@ -2478,12 +2486,13 @@ pagarHoyServer <- function(id, shared) {
           n_abono <- nrow(abono_rows)
           msg <- character(0)
           if (n_cobro  > 0) msg <- c(msg, paste0(n_cobro,  " cobro(s) confirmado(s)"))
-          if (n_abono  > 0) msg <- c(msg, paste0(n_abono,  " abono(s) aplicado(s) al saldo"))
+          if (n_abono  > 0) msg <- c(msg, if (is.null(abono_error)) paste0(n_abono,  " abono(s) aplicado(s) al saldo")
+                                          else tr("tablas.agenda.log.abono_no_aplicado", n = n_abono))
           showNotification(paste(msg, collapse = " · "), type = "message", duration = 3)
           log_action(shared$current_user(), "pagar_hoy", "confirmar_cobro",
                      paste(msg, collapse = " · "),
                      target_id = emp,
-                     metadata = list(empresa = emp, n_cobro = n_cobro, n_abono = n_abono,
+                     metadata = c(list(empresa = emp, n_cobro = n_cobro, n_abono = n_abono,
                                      sap_ids = sap_fact_ids, man_ids = man_fact_ids,
                                      moneda = as.character(cur %||% NA_character_),
                                      cuenta_id = as.character(cuenta_sel %||% NA_character_),
@@ -2491,6 +2500,7 @@ pagarHoyServer <- function(id, shared) {
                                      cobros = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_cobro),
                                      secondary_error = if (inherits(secondary_err_ar, "error"))
                                        conditionMessage(secondary_err_ar) else NA_character_),
+                                  if (!is.null(abono_error)) list(abono_error = abono_error)),
                      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
                      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
         }
