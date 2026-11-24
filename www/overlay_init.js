@@ -292,7 +292,13 @@
     }
 
     /* 5b -- The open tab: the outermost active pane. Ready when nothing in it
-       is recalculating and at least one of its outputs has something drawn. */
+       is recalculating and at least one of its outputs has something drawn --
+       counting only what is laid out (offsetParent): an output inside a
+       hidden panel is suspended by Shiny and keeps .recalculating forever
+       (Panorama's "Publicar" outputs, seen in Chrome, T88-1b). The cover
+       uses visibility:hidden, which keeps offsetParent, so it never hides
+       anything from this check. */
+    function _visible(e) { return e.offsetParent !== null || getComputedStyle(e).position === 'fixed'; }
     function _pestanaLista() {
       var panes = document.querySelectorAll('.tab-pane.active');
       var pane = null;
@@ -300,10 +306,11 @@
         if (!panes[i].parentElement || !panes[i].parentElement.closest('.tab-pane')) { pane = panes[i]; break; }
       }
       if (!pane) return false;
-      if (pane.querySelector('.recalculating, .shiny-output-recalculating')) return false;
+      var rec = pane.querySelectorAll('.recalculating, .shiny-output-recalculating');
+      for (var r = 0; r < rec.length; r++) if (_visible(rec[r])) return false;
       var outs = pane.querySelectorAll('.shiny-bound-output');
       for (var j = 0; j < outs.length; j++) {
-        if (outs[j].children.length || (outs[j].textContent || '').trim()) return true;
+        if (_visible(outs[j]) && (outs[j].children.length || (outs[j].textContent || '').trim())) return true;
       }
       return false;
     }

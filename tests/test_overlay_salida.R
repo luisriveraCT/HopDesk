@@ -159,6 +159,12 @@ ok("3d  busy and idle come from Shiny's own events",
 ok("3e  the open tab: the outermost active pane, nothing recalculating, something drawn",
    grepl("closest('.tab-pane')", js_txt, fixed = TRUE) && grepl(".shiny-output-recalculating", js_txt, fixed = TRUE) &&
      grepl("querySelectorAll('.shiny-bound-output')", js_txt, fixed = TRUE))
+# Chrome (T88-1b): Panorama's hidden "Publicar" outputs keep .recalculating
+# forever; counted, the overlay could only ever leave by its cap.
+ok("3e2 only what is laid out counts: a hidden output that keeps .recalculating does not hold the overlay",
+   grepl("for (var r = 0; r < rec.length; r++) if (_visible(rec[r])) return false;", js_txt, fixed = TRUE) &&
+     grepl("if (_visible(outs[j]) && (outs[j].children.length", js_txt, fixed = TRUE) &&
+     grepl("function _visible(e) { return e.offsetParent !== null", js_txt, fixed = TRUE))
 ok("3f  every sessionStorage touch is inside a try (3 of them)",
    lengths(regmatches(js_txt, gregexpr("try \\{ (v = JSON\\.parse\\()?window\\.sessionStorage\\.", js_txt))) == 3L &&
      lengths(regmatches(js_txt, gregexpr("sessionStorage\\.", js_txt))) == 3L)
