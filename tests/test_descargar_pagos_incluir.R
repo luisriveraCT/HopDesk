@@ -40,7 +40,10 @@ agenda_zip <- dplyr::bind_rows(agenda0, pago("P7", "SERVICIOS BAJIO SA", "4007",
 # The _001 reference of test_descargar_pagos_zip_bytes (taken on 03638ae).
 REF_001 <- c(
   "pagos_Networks Trucking Services_MXN_05112026_001.txt" = "88ccbd2565271b0503d6a35c73f8a760",
-  "pagos_Networks Trucking Services_USD_05112026_001.txt" = "859d61c30e95a4c7bd4dc8427d1bd8d5",
+  # T94: the USD file differs from master 03638ae's only in its payment row's
+  # divisa (pos. 32-33, "01" -> "02") and SPID classification (383-384,
+  # "00" -> "07 Otro"), as BanBajío's guide asks; the MXN files are untouched.
+  "pagos_Networks Trucking Services_USD_05112026_001.txt" = "036eb0e0f96d9cae12a60e1419848a58",
   "pagos_Otra Empresa SA_MXN_05112026_001.txt"            = "bc8470924a0986306a121970f843de4e")
 
 LOGS <- list(); AVISOS <- character()

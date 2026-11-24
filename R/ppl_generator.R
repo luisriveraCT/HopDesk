@@ -11,30 +11,40 @@
 #   02 = Detail  (384 chars)
 #        [0:2]    "02"
 #        [2:9]    seq(7)
-#        [9:11]   "01"
-#        [11:19]  "00000000"        8 zeros
-#        [19:31]  origen(12)        origin account, zero-padded (e.g. 073543010201)
-#        [31:35]  "0140"            product code
-#        [35:38]  banco(3)          dest bank CECOBAN code (first 3 digits of CLABE for SPI;
-#                                   "030" for BCO internal Bajío transfers)
+#        [9:11]   "01"              origin account type (01 = cheques)
+#        [11:19]  "00000000"        8 zeros    } origin account, 20 digits
+#        [19:31]  origen(12)        zero-padded} (e.g. 073543010201)
+#        [31:33]  divisa(2)         "01" pesos | "02" dólar (PPL_DIVISAS, T94)
+#        [33:38]  banco(5)          receiving bank, BanBajío's Anexo 4 key (PPL_BANCOS,
+#                                   T94): from the CLABE's first 3 digits (SPI/SPD);
+#                                   "40030" for BCO internal Bajío transfers
 #        [38:53]  importe(15)       centavos, zero-padded, no decimal
 #        [53:61]  fecha(8)          YYYYMMDD
 #        [61:64]  medio(3)          "SPI" | "BCO"
-#        [64:68]  pfx(4)            "4000" SPI | "0100" BCO
+#        [64:68]  pfx(4)            account type "40" CLABE | "01" BCO, then "00"
 #        [68:86]  clabe(18)         destination CLABE (SPI) or internal acct (BCO)
-#        [86:95]  "000000000"       IVA = 0
+#        [86:95]  "000000000"       filler
 #        [95:110] alias(15)         left-aligned, space-padded, UPPERCASE
-#        [110:125]"000000000000000" 15 zeros
-#        [125:373]concepto(248)     left-aligned, space-padded
-#        [373:375]"  "              2 spaces
-#        [375:384]"000000000"       trailing zeros
+#        [110:125]"000000000000000" IVA = 0
+#        [125:373]concepto(248)     left-aligned, space-padded  } Referencia, 250
+#        [373:375]"  "              2 spaces                    }
+#        [375:382]"0000000"         Referencia SPEI/SPID: zeros, the bank computes it
+#        [382:384]clasif(2)         "00"; SPID: the operation's classification
+#                                   (PPL_CLASIFICACIONES, T94)
+#
+# Positions as in BanBajío's "Guía Operativa Enlace Empresarial" v01.2026,
+# layout "Pago a Proveedores" (pp. 26-27) -- the same bytes BajíoNet takes.
 #
 #   09 = Trailer (34 chars)
 #        type(2) + seq(7) + count(7) + total_centavos(18)
 # =============================================================================
 
+# moneda: the file's currency (a code of PPL_DIVISAS). NULL = "01" (pesos),
+# what every file carried before T94. clasificacion: the SPID operation's
+# classification, used only when ppl_requiere_clasificacion(moneda);
+# validated against PPL_CLASIFICACIONES (ppl_clasificacion()).
 generate_ppl <- function(payments, cuenta_origen, fecha = Sys.Date(),
-                         consecutivo = 1L) {
+                         consecutivo = 1L, moneda = NULL, clasificacion = NULL) {
   stopifnot(is.data.frame(payments), nrow(payments) > 0)
   # The ORIGIN account is never blank or all zeros (CM30): zpad() below
   # would turn "" into "000000000000", a file the bank cannot debit from.
@@ -56,6 +66,12 @@ generate_ppl <- function(payments, cuenta_origen, fecha = Sys.Date(),
   # origen: exactly 12 digits, zero-padded
   origen12 <- zpad(cuenta_origen, 12)
 
+  # T94: the file's currency and, for SPID, its classification.
+  divisa_s <- if (is.null(moneda)) "01" else unname(PPL_DIVISAS[toupper(trimws(as.character(moneda)))])
+  if (length(divisa_s) != 1L || is.na(divisa_s))
+    stop("generate_ppl: currency not in BanBajío's PPL (", paste(moneda, collapse = ","), "); nothing was generated", call. = FALSE)
+  clasif_s <- if (!is.null(moneda) && ppl_requiere_clasificacion(moneda)) ppl_clasificacion(clasificacion) else "00"
+
   # ── Header ─────────────────────────────────────────────────────────────────
   header <- paste0("01", "0000001", fecha_s, consec_s)   # 20 chars
 
@@ -73,17 +89,20 @@ generate_ppl <- function(payments, cuenta_origen, fecha = Sys.Date(),
     # OR medio_pago is explicitly set to "BCO".
     # For BCO: banco=030, pfx=0100. The clabe field already holds the account
     # number zero-padded to 18 — no change needed to that field.
-    banco_field <- toupper(trimws(as.character(p$banco_dest %||% "")))
     medio_raw   <- toupper(trimws(as.character(p$medio_pago %||% "SPI")))
-    is_bajio    <- grepl("^030", banco_field) || grepl("BAJIO", banco_field, fixed = TRUE)
+    is_bajio    <- ppl_es_bajio(p$banco_dest %||% "", medio_raw)
+    # T94: the receiving bank's 5-digit key from BanBajío's catalog -- it was
+    # "40" + the CLABE's first 3 digits, right only for the 40xxx banks.
+    banco_s <- ppl_banco_destino(p$clabe_dest, p$banco_dest %||% "", medio_raw)
+    if (is.na(banco_s))
+      stop(sprintf("generate_ppl: row %d, the receiving bank of CLABE prefix %s is not in BanBajío's catalog; nothing was generated",
+                   i, substr(clabe, 1, 3)), call. = FALSE)
 
-    if (is_bajio || medio_raw == "BCO") {
+    if (is_bajio) {
       medio    <- spad("BCO", 3)
-      banco_s  <- "030"
       bank_pfx <- "0100"
     } else {
       medio    <- spad(medio_raw, 3)
-      banco_s  <- substr(clabe, 1, 3)
       bank_pfx <- "4000"
     }
 
@@ -92,13 +111,13 @@ generate_ppl <- function(payments, cuenta_origen, fecha = Sys.Date(),
 
     row <- paste0(
       "02", seq_s, "01", "00000000",    # [0:19]
-      origen12, "0140",                  # [19:35]  12+4
-      banco_s,                           # [35:38]
+      origen12, divisa_s,                # [19:33]  12+2
+      banco_s,                           # [33:38]  5
       imp_s, fecha_s, medio, bank_pfx,  # [38:68]  15+8+3+4
       clabe, "000000000",               # [68:95]  18+9
       alias_s, "000000000000000",       # [95:125] 15+15
       conc_s,                            # [125:373]
-      "  ", "000000000"                  # [373:384]
+      "  ", "0000000", clasif_s          # [373:384] 2+7+2
     )
     if (nchar(row) != 384)
       stop(sprintf(
@@ -168,6 +187,96 @@ PPL_MONEDAS <- c("MXN", "USD")
 
 # TRUE when the PPL file can carry payments in `moneda`.
 ppl_moneda_soportada <- function(moneda) toupper(moneda) %in% PPL_MONEDAS
+
+# ── BanBajío's PPL codes (T94) ───────────────────────────────────────────────
+# Source of all three: BanBajío, "Guía Operativa Enlace Empresarial BanBajío",
+# versión 01.2026 -- layout "Pago a Proveedores" (pp. 26-27) and Anexo 4,
+# "Catálogo de bancos" (pp. 62-63). Bank rules, not the app's: when the bank
+# publishes a new guide, this is the one place to update.
+
+# Field 5, "Código de Divisa": the file's currency.
+PPL_DIVISAS <- c(MXN = "01", USD = "02")
+
+# Field 17, "Clasificación de la operación" -- the guide: "Si la transacción
+# es un SPID, se debe clasificar la operación". Code -> its i18n key. Luis's
+# treasury picks "07 Otro" in BajíoNet today, so that is the default.
+PPL_CLASIFICACIONES <- c(
+  "01" = "tablas.ppl.clasif_01", "02" = "tablas.ppl.clasif_02", "03" = "tablas.ppl.clasif_03",
+  "04" = "tablas.ppl.clasif_04", "05" = "tablas.ppl.clasif_05", "06" = "tablas.ppl.clasif_06",
+  "07" = "tablas.ppl.clasif_07")
+PPL_CLASIFICACION_DEFECTO <- "07"
+
+# The value to write: `x` only when it is one of the guide's codes; anything
+# else (NULL, "", what a browser sent made up) is the default. Never the raw input.
+ppl_clasificacion <- function(x) {
+  x <- if (is.null(x) || !length(x)) "" else trimws(as.character(x[[1]]))
+  if (!is.na(x) && x %in% names(PPL_CLASIFICACIONES)) x else PPL_CLASIFICACION_DEFECTO
+}
+
+# Field 6, "Banco Receptor": Anexo 4, keyed by the CLABE's first 3 digits
+# (the last 3 of every key; no two institutions share them). 123 entries,
+# read from the guide's text: 40xxx banca múltiple, 37xxx desarrollo, 90xxx
+# others (STP, Nu, Klar, Mercado Pago...), 91xxx second keys, 2001 Banxico.
+PPL_BANCOS <- c(
+  "001" = "2001", "002" = "40002", "006" = "37006", "009" = "37009", "012" = "40012", "014" = "40014",
+  "019" = "37019", "021" = "40021", "030" = "40030", "036" = "40036", "037" = "40037", "042" = "40042",
+  "044" = "40044", "058" = "40058", "059" = "40059", "060" = "40060", "062" = "40062", "072" = "40072",
+  "102" = "40102", "103" = "40103", "106" = "40106", "108" = "40108", "110" = "40110", "112" = "40112",
+  "113" = "40113", "124" = "40124", "126" = "40126", "127" = "40127", "128" = "40128", "129" = "40129",
+  "130" = "40130", "132" = "40132", "133" = "40133", "135" = "37135", "136" = "40136", "137" = "40137",
+  "138" = "40138", "140" = "40140", "141" = "40141", "145" = "40145", "147" = "40147", "148" = "40148",
+  "150" = "40150", "151" = "40151", "152" = "40152", "154" = "40154", "155" = "40155", "156" = "40156",
+  "157" = "40157", "158" = "40158", "159" = "40159", "160" = "40160", "166" = "37166", "167" = "40167",
+  "168" = "37168", "600" = "90600", "601" = "90601", "602" = "90602", "605" = "90605", "606" = "90606",
+  "613" = "90613", "614" = "90614", "616" = "90616", "617" = "90617", "620" = "90620", "621" = "90621",
+  "623" = "90623", "626" = "90626", "627" = "90627", "630" = "90630", "631" = "90631", "634" = "90634",
+  "636" = "90636", "637" = "90637", "638" = "90638", "640" = "90640", "642" = "90642", "646" = "90646",
+  "648" = "90648", "649" = "90649", "652" = "90652", "653" = "90653", "655" = "90655", "656" = "90656",
+  "659" = "90659", "661" = "90661", "670" = "90670", "671" = "90671", "674" = "90674", "677" = "90677",
+  "678" = "90678", "679" = "90679", "680" = "90680", "683" = "90683", "684" = "90684", "685" = "90685",
+  "686" = "90686", "687" = "90687", "688" = "90688", "699" = "90699", "703" = "90703", "706" = "90706",
+  "710" = "90710", "715" = "90715", "720" = "90720", "721" = "90721", "722" = "90722", "723" = "90723",
+  "727" = "90727", "728" = "90728", "730" = "90730", "732" = "90732", "734" = "90734", "738" = "90738",
+  "802" = "91802", "812" = "91812", "814" = "91814", "821" = "91821", "872" = "91872", "901" = "90901",
+  "902" = "90902", "903" = "90903", "927" = "91927"
+)
+
+# TRUE per row when the payment is an internal BanBajío transfer (BCO): the
+# supplier's bank says 030 / BAJIO, or its medio is BCO. generate_ppl()'s own
+# rule, here so the Agenda asks the same thing before the file is written.
+ppl_es_bajio <- function(banco_dest, medio_pago) {
+  b <- toupper(trimws(as.character(banco_dest)))
+  b[is.na(b)] <- ""
+  m <- toupper(trimws(as.character(medio_pago)))
+  m[is.na(m)] <- ""
+  grepl("^030", b) | grepl("BAJIO", b, fixed = TRUE) | m == "BCO"
+}
+
+# The 5-digit "Banco Receptor" per row; NA when the CLABE's bank is not in
+# BanBajío's catalog (the row cannot go in the file -- the Agenda says why).
+# BCO: "40030". The app's own "no account" line (CLABE in zeros, T21b's _002)
+# keeps what it always carried, "40000": BanBajío's platform completes it.
+ppl_banco_destino <- function(clabe_dest, banco_dest, medio_pago) {
+  # Padded exactly as generate_ppl() writes the CLABE field (zpad, 18).
+  cl <- trimws(as.character(clabe_dest))
+  cl[is.na(cl)] <- ""
+  cl <- substr(stringr::str_pad(cl, 18, "left", "0"), 1, 18)
+  pref <- substr(cl, 1, 3)
+  out  <- unname(PPL_BANCOS[pref])
+  out  <- ifelse(is.na(out), NA_character_, stringr::str_pad(out, 5, "left", "0"))
+  out[grepl("^0+$", cl)] <- "40000"
+  out[ppl_es_bajio(banco_dest, medio_pago)] <- "40030"
+  out
+}
+
+# TRUE per Agenda row whose payment can go in the file as far as its bank
+# goes: the medio the file will carry (ppl_medio_pago, by the row's currency
+# and bank) and then ppl_banco_destino(). The Agenda asks this, so it never
+# keeps a copy of the medio rule.
+ppl_banco_en_catalogo <- function(clabe_dest, banco_dest, moneda) {
+  b <- dplyr::coalesce(as.character(banco_dest), "")
+  !is.na(ppl_banco_destino(clabe_dest, b, ppl_medio_pago(moneda, b)))
+}
 
 # BanBajío asks for the "Clasificación de transacción" when the file is
 # loaded on its platform for anything that is not MXN.

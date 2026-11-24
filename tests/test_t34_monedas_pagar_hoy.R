@@ -218,7 +218,10 @@ glob <- unlist(lapply(c("app.R", list.files("R", "\\.R$", full.names = TRUE, rec
            as.character(e[[2]])[1] %in% c("moneda_base", "moneda_sel", "monedas_cuentas"), logical(1))))
 ok("moneda_base / moneda_sel / monedas_cuentas are never global (integrator, condition 4)", !any(glob))
 es <- jsonlite::fromJSON("www/i18n/es.json"); en <- jsonlite::fromJSON("www/i18n/en.json")
-K <- c("requisiciones.ppl.agregar_al_catalogo", "requisiciones.ppl.banbajio_clasificacion")
+# T94: the SPID notice ("captúrala al cargar el archivo en su plataforma")
+# became a selector -- the classification now goes in the file itself --
+# so the module asks for tablas.ppl.clasificacion instead.
+K <- c("requisiciones.ppl.agregar_al_catalogo", "tablas.ppl.clasificacion")
 ok("the two PPL texts are dictionary keys, es and en", all(K %in% names(es)) && all(K %in% names(en)) &&
      all(nzchar(unlist(es[K]))) && all(nzchar(unlist(en[K]))))
 ok("the module asks the dictionary for them, and the old texts are gone",

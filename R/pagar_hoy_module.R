@@ -945,6 +945,12 @@ pagarHoyServer <- function(id, shared) {
         is.na(ap_rows$alias)                                                       ~ "no_match",
         is.na(ap_rows$clabe_dest) | trimws(ap_rows$clabe_dest) == "" |
           ap_rows$clabe_dest == "000000000000000000"                               ~ "no_clabe",
+        # T94: a CLABE whose bank is not in BanBajío's catalog (Anexo 4) cannot
+        # go in the file. Asked with the file's own rule: the medio the file
+        # will carry and its bank key (ppl_banco_en_catalogo, R/ppl_generator.R).
+        !ppl_banco_en_catalogo(ap_rows$clabe_dest, ap_rows$banco_dest,
+                               ap_rows[["Moneda"]] %||% rep(NA_character_, nrow(ap_rows)))
+                                                                                   ~ "banco_fuera_catalogo",
         TRUE                                                                       ~ "ok"
       )
       ap_rows
@@ -1009,7 +1015,8 @@ pagarHoyServer <- function(id, shared) {
       col_insignia("Archivo", "tablas.agenda.archivo", mapa = list(
         ok       = list(texto = "tablas.agenda.incluido",     tono = "exito"),
         no_clabe = list(texto = "tablas.agenda.sin_clabe",    tono = "aviso"),
-        no_match = list(texto = "tablas.agenda.sin_catalogo", tono = "peligro"))),
+        no_match = list(texto = "tablas.agenda.sin_catalogo", tono = "peligro"),
+        banco_fuera_catalogo = list(texto = "tablas.ppl.banco_fuera_catalogo", tono = "peligro"))),
       col_texto("Proveedor", "tablas.agenda.proveedor"),
       col_texto("Cuenta", "tablas.agenda.cuenta"),
       col_insignia("Tipo", "tablas.facturas.tipo", mapa = list(
@@ -1704,7 +1711,12 @@ pagarHoyServer <- function(id, shared) {
                     icon("triangle-exclamation"),
                     skip$Parte[i], " — ", monto_moneda(skip$Importe[i], cur_sel),
                     tags$span(class = "text-muted ms-1",
-                              paste0("[", .ref_label(skip$id[i], skip$Documento[i]), "]"))
+                              paste0("[", .ref_label(skip$id[i], skip$Documento[i]), "]")),
+                    # T94: the reason, when it is the receiving bank.
+                    if (identical(skip$ppl_status[i], "banco_fuera_catalogo"))
+                      tags$span(class = "badge bg-danger-subtle text-danger-emphasis ms-1",
+                                tr("tablas.ppl.motivo_banco",
+                                   prefijo = substr(stringr::str_pad(trimws(as.character(skip$clabe_dest[i])), 18, "left", "0"), 1, 3)))
                   )
                 )
               ),
@@ -1712,13 +1724,18 @@ pagarHoyServer <- function(id, shared) {
                      tr("requisiciones.ppl.agregar_al_catalogo"))
             ) else NULL,
 
-            if (ppl_requiere_clasificacion(cur_sel) &&
-                !is.null(cuenta_data) && nrow(cuenta_data) > 0 &&
-                any(grepl("(?i)baj.o", cuenta_data$banco, perl = TRUE)))
-              tags$div(class = "alert alert-info small mb-2",
-                icon("circle-info"),
-                " ", tr("requisiciones.ppl.banbajio_clasificacion"))
-            else NULL,
+            # T94: SPID asks for the operation's classification; it goes in
+            # the file (field 17). Only the guide's codes, "07 Otro" first
+            # chosen; the server checks the value again (ppl_clasificacion).
+            # The file in this currency has not been tried with the bank yet.
+            if (ppl_requiere_clasificacion(cur_sel)) tagList(
+              selectInput(ns(paste0("ppl_clasif_", emp)), tr("tablas.ppl.clasificacion"),
+                          choices = stats::setNames(names(PPL_CLASIFICACIONES),
+                                                    vapply(unname(PPL_CLASIFICACIONES), tr, character(1))),
+                          selected = PPL_CLASIFICACION_DEFECTO, width = "100%", selectize = FALSE),
+              tags$div(class = "alert alert-warning small mb-2",
+                icon("flask"), " ", tr("tablas.ppl.por_probar", moneda = cur_sel))
+            ) else NULL,
 
             if (!origen_ok)
               tags$div(class = "alert alert-warning small mb-0",
@@ -1860,7 +1877,10 @@ pagarHoyServer <- function(id, shared) {
             fname = paste0("pagos_", emp, "_", format(hoy(), "%d%m%Y"), "_001.txt"),
             source_type = "individual", banco_origen = banco_origen
           )
-          lines <- generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L)
+          # T94: the file's currency and, for SPID, the classification chosen
+          # in the preview -- checked against the guide's codes, never used raw.
+          lines <- generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur_sel,
+                                clasificacion = ppl_clasificacion(input[[paste0("ppl_clasif_", emp)]]))
           write_ppl(lines, file)
           avisos_actividad(shared$effective_client_id(), "generar_archivo_pago", shared$current_user(), list(cuerpo = paste0(emp, " · ", nrow(ppl_rows), " pago(s) · ", cur_sel)))
           removeModal()
@@ -3088,7 +3108,8 @@ pagarHoyServer <- function(id, shared) {
         col_insignia("motivo", "tablas.pagos.motivo", mapa = list(
           no_match = list(texto = "tablas.pagos.falta_alias", tono = "peligro"),
           no_clabe = list(texto = "tablas.pagos.falta_clabe", tono = "aviso"),
-          sin_origen = list(texto = "tablas.pagos.motivo_sin_origen", tono = "peligro"))),
+          sin_origen = list(texto = "tablas.pagos.motivo_sin_origen", tono = "peligro"),
+          banco_fuera_catalogo = list(texto = "tablas.ppl.banco_fuera_catalogo", tono = "peligro"))),
         col_texto("Empresa", "tablas.pagos.empresa"),
         # Every catalog currency gets its badge: the base "info", the rest
         # "exito" (T34; it was MXN info / USD exito, written by hand).
@@ -3198,7 +3219,7 @@ pagarHoyServer <- function(id, shared) {
           Importe    = Importe
         ) |>
         as.data.frame()
-      tbl$.bloqueada <- tbl$zip == "entra" | tbl$motivo %in% "sin_origen"   # what goes in, and what cannot, has no choice
+      tbl$.bloqueada <- tbl$zip == "entra" | tbl$motivo %in% c("sin_origen", "banco_fuera_catalogo")   # what goes in, and what cannot, has no choice
       .descargar_vista(tbl)
 
       showModal(modalDialog(
@@ -3282,7 +3303,10 @@ pagarHoyServer <- function(id, shared) {
               shared, emp, cur, cuenta_origen, ppl_rows,
               fname = basename(fname), source_type = "zip_bulk", banco_origen = banco_origen_z
             )
-            write_ppl(generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L), fname)
+            # T94: the currency's divisa; SPID's classification is the default
+            # ("07 Otro") -- the ZIP has no per-file selector.
+            write_ppl(generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur,
+                                   clasificacion = PPL_CLASIFICACION_DEFECTO), fname)
             results[[length(results) + 1L]] <- list(
               fname = fname,
               summary = list(
@@ -3318,7 +3342,9 @@ pagarHoyServer <- function(id, shared) {
         for (emp in unique(inc$Empresa)) {
           for (cur in unique(inc$Moneda[inc$Empresa == emp])) {
             ann_i <- .annotate_ap_cached(inc[inc$Empresa == emp & inc$Moneda == cur, , drop = FALSE], emp)
-            sin_cuenta <- c(sin_cuenta, as.character(ann_i$id[ann_i$ppl_status != "ok"]))
+            # Only rows missing the account itself; a bank outside BanBajío's
+            # catalog (T94) never goes in a file, not even this one.
+            sin_cuenta <- c(sin_cuenta, as.character(ann_i$id[ann_i$ppl_status %in% c("no_match", "no_clabe")]))
           }
         }
         inc <- inc[as.character(inc$id) %in% sin_cuenta, , drop = FALSE]
@@ -3353,7 +3379,8 @@ pagarHoyServer <- function(id, shared) {
                   paste0("pagos_", emp, "_", cur, "_", format(hoy(), "%d%m%Y"), "_002.txt"))
                 .log_pago_generado(shared, emp, cur, origen, ppl_i, fname = basename(fname_i),
                                    source_type = "zip_bulk_sin_cuenta", banco_origen = banco_o)
-                write_ppl(generate_ppl(ppl_i, origen, hoy(), 2L), fname_i)
+                write_ppl(generate_ppl(ppl_i, origen, hoy(), 2L, moneda = cur,
+                                       clasificacion = PPL_CLASIFICACION_DEFECTO), fname_i)
                 results[[length(results) + 1L]] <- list(
                   fname = fname_i,
                   summary = list(
