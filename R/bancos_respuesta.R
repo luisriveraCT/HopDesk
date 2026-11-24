@@ -181,6 +181,22 @@ btr_registro <- function(pagos) {
   ifelse(r %in% c("correcto", "editado", "agregado"), r, NA_character_)
 }
 
+# ── T93 · The beneficiaries of a generated file, with their Agenda row ──────
+# parse_pago_beneficiarios() (R/pagos_generados_persistence.R) keeps its 5
+# columns -- the payment-file viewer and its tests read exactly those. This
+# adds the 3 that .log_pago_generado() writes since T93 (2b): agenda_item_id,
+# documento, fecha_factura; NA for an entry written before (never guessed).
+btr_beneficiarios <- function(json_str) {
+  b <- parse_pago_beneficiarios(json_str)
+  extra <- c("agenda_item_id", "documento", "fecha_factura")
+  for (k in extra) b[[k]] <- rep(NA_character_, nrow(b))
+  if (!nrow(b)) return(b)
+  crudo <- tryCatch(jsonlite::fromJSON(json_str), error = function(e) NULL)
+  if (is.data.frame(crudo) && nrow(crudo) == nrow(b))
+    for (k in intersect(extra, names(crudo))) b[[k]] <- as.character(crudo[[k]])
+  b
+}
+
 # ── T93 · Matching ───────────────────────────────────────────────────────────
 # Accounts compared as numbers written with digits: no leading zeros (the
 # report writes the origin with 11 digits, pagos_generados may keep 12; a

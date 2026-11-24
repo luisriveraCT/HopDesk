@@ -156,6 +156,19 @@ pagarHoyUI <- function(id) {
   unname(sin[par])
 }
 
+# T93 (2b): `ppl_rows` (one per row of `filas`, same order) with the Agenda
+# row each payment comes from -- its id, Documento and the invoice's posting
+# date -- for .log_pago_generado(). generate_ppl() ignores these columns:
+# the file's bytes do not change.
+.ph_ppl_con_agenda <- function(ppl_rows, filas) {
+  n <- nrow(ppl_rows)
+  col <- function(x) if (is.null(x)) rep(NA_character_, n) else as.character(x)
+  ppl_rows$agenda_item_id <- col(filas[["id"]])
+  ppl_rows$documento      <- col(filas[["Documento"]])
+  ppl_rows$fecha_factura  <- col(filas[["fecha_factura"]])
+  ppl_rows
+}
+
 .log_pago_generado <- function(shared, emp, moneda, cuenta_origen, ppl_rows,
                                 fname, source_type, banco_origen = NA_character_) {
   if (is.null(ppl_rows) || !nrow(ppl_rows)) return(invisible(NULL))
@@ -165,7 +178,13 @@ pagarHoyUI <- function(id) {
       clabe    = as.character(ppl_rows$clabe_dest[i] %||% NA_character_),
       banco    = as.character(ppl_rows$banco_dest[i] %||% NA_character_),
       importe  = as.numeric(ppl_rows$importe[i] %||% NA_real_),
-      concepto = as.character(ppl_rows$concepto[i] %||% NA_character_)
+      concepto = as.character(ppl_rows$concepto[i] %||% NA_character_),
+      # T93 (2b): the Agenda row each payment came from, so the bank's report
+      # can confirm THAT row. Additive: an older entry lacks them, and
+      # parse_pago_beneficiarios() still returns its 5 columns.
+      agenda_item_id = as.character(ppl_rows$agenda_item_id[i] %||% NA_character_),
+      documento      = as.character(ppl_rows$documento[i]      %||% NA_character_),
+      fecha_factura  = as.character(ppl_rows$fecha_factura[i]  %||% NA_character_)
     ))
     n_pagos <- nrow(ppl_rows)
     total   <- sum(as.numeric(ppl_rows$importe), na.rm = TRUE)
@@ -238,6 +257,345 @@ pagarHoyUI <- function(id) {
       viewer_home_client_id = home_cid
     )
   }, error = function(e) message("[PAGOS_AUDIT] .log_pago_generado failed: ", e$message))
+}
+
+# Confirmar pagos (AP) of `rows` -- the Agenda's Confirmar, moved here
+# untouched (T93) so the bank's report can confirm through the very same
+# path: what is written, its order and its log are the observer's, line by
+# line. rows: the Agenda rows to confirm (invoices and abonos); cuenta_sel:
+# the bank account id or NA; .parte_ap: the T72-F event; .ph_fallido and
+# .link_counter: the calling server's own (its failure notice and the
+# tables' refresh counter).
+.ph_confirmar_ap <- function(shared, emp, cur, rows, cuenta_sel, fecha_pago, .parte_ap,
+                             .ph_fallido, .link_counter) {
+  abono_error <- NULL   # T72-F (a): the abono's save error, if it failed
+  # Split: abono rows go to abonos_db; invoice rows go through normal path
+  abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
+  factura_rows <- rows |> dplyr::filter(is.na(tipo_item)  | tipo_item != "abono")
+
+  # Confirming ALWAYS fully removes the item from Agenda, for every
+  # source -- ERP rows are never left behind with status=="confirmed".
+  # Calendario's crossout for ERP rows comes entirely from
+  # bancos_confirmados matching, never from anything lingering here;
+  # removing an item from Agenda is always safe regardless of source,
+  # since Agenda never holds the real data (Mouse, 2026-07-23).
+  # sap_fact_ids/man_fact_ids are still split below, for the
+  # manual_inv-archiving decision, not for what happens here.
+  # The Agenda as S3 holds it now, read strictly BEFORE any write
+  # (CM33): if it cannot be read, nothing is confirmed anywhere --
+  # neither bancos_confirmados nor the Agenda nor the log -- so the
+  # invoice is never closed with its Agenda row left behind, nor the
+  # other way round. This copy is also the save's `base`: only these
+  # ids leave S3's Agenda, whatever another session staged or removed
+  # in the meantime (as Quitar does, CM09).
+  ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
+                                          client_id = shared$effective_client_id()),
+                      error = function(e) { message("[pagar_hoy] confirm AP, Agenda read: ", conditionMessage(e)); NULL })
+  if (is.null(ph_base)) {
+    showNotification(tr("comun.reintentar"), type = "error", duration = 8)
+    return()
+  }
+
+  # Write invoice rows to bancos_confirmados BEFORE unstaging from pagar_hoy.
+  # save_pagar_hoy() bumps the cross-session sync version which triggers the poll
+  # observer to reload bancos_confirmados from S3. Writing to S3 first ensures
+  # the poll reads the updated state rather than the pre-confirmation snapshot.
+  if (nrow(factura_rows) && !is.null(shared$bancos_confirmados)) {
+    nuevas <- dplyr::bind_rows(lapply(seq_len(nrow(factura_rows)), function(i) tibble::tibble(
+        confirmacion_id = uuid::UUIDgenerate(),
+        agenda_item_id  = as.character(factura_rows$id[i]),
+        empresa         = as.character(emp),
+        parte           = as.character(factura_rows$Parte[i]),
+        documento       = as.character(factura_rows$Documento[i]),
+        codigo          = as.character(factura_rows$Codigo[i] %||% NA_character_),
+        importe         = factura_rows$Importe[i],
+        moneda          = as.character(cur),
+        cuenta_id       = as.character(cuenta_sel %||% NA_character_),
+        fecha           = as.Date(fecha_pago),
+        tipo            = "pago",
+        mov_id          = NA_character_,
+        confirmado_at   = Sys.time(),
+        confirmado_por  = autor_registrable(shared$current_user()),   # CM35
+        eliminado       = FALSE,
+        provision_id    = as.character(factura_rows$provision_id[i] %||% NA_character_),
+        # The invoice's identity for compute_confirmed_flags(): closes it
+        # even if the ERP later moves its balance.
+        fecha_factura   = as.Date(factura_rows$fecha_factura[i] %||% NA)
+      )))
+    # Appended to what S3 holds now (modificar_bancos_confirmados). If
+    # that fails, stop here: the items stay in Agenda, unconfirmed,
+    # instead of leaving Agenda with no confirmation saved.
+    conf_db <- tryCatch(
+      modificar_bancos_confirmados(shared$effective_client_id(), function(c) dplyr::bind_rows(c, nuevas), evento = .parte_ap),
+      error = function(e) { message("[pagar_hoy] confirm AP: ", conditionMessage(e)); NULL })
+    if (is.null(conf_db)) {
+      showNotification(tr("comun.reintentar"), type = "error", duration = 8)
+      return()
+    }
+    shared$bancos_confirmados(conf_db)
+    bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
+  }
+
+  # Removal by id from the Agenda read above (ph_base), rebased on S3.
+  ph <- ph_base
+  sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
+  man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
+  rm_ids <- c(factura_rows$id, abono_rows$id)
+  if (length(rm_ids)) {
+    ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
+  }
+  shared$pagar_hoy_db(ph)
+  # found 2026-08-05: this call used to be bare, no error handling at
+  # all -- unlike the bancos_confirmados write just above, which
+  # already has its own tryCatch. A transient failure here (a flaky
+  # connection during this exact S3 write) aborted the observer
+  # uncaught: bancos_confirmados had already been written, so the
+  # action WAS "confirmed" somewhere, but the item was never durably
+  # cleared from Agenda (S3 unchanged, even though shared$pagar_hoy_db()
+  # just above had already optimistically updated in-memory -- so the
+  # acting user saw nothing wrong), and the audit-log call further
+  # down this same path never ran either -- no Actividad entry. One
+  # root cause,
+  # both of Mouse's reported symptoms. save_pagar_hoy_with_retry()
+  # (R/persistence.R) gives this a bounded, synchronous retry instead
+  # of silently failing once; on total failure it's treated as fatal
+  # for THIS confirm (stop before abono activation and before logging
+  # a false success), but the failure itself is now logged too, so
+  # Actividad shows the inconsistency instead of nothing at all.
+  save_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
+                                            client_id = shared$effective_client_id(),
+                                            base = ph_base, evento = .parte_ap)
+  if (!isTRUE(save_result$ok)) {
+    showNotification(
+      tr("tablas.agenda.aviso.confirmada_agenda_no", n = as.character(save_result$attempts)),
+      type = "error", duration = 15
+    )
+    tryCatch(log_action(
+      user = shared$current_user(), module = "pagar_hoy",
+      action = "confirmar_pago_incompleto",
+      description = sprintf(
+        "Confirmación de %s registrada en bancos_confirmados, pero Agenda no se pudo actualizar tras %d intento(s): %s",
+        emp, save_result$attempts,
+        if (!is.null(save_result$error)) conditionMessage(save_result$error) else "error desconocido"),
+      target_id = emp,
+      metadata  = list(empresa = emp, ids = rm_ids,
+                       moneda = as.character(cur %||% NA_character_),
+                       cuenta_id = as.character(cuenta_sel %||% NA_character_),
+                       fecha_pago = as.character(fecha_pago %||% NA_character_),
+                       pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago)),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    ), error = function(e) NULL)
+    return()
+  }
+
+  # found 2026-08-05: the abono-activation and manual_inv-archiving
+  # blocks below already individually tryCatch() each of their OWN
+  # save_*() calls -- but the surrounding control flow (loops, index
+  # lookups) was not itself guarded, so an unexpected failure there
+  # would still abort the observer before ever reaching the
+  # notification/audit-log block further down, silently suppressing
+  # the audit entry for a confirm that, by this point, has already
+  # fully and durably succeeded (bancos_confirmados written, Agenda
+  # cleared). Wrapping the whole secondary-processing section in one
+  # outer tryCatch means a hiccup HERE can never also swallow the log
+  # entry for the primary confirm action.
+  secondary_err_ap <- tryCatch({
+
+  # Activate abonos: write to abonos_db so calendar balance deduction takes effect
+  if (nrow(abono_rows) && !is.null(shared$abonos_db)) {
+    ab_new <- tibble::tibble(
+      id          = purrr::map_chr(seq_len(nrow(abono_rows)), ~uuid::UUIDgenerate()),
+      ledger      = abono_rows$ledger,
+      Empresa     = abono_rows$Empresa,
+      Moneda      = abono_rows$Moneda,
+      Documento   = abono_rows$Documento,
+      Parte       = abono_rows$Parte,
+      importe     = abono_rows$Importe,
+      fecha_abono = as.Date(fecha_pago),
+      notas       = "",
+      created_by  = shared$current_user(),
+      created_at  = Sys.time(),
+      status      = "active"
+    )
+    # Added on S3's whole current table (CM19); the session's copy
+    # changes only once it is saved.
+    tryCatch({
+      shared$abonos_db(modificar_abonos(function(ab) upsert_abono(ab, ab_new),
+                                        client_id = shared$effective_client_id(), evento = .parte_ap))
+      bump_sync_version("abonos_db", client_id = shared$effective_client_id())
+    }, error = function(e) {
+      abono_error <<- conditionMessage(e)
+      showNotification(tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning")
+    })
+  }
+
+  # Plain manual entries (no provision_id): archive instead of
+  # hard-delete, so undo can restore the real row losslessly (Stage 3's
+  # mechanism) instead of faking a stand-in in Agenda. Provision-
+  # derived rows keep today's hard-delete behavior for now -- Stage 5
+  # extends the same archiving treatment to them, alongside the
+  # separate undo_conf/pasivos_observers.R collision fix.
+  if (!is.null(shared$manual_inv) && nrow(factura_rows)) {
+    # Read fresh from S3 rather than trusting this session's possibly
+    # stale in-memory copy -- this handler archives-and-removes rows,
+    # so a stale read here can silently resurrect a row another
+    # session already archived, or drop one it just added (found
+    # 2026-07-24, a real incident). Single fetch, threaded through
+    # both the plain-manual block below and the provision-derived
+    # block further down -- do not re-fetch a second time there, or
+    # this block's own archive-removal would be silently discarded.
+    mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
+                   error = function(e) NULL) %||% shared$manual_inv()
+    mi_base <- mi   # before any archive below changes it: the saves' rebase base (CM09)
+    archived_mi_ids <- character(0)   # T85: the provisions' save names these too (if the first save failed)
+    if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
+      plain_manual <- factura_rows[
+        !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
+      , drop = FALSE]
+
+      if (nrow(plain_manual)) {
+        .biz_key <- function(df) paste(
+          toupper(trimws(df[["Empresa"]])), toupper(trimws(df[["Moneda"]])),
+          toupper(trimws(df[["Documento"]])),
+          sprintf("%.2f", round(as.numeric(df[["Importe"]]), 2)))
+
+        pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
+        enlaces  <- list()   # agenda item -> papelera event, applied on S3 below
+        archived_mi_ids <- character(0)
+
+        for (i in seq_len(nrow(plain_manual))) {
+          fr     <- plain_manual[i, , drop = FALSE]
+          mi_idx <- which(mi[["id"]] == fr[["id"]])
+          if (!length(mi_idx)) {
+            # Rows staged via Calendar's "Stage all"/"Stage selection"
+            # or Search's stage_all/stage_selected always mint a FRESH
+            # pagar_hoy id, decoupled from manual_inv's own id (unlike
+            # the direct manual-entry "send to agenda" path, which
+            # deliberately shares the id) -- id-match alone silently
+            # misses these, a latent gap found while building this
+            # stage. Fall back to the business key.
+            mi_idx <- which(.biz_key(mi) == .biz_key(fr) & !mi[["id"]] %in% archived_mi_ids)
+          }
+          if (!length(mi_idx)) next
+          mi_idx     <- mi_idx[1]
+          to_archive <- mi[mi_idx, , drop = FALSE]
+          pap <- add_to_papelera(pap, to_archive, ledger = "AP",
+                                 deleted_by = shared$current_user(), disposition = "confirmed")
+          event_id <- pap[["event_id"]][nrow(pap)]
+          archived_mi_ids <- c(archived_mi_ids, mi[["id"]][mi_idx])
+
+          enlaces[[length(enlaces) + 1L]] <- list(ids = fr[["id"]], event = event_id)
+        }
+
+        if (length(archived_mi_ids)) {
+          shared$papelera_rv(pap)
+          tryCatch(save_papelera(pap, client_id = shared$effective_client_id(), evento = .parte_ap),
+                   error = function(e) {
+                     showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
+                     tryCatch(log_action(
+                       shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
+                       conditionMessage(e),
+                       client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+                       viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+                       error = function(e2) NULL)
+                   })
+          conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ap),
+                               error = function(e) .ph_fallido("enlazar_archivo", "confirmar_pago", emp, e))
+          if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
+          mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
+          shared$manual_inv(mi)
+          tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap, quita = archived_mi_ids),
+                   error = function(e) .ph_fallido("guardar_manual", "confirmar_pago", emp, e,
+                                                   tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
+        }
+      }
+
+      # Provision-derived rows: also archive (Stage 5), not hard-delete
+      # -- per Mouse's explicit rule, confirmation-history covers
+      # EVERYTHING that gets confirmed, no special-casing by origin.
+      # Recovering these works differently though (see undo_conf):
+      # this archived copy is what undo_conf() restores (Bancos), and
+      # then the provision goes back to "converted"
+      # (pasivos_provision_item_reversed); deleting the confirmation
+      # instead revives it to "provisional".
+      prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
+      if (length(prov_ids_to_remove) && "provision_id" %in% names(mi)) {
+        manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
+        if (length(manual_ids)) {
+          pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
+          enlaces  <- list()   # agenda item -> papelera event, applied on S3 below
+          for (mid in manual_ids) {
+            to_archive <- mi[mi[["id"]] == mid, , drop = FALSE]
+            pid   <- to_archive[["provision_id"]][1]
+            fr_id <- factura_rows[["id"]][!is.na(factura_rows[["provision_id"]]) &
+                                          factura_rows[["provision_id"]] == pid]
+            pap <- add_to_papelera(pap, to_archive, ledger = "AP",
+                                   deleted_by = shared$current_user(), disposition = "confirmed")
+            event_id <- pap[["event_id"]][nrow(pap)]
+            if (length(fr_id)) {
+              enlaces[[length(enlaces) + 1L]] <- list(ids = fr_id, event = event_id)
+            }
+          }
+          shared$papelera_rv(pap)
+          tryCatch(save_papelera(pap, client_id = shared$effective_client_id(), evento = .parte_ap),
+                   error = function(e) {
+                     showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
+                     tryCatch(log_action(
+                       shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
+                       conditionMessage(e),
+                       client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
+                       viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
+                       error = function(e2) NULL)
+                   })
+          conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ap),
+                               error = function(e) .ph_fallido("enlazar_archivo", "confirmar_pago", emp, e))
+          if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
+
+          mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
+          shared$manual_inv(mi_updated)
+          tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap, quita = c(manual_ids, archived_mi_ids)),
+                   error = function(e) .ph_fallido("guardar_manual", "confirmar_pago", emp, e,
+                                                   tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
+        }
+      }
+    }
+  }
+
+  }, error = function(e) e)
+  if (inherits(secondary_err_ap, "error")) {
+    showNotification(
+      tr("tablas.agenda.aviso.pagos_confirmados_error", error = conditionMessage(secondary_err_ap)),
+      type = "warning", duration = 10
+    )
+  }
+
+  .link_counter(.link_counter() + 1L)
+  removeModal()
+  {
+    n_pago  <- nrow(factura_rows)
+    n_abono <- nrow(abono_rows)
+    msg <- character(0)
+    if (n_pago  > 0) msg <- c(msg, paste0(n_pago,  " pago(s) confirmado(s)"))
+    if (n_abono > 0) msg <- c(msg, if (is.null(abono_error)) paste0(n_abono, " abono(s) aplicado(s) al saldo")
+                                   else tr("tablas.agenda.log.abono_no_aplicado", n = n_abono))
+    showNotification(paste(msg, collapse = " · "), type = "message", duration = 3)
+    log_action(shared$current_user(), "pagar_hoy", "confirmar_pago",
+               paste(msg, collapse = " · "),
+               target_id = emp,
+               metadata = c(list(empresa = emp, n_pago = n_pago, n_abono = n_abono,
+                               sap_ids = sap_fact_ids, man_ids = man_fact_ids,
+                               moneda = as.character(cur %||% NA_character_),
+                               cuenta_id = as.character(cuenta_sel %||% NA_character_),
+                               fecha_pago = as.character(fecha_pago %||% NA_character_),
+                               pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago),
+                               secondary_error = if (inherits(secondary_err_ap, "error"))
+                                 conditionMessage(secondary_err_ap) else NA_character_),
+                            if (!is.null(abono_error)) list(abono_error = abono_error)),
+               client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+               viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
+    avisos_actividad(shared$effective_client_id(), "confirmar_pago", shared$current_user(), list(cuerpo = paste(c(emp, msg), collapse = " · ")))
+  }
 }
 
 pagarHoyServer <- function(id, shared) {
@@ -1465,7 +1823,8 @@ pagarHoyServer <- function(id, shared) {
                 doc <- trimws(as.character(Documento))
                 substr(ifelse(nzchar(ref_ind), ref_ind, doc), 1, 75)
               }
-            )
+            ) |>
+            .ph_ppl_con_agenda(ann)
 
           banco_origen <- if (!is.null(cuenta_data_dl) && nrow(cuenta_data_dl)) {
             b <- cuenta_data_dl$banco[cuenta_data_dl$cuenta == cuenta_origen]
@@ -1821,7 +2180,6 @@ pagarHoyServer <- function(id, shared) {
         # T72-F: every write of this action leaves a staff-only "/parte" trace once
         # it worked; the client's one row stays the log_action below (and its
         # _incompleto), word for word.
-        abono_error <- NULL   # T72-F (a): the abono's save error, if it failed
         .parte_ap <- evento_parte_de("confirmar_pago", "pagar_hoy", shared$current_user(),
                                     tryCatch(shared$home_client_id(), error = function(e) NULL))
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
@@ -1836,333 +2194,8 @@ pagarHoyServer <- function(id, shared) {
         fecha_pago <- tryCatch(as.Date(input[[paste0("conf_fecha_ap_", emp)]]),
                                error = function(e) hoy())
 
-        # Split: abono rows go to abonos_db; invoice rows go through normal path
-        abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
-        factura_rows <- rows |> dplyr::filter(is.na(tipo_item)  | tipo_item != "abono")
-
-        # Confirming ALWAYS fully removes the item from Agenda, for every
-        # source -- ERP rows are never left behind with status=="confirmed".
-        # Calendario's crossout for ERP rows comes entirely from
-        # bancos_confirmados matching, never from anything lingering here;
-        # removing an item from Agenda is always safe regardless of source,
-        # since Agenda never holds the real data (Mouse, 2026-07-23).
-        # sap_fact_ids/man_fact_ids are still split below, for the
-        # manual_inv-archiving decision, not for what happens here.
-        # The Agenda as S3 holds it now, read strictly BEFORE any write
-        # (CM33): if it cannot be read, nothing is confirmed anywhere --
-        # neither bancos_confirmados nor the Agenda nor the log -- so the
-        # invoice is never closed with its Agenda row left behind, nor the
-        # other way round. This copy is also the save's `base`: only these
-        # ids leave S3's Agenda, whatever another session staged or removed
-        # in the meantime (as Quitar does, CM09).
-        ph_base <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(),
-                                                client_id = shared$effective_client_id()),
-                            error = function(e) { message("[pagar_hoy] confirm AP, Agenda read: ", conditionMessage(e)); NULL })
-        if (is.null(ph_base)) {
-          showNotification(tr("comun.reintentar"), type = "error", duration = 8)
-          return()
-        }
-
-        # Write invoice rows to bancos_confirmados BEFORE unstaging from pagar_hoy.
-        # save_pagar_hoy() bumps the cross-session sync version which triggers the poll
-        # observer to reload bancos_confirmados from S3. Writing to S3 first ensures
-        # the poll reads the updated state rather than the pre-confirmation snapshot.
-        if (nrow(factura_rows) && !is.null(shared$bancos_confirmados)) {
-          nuevas <- dplyr::bind_rows(lapply(seq_len(nrow(factura_rows)), function(i) tibble::tibble(
-              confirmacion_id = uuid::UUIDgenerate(),
-              agenda_item_id  = as.character(factura_rows$id[i]),
-              empresa         = as.character(emp),
-              parte           = as.character(factura_rows$Parte[i]),
-              documento       = as.character(factura_rows$Documento[i]),
-              codigo          = as.character(factura_rows$Codigo[i] %||% NA_character_),
-              importe         = factura_rows$Importe[i],
-              moneda          = as.character(cur),
-              cuenta_id       = as.character(cuenta_sel %||% NA_character_),
-              fecha           = as.Date(fecha_pago),
-              tipo            = "pago",
-              mov_id          = NA_character_,
-              confirmado_at   = Sys.time(),
-              confirmado_por  = autor_registrable(shared$current_user()),   # CM35
-              eliminado       = FALSE,
-              provision_id    = as.character(factura_rows$provision_id[i] %||% NA_character_),
-              # The invoice's identity for compute_confirmed_flags(): closes it
-              # even if the ERP later moves its balance.
-              fecha_factura   = as.Date(factura_rows$fecha_factura[i] %||% NA)
-            )))
-          # Appended to what S3 holds now (modificar_bancos_confirmados). If
-          # that fails, stop here: the items stay in Agenda, unconfirmed,
-          # instead of leaving Agenda with no confirmation saved.
-          conf_db <- tryCatch(
-            modificar_bancos_confirmados(shared$effective_client_id(), function(c) dplyr::bind_rows(c, nuevas), evento = .parte_ap),
-            error = function(e) { message("[pagar_hoy] confirm AP: ", conditionMessage(e)); NULL })
-          if (is.null(conf_db)) {
-            showNotification(tr("comun.reintentar"), type = "error", duration = 8)
-            return()
-          }
-          shared$bancos_confirmados(conf_db)
-          bump_sync_version("bancos_confirmados_db", client_id = shared$effective_client_id())
-        }
-
-        # Removal by id from the Agenda read above (ph_base), rebased on S3.
-        ph <- ph_base
-        sap_fact_ids <- factura_rows$id[is_erp_sourced(factura_rows$source)]
-        man_fact_ids <- factura_rows$id[!is_erp_sourced(factura_rows$source)]
-        rm_ids <- c(factura_rows$id, abono_rows$id)
-        if (length(rm_ids)) {
-          ph <- unstage_pagar_hoy(ph, tibble::tibble(id = rm_ids), keys = "id")
-        }
-        shared$pagar_hoy_db(ph)
-        # found 2026-08-05: this call used to be bare, no error handling at
-        # all -- unlike the bancos_confirmados write just above, which
-        # already has its own tryCatch. A transient failure here (a flaky
-        # connection during this exact S3 write) aborted the observer
-        # uncaught: bancos_confirmados had already been written, so the
-        # action WAS "confirmed" somewhere, but the item was never durably
-        # cleared from Agenda (S3 unchanged, even though shared$pagar_hoy_db()
-        # just above had already optimistically updated in-memory -- so the
-        # acting user saw nothing wrong), and the audit-log call further
-        # down this same path never ran either -- no Actividad entry. One
-        # root cause,
-        # both of Mouse's reported symptoms. save_pagar_hoy_with_retry()
-        # (R/persistence.R) gives this a bounded, synchronous retry instead
-        # of silently failing once; on total failure it's treated as fatal
-        # for THIS confirm (stop before abono activation and before logging
-        # a false success), but the failure itself is now logged too, so
-        # Actividad shows the inconsistency instead of nothing at all.
-        save_result <- save_pagar_hoy_with_retry(ph, shared$current_user(),
-                                                  client_id = shared$effective_client_id(),
-                                                  base = ph_base, evento = .parte_ap)
-        if (!isTRUE(save_result$ok)) {
-          showNotification(
-            tr("tablas.agenda.aviso.confirmada_agenda_no", n = as.character(save_result$attempts)),
-            type = "error", duration = 15
-          )
-          tryCatch(log_action(
-            user = shared$current_user(), module = "pagar_hoy",
-            action = "confirmar_pago_incompleto",
-            description = sprintf(
-              "Confirmación de %s registrada en bancos_confirmados, pero Agenda no se pudo actualizar tras %d intento(s): %s",
-              emp, save_result$attempts,
-              if (!is.null(save_result$error)) conditionMessage(save_result$error) else "error desconocido"),
-            target_id = emp,
-            metadata  = list(empresa = emp, ids = rm_ids,
-                             moneda = as.character(cur %||% NA_character_),
-                             cuenta_id = as.character(cuenta_sel %||% NA_character_),
-                             fecha_pago = as.character(fecha_pago %||% NA_character_),
-                             pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago)),
-            client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-            viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-          ), error = function(e) NULL)
-          return()
-        }
-
-        # found 2026-08-05: the abono-activation and manual_inv-archiving
-        # blocks below already individually tryCatch() each of their OWN
-        # save_*() calls -- but the surrounding control flow (loops, index
-        # lookups) was not itself guarded, so an unexpected failure there
-        # would still abort the observer before ever reaching the
-        # notification/audit-log block further down, silently suppressing
-        # the audit entry for a confirm that, by this point, has already
-        # fully and durably succeeded (bancos_confirmados written, Agenda
-        # cleared). Wrapping the whole secondary-processing section in one
-        # outer tryCatch means a hiccup HERE can never also swallow the log
-        # entry for the primary confirm action.
-        secondary_err_ap <- tryCatch({
-
-        # Activate abonos: write to abonos_db so calendar balance deduction takes effect
-        if (nrow(abono_rows) && !is.null(shared$abonos_db)) {
-          ab_new <- tibble::tibble(
-            id          = purrr::map_chr(seq_len(nrow(abono_rows)), ~uuid::UUIDgenerate()),
-            ledger      = abono_rows$ledger,
-            Empresa     = abono_rows$Empresa,
-            Moneda      = abono_rows$Moneda,
-            Documento   = abono_rows$Documento,
-            Parte       = abono_rows$Parte,
-            importe     = abono_rows$Importe,
-            fecha_abono = as.Date(fecha_pago),
-            notas       = "",
-            created_by  = shared$current_user(),
-            created_at  = Sys.time(),
-            status      = "active"
-          )
-          # Added on S3's whole current table (CM19); the session's copy
-          # changes only once it is saved.
-          tryCatch({
-            shared$abonos_db(modificar_abonos(function(ab) upsert_abono(ab, ab_new),
-                                              client_id = shared$effective_client_id(), evento = .parte_ap))
-            bump_sync_version("abonos_db", client_id = shared$effective_client_id())
-          }, error = function(e) {
-            abono_error <<- conditionMessage(e)
-            showNotification(tr("tablas.agenda.aviso.error_abono", error = e$message), type = "warning")
-          })
-        }
-
-        # Plain manual entries (no provision_id): archive instead of
-        # hard-delete, so undo can restore the real row losslessly (Stage 3's
-        # mechanism) instead of faking a stand-in in Agenda. Provision-
-        # derived rows keep today's hard-delete behavior for now -- Stage 5
-        # extends the same archiving treatment to them, alongside the
-        # separate undo_conf/pasivos_observers.R collision fix.
-        if (!is.null(shared$manual_inv) && nrow(factura_rows)) {
-          # Read fresh from S3 rather than trusting this session's possibly
-          # stale in-memory copy -- this handler archives-and-removes rows,
-          # so a stale read here can silently resurrect a row another
-          # session already archived, or drop one it just added (found
-          # 2026-07-24, a real incident). Single fetch, threaded through
-          # both the plain-manual block below and the provision-derived
-          # block further down -- do not re-fetch a second time there, or
-          # this block's own archive-removal would be silently discarded.
-          mi <- tryCatch(load_manual(client_id = shared$effective_client_id()),
-                         error = function(e) NULL) %||% shared$manual_inv()
-          mi_base <- mi   # before any archive below changes it: the saves' rebase base (CM09)
-          archived_mi_ids <- character(0)   # T85: the provisions' save names these too (if the first save failed)
-          if (!is.null(mi) && nrow(mi) && "id" %in% names(mi)) {
-            plain_manual <- factura_rows[
-              !is_erp_sourced(factura_rows$source) & is.na(factura_rows$provision_id),
-            , drop = FALSE]
-
-            if (nrow(plain_manual)) {
-              .biz_key <- function(df) paste(
-                toupper(trimws(df[["Empresa"]])), toupper(trimws(df[["Moneda"]])),
-                toupper(trimws(df[["Documento"]])),
-                sprintf("%.2f", round(as.numeric(df[["Importe"]]), 2)))
-
-              pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
-              enlaces  <- list()   # agenda item -> papelera event, applied on S3 below
-              archived_mi_ids <- character(0)
-
-              for (i in seq_len(nrow(plain_manual))) {
-                fr     <- plain_manual[i, , drop = FALSE]
-                mi_idx <- which(mi[["id"]] == fr[["id"]])
-                if (!length(mi_idx)) {
-                  # Rows staged via Calendar's "Stage all"/"Stage selection"
-                  # or Search's stage_all/stage_selected always mint a FRESH
-                  # pagar_hoy id, decoupled from manual_inv's own id (unlike
-                  # the direct manual-entry "send to agenda" path, which
-                  # deliberately shares the id) -- id-match alone silently
-                  # misses these, a latent gap found while building this
-                  # stage. Fall back to the business key.
-                  mi_idx <- which(.biz_key(mi) == .biz_key(fr) & !mi[["id"]] %in% archived_mi_ids)
-                }
-                if (!length(mi_idx)) next
-                mi_idx     <- mi_idx[1]
-                to_archive <- mi[mi_idx, , drop = FALSE]
-                pap <- add_to_papelera(pap, to_archive, ledger = "AP",
-                                       deleted_by = shared$current_user(), disposition = "confirmed")
-                event_id <- pap[["event_id"]][nrow(pap)]
-                archived_mi_ids <- c(archived_mi_ids, mi[["id"]][mi_idx])
-
-                enlaces[[length(enlaces) + 1L]] <- list(ids = fr[["id"]], event = event_id)
-              }
-
-              if (length(archived_mi_ids)) {
-                shared$papelera_rv(pap)
-                tryCatch(save_papelera(pap, client_id = shared$effective_client_id(), evento = .parte_ap),
-                         error = function(e) {
-                           showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
-                           tryCatch(log_action(
-                             shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
-                             conditionMessage(e),
-                             client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
-                             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
-                             error = function(e2) NULL)
-                         })
-                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ap),
-                                     error = function(e) .ph_fallido("enlazar_archivo", "confirmar_pago", emp, e))
-                if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
-                mi <- mi[!mi[["id"]] %in% archived_mi_ids, , drop = FALSE]
-                shared$manual_inv(mi)
-                tryCatch(save_manual(mi, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap, quita = archived_mi_ids),
-                         error = function(e) .ph_fallido("guardar_manual", "confirmar_pago", emp, e,
-                                                         tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
-              }
-            }
-
-            # Provision-derived rows: also archive (Stage 5), not hard-delete
-            # -- per Mouse's explicit rule, confirmation-history covers
-            # EVERYTHING that gets confirmed, no special-casing by origin.
-            # Recovering these works differently though (see undo_conf):
-            # this archived copy is what undo_conf() restores (Bancos), and
-            # then the provision goes back to "converted"
-            # (pasivos_provision_item_reversed); deleting the confirmation
-            # instead revives it to "provisional".
-            prov_ids_to_remove <- factura_rows$provision_id[!is.na(factura_rows$provision_id)]
-            if (length(prov_ids_to_remove) && "provision_id" %in% names(mi)) {
-              manual_ids <- mi[["id"]][!is.na(mi[["provision_id"]]) & mi[["provision_id"]] %in% prov_ids_to_remove]
-              if (length(manual_ids)) {
-                pap      <- shared$papelera_rv() %||% load_papelera(client_id = shared$effective_client_id())
-                enlaces  <- list()   # agenda item -> papelera event, applied on S3 below
-                for (mid in manual_ids) {
-                  to_archive <- mi[mi[["id"]] == mid, , drop = FALSE]
-                  pid   <- to_archive[["provision_id"]][1]
-                  fr_id <- factura_rows[["id"]][!is.na(factura_rows[["provision_id"]]) &
-                                                factura_rows[["provision_id"]] == pid]
-                  pap <- add_to_papelera(pap, to_archive, ledger = "AP",
-                                         deleted_by = shared$current_user(), disposition = "confirmed")
-                  event_id <- pap[["event_id"]][nrow(pap)]
-                  if (length(fr_id)) {
-                    enlaces[[length(enlaces) + 1L]] <- list(ids = fr_id, event = event_id)
-                  }
-                }
-                shared$papelera_rv(pap)
-                tryCatch(save_papelera(pap, client_id = shared$effective_client_id(), evento = .parte_ap),
-                         error = function(e) {
-                           showNotification(tr("tablas.agenda.aviso.error_archivar_manual", error = e$message), type = "warning")
-                           tryCatch(log_action(
-                             shared$current_user(), "pagar_hoy", "archivar_manual_fallo_guardado",
-                             conditionMessage(e),
-                             client_id             = tryCatch(shared$effective_client_id(), error = function(e2) NULL),
-                             viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e2) NULL)),
-                             error = function(e2) NULL)
-                         })
-                conf_now <- tryCatch(enlazar_archivo_confirmaciones(shared$effective_client_id(), enlaces, evento = .parte_ap),
-                                     error = function(e) .ph_fallido("enlazar_archivo", "confirmar_pago", emp, e))
-                if (!is.null(conf_now)) shared$bancos_confirmados(conf_now)
-
-                mi_updated <- mi[!mi[["id"]] %in% manual_ids, , drop = FALSE]
-                shared$manual_inv(mi_updated)
-                tryCatch(save_manual(mi_updated, client_id = shared$effective_client_id(), base = mi_base, evento = .parte_ap, quita = c(manual_ids, archived_mi_ids)),
-                         error = function(e) .ph_fallido("guardar_manual", "confirmar_pago", emp, e,
-                                                         tr("tablas.agenda.aviso.error_eliminar_manual", error = e$message)))
-              }
-            }
-          }
-        }
-
-        }, error = function(e) e)
-        if (inherits(secondary_err_ap, "error")) {
-          showNotification(
-            tr("tablas.agenda.aviso.pagos_confirmados_error", error = conditionMessage(secondary_err_ap)),
-            type = "warning", duration = 10
-          )
-        }
-
-        .link_counter(.link_counter() + 1L)
-        removeModal()
-        {
-          n_pago  <- nrow(factura_rows)
-          n_abono <- nrow(abono_rows)
-          msg <- character(0)
-          if (n_pago  > 0) msg <- c(msg, paste0(n_pago,  " pago(s) confirmado(s)"))
-          if (n_abono > 0) msg <- c(msg, if (is.null(abono_error)) paste0(n_abono, " abono(s) aplicado(s) al saldo")
-                                         else tr("tablas.agenda.log.abono_no_aplicado", n = n_abono))
-          showNotification(paste(msg, collapse = " · "), type = "message", duration = 3)
-          log_action(shared$current_user(), "pagar_hoy", "confirmar_pago",
-                     paste(msg, collapse = " · "),
-                     target_id = emp,
-                     metadata = c(list(empresa = emp, n_pago = n_pago, n_abono = n_abono,
-                                     sap_ids = sap_fact_ids, man_ids = man_fact_ids,
-                                     moneda = as.character(cur %||% NA_character_),
-                                     cuenta_id = as.character(cuenta_sel %||% NA_character_),
-                                     fecha_pago = as.character(fecha_pago %||% NA_character_),
-                                     pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago),
-                                     secondary_error = if (inherits(secondary_err_ap, "error"))
-                                       conditionMessage(secondary_err_ap) else NA_character_),
-                                  if (!is.null(abono_error)) list(abono_error = abono_error)),
-                     client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-                     viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL))
-          avisos_actividad(shared$effective_client_id(), "confirmar_pago", shared$current_user(), list(cuerpo = paste(c(emp, msg), collapse = " · ")))
-        }
+        .ph_confirmar_ap(shared, emp, cur, rows, cuenta_sel, fecha_pago, .parte_ap,
+                         .ph_fallido = .ph_fallido, .link_counter = .link_counter)
       }, ignoreInit = TRUE)
 
       # ── Confirm AR ─────────────────────────────────────────────────────────
@@ -3222,7 +3255,8 @@ pagarHoyServer <- function(id, shared) {
               concepto = {
                 doc <- trimws(as.character(Documento))
                 substr(ifelse(nzchar(ref_z), ref_z, doc), 1, 75)
-              })
+              }) |>
+              .ph_ppl_con_agenda(ann)
             fname <- file.path(tmpdir,
               paste0("pagos_", emp, "_", cur, "_", format(hoy(), "%d%m%Y"), "_001.txt"))
             # Logged BEFORE write_ppl() writes this PPL file to disk -- same
@@ -3300,7 +3334,8 @@ pagarHoyServer <- function(id, shared) {
                   alias = "", clabe_dest = "000000000000000000", banco_dest = "",
                   medio_pago = ppl_medio_pago(cur, ""),
                   importe = rows_i$Importe,
-                  concepto = substr(ifelse(nzchar(con_i), con_i, doc_i), 1, 75))
+                  concepto = substr(ifelse(nzchar(con_i), con_i, doc_i), 1, 75)) |>
+                  .ph_ppl_con_agenda(rows_i)
                 fname_i <- file.path(tmpdir,
                   paste0("pagos_", emp, "_", cur, "_", format(hoy(), "%d%m%Y"), "_002.txt"))
                 .log_pago_generado(shared, emp, cur, origen, ppl_i, fname = basename(fname_i),
