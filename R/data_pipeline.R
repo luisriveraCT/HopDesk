@@ -746,13 +746,26 @@ apply_ic_filter <- function(df, mode, code_col, ic_codes, ic_rfcs = character(),
   has_codes <- length(ic_codes) > 0
   has_rfcs  <- length(ic_rfcs) > 0 && "RFC" %in% names(df)
 
+  # T90: the companies' identity (T47) -- a group company's RFC or, without
+  # an RFC, its razón social / short name / other names, normalized and
+  # exact -- now counts WITH a registry too, added to it: the registry still
+  # finds a partner under another name, the identity finds a group company
+  # nobody registered. A name never beats an RFC: a row with a third
+  # party's RFC is not IC by name (ic_por_identidad()), only a registered
+  # code can mark it. Normalized once per distinct (Parte, RFC), not per row.
+  identidad <- if (!is.null(empresas) && "Parte" %in% names(df)) empresas_identidad(empresas) else NULL
+  por_identidad <- function() {
+    parte <- as.character(df[["Parte"]])
+    rfc   <- if ("RFC" %in% names(df)) as.character(df[["RFC"]]) else rep(NA_character_, nrow(df))
+    llave <- paste(parte, rfc, sep = "\r")
+    unico <- !duplicated(llave)
+    ic_por_identidad(parte[unico], rfc[unico], identidad)[match(llave, llave[unico])]
+  }
+
   # No registry, and the companies' identity at hand: legal names and RFCs
   # ("NETWORKS LOGISTICS SA DE CV" is NL), not only the exact short name.
-  identidad <- if (!has_codes && !has_rfcs && !is.null(empresas) && "Parte" %in% names(df))
-    empresas_identidad(empresas) else NULL
-  if (!is.null(identidad)) {
-    rfc_col <- if ("RFC" %in% names(df)) df[["RFC"]] else NULL
-    es_ic <- ic_por_identidad(df[["Parte"]], rfc_col, identidad)
+  if (!has_codes && !has_rfcs && !is.null(identidad)) {
+    es_ic <- por_identidad()
     message("[IC_FILTER] mode=", mode, " identity-fallback rows_in=", nrow(df), " rows_ic=", sum(es_ic))
     if (mode == "exclude") return(df[!es_ic, , drop = FALSE])
     else                   return(df[ es_ic, , drop = FALSE])
@@ -795,10 +808,15 @@ apply_ic_filter <- function(df, mode, code_col, ic_codes, ic_rfcs = character(),
     is_ic[has_rfc & !(inv_rfc %in% ic_rfcs_norm)] <- FALSE
   }
 
+  # T90: plus a group company the registry does not know (only adds marks:
+  # every row the registry calls IC still is).
+  n_reg <- sum(is_ic, na.rm = TRUE)
+  if (!is.null(identidad) && nrow(df)) is_ic <- (is_ic %in% TRUE) | por_identidad()
+
   n_ic <- sum(is_ic, na.rm = TRUE)
   message("[IC_FILTER] mode=", mode,
           " codes=", length(ic_codes), " rfcs=", length(ic_rfcs),
-          " rows_in=", nrow(df), " rows_ic=", n_ic)
+          " rows_in=", nrow(df), " rows_ic=", n_ic, " by_identity=", n_ic - n_reg)
   if (mode == "exclude") df[!is_ic | is.na(is_ic), , drop = FALSE]
   else                   df[ is_ic & !is.na(is_ic), , drop = FALSE]
 }

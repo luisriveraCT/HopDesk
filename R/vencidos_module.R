@@ -415,35 +415,18 @@ vencidosServer <- function(id, shared, accion_factura = handle_invoice_action) {
           error = function(e) NULL
         )
         if (is.null(df) || !nrow(df)) return(NULL)
-        # ── IC filter (two layers for robustness) ──────────────────────────
-        # Layer 1: code-based filter (from registered interco_v2 registry)
+        # ── IC filter: the one rule every screen uses (apply_ic_filter) ────
         codes    <- build_ic_fullcodes(ic_reg, ledger_name)
         ic_rfcs  <- unique(toupper(trimws(unname(ic_reg$rfcs %||% character()))))
         ic_rfcs  <- ic_rfcs[nzchar(ic_rfcs)]
         code_col <- if (ledger_name == "AR") "Código de cliente" else "Código de proveedor"
         df <- apply_ic_filter(df, mode = ic_mode_val, code_col = code_col, ic_codes = codes, ic_rfcs = ic_rfcs,
                               cmap = shared$company_map(), empresas = ic_empresas_de(shared))
-        if (!is.null(df) && !nrow(df)) return(NULL)
-
-        # Layer 2: Parte-name fallback (catches IC when codes not yet registered)
-        # If Parte matches any company's display name, the invoice is intercompany.
-        if (!is.null(df) && nrow(df) && "Parte" %in% names(df)) {
-          company_names_up <- toupper(unname(shared$company_map()))
-          is_ic_by_name    <- toupper(trimws(df[["Parte"]])) %in% company_names_up
-          if (any(is_ic_by_name)) {
-            if (ic_mode_val == "exclude") {
-              df <- df[!is_ic_by_name, , drop = FALSE]
-              message("[VEN] IC-by-name filter removed ", sum(is_ic_by_name),
-                      " rows for ledger=", ledger_name)
-            } else if (ic_mode_val == "only") {
-              df <- df[is_ic_by_name, , drop = FALSE]
-            }
-            # "include" → keep everything, no change needed
-          } else if (ic_mode_val == "only") {
-            # No name-matches found but mode is "only" → nothing to show
-            df <- df[FALSE, , drop = FALSE]
-          }
-        }
+        # T90: no second, name-only layer here any more. apply_ic_filter()
+        # adds the companies' identity (T47) to the registry for every
+        # screen, so Vencidos, the Calendar and Panorama call the same
+        # invoices IC; and a third party's RFC is no longer overruled by a
+        # name that happens to match a short name.
         if (is.null(df) || !nrow(df)) return(NULL)
 
         # Date filter: due today or overdue
