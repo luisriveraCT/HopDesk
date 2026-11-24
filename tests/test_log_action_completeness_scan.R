@@ -235,6 +235,10 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # table rename_empresa_initials() changed; it saves nothing, and the
     # rename is logged by its caller (the Empresas edit handler).
     ".rni_avisar",
+    # avisar_senal() (T83, R/auth.R): bumps the sync bus's signal for
+    # Usuarios / Invitaciones after a save; it saves nothing, and the save is
+    # logged by its caller -- same shape as .rni_avisar above.
+    "avisar_senal",
     # modificar_bancos_confirmados() (2026-11-01, R/bancos_persistence.R):
     # the fresh-read-then-write wrapper around save_bancos_confirmados(); its
     # callers (the Agenda AP/AR confirm handlers) log their own action.
@@ -609,6 +613,7 @@ DEUDA_CAMINO <- c(
     "R/persistence.R :: s3_save_with_retry",
     "R/persistence.R :: .proveedores_guardar",
     "R/persistence.R :: .rni_avisar",
+    "R/auth.R :: avisar_senal",   # T83: a signal only, like .rni_avisar (no data saved, the caller logs)
     "R/persistence.R :: update_client_user_count",
     "R/persistence.R :: append_hd_notification",
     "R/persistence.R :: create_invite",
