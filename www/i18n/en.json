@@ -1745,6 +1745,7 @@
   "avisos.alertas.vacio": "This client has no users yet.",
   "avisos.alertas.editar_titulo": "Alerts for {usuario}",
   "avisos.alertas.guardado": "Alerts saved.",
+  "avisos.nota.titulo": "Note from {autor}: {titulo}",
   "avisos.actividad.crear_item": "{usuario} added an item",
   "avisos.actividad.crear_provision": "{usuario} created a provision",
   "avisos.actividad.crear_pasivo": "{usuario} created a liability",

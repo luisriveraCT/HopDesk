@@ -398,7 +398,8 @@ panorama_tipo_feed <- function(df) {
 
 # The feed: visible avisos newest first, each with its kind and whether it is
 # new since `ultima_visita` (POSIXct or NULL: first visit, nothing is new).
-panorama_feed <- function(vis, ultima_visita = NULL) {
+# T81: with `usuario`, what that user wrote (creado_por) is never new to them.
+panorama_feed <- function(vis, ultima_visita = NULL, usuario = NULL) {
   if (is.null(vis) || !nrow(vis)) {
     return(data.frame(id = character(), tipo_feed = character(), nuevo = logical(),
                       stringsAsFactors = FALSE))
@@ -411,6 +412,8 @@ panorama_feed <- function(vis, ultima_visita = NULL) {
   out$clase_ok  <- avisos_clase(vis)
   out$cuando    <- cuando
   out$nuevo     <- !is.na(uv) & !is.na(cuando) & cuando > uv
+  yo <- tolower(trimws(as.character(usuario %||% "")[1]))
+  if (!is.na(yo) && nzchar(yo)) out$nuevo <- out$nuevo & !(tolower(trimws(vis$creado_por)) %in% yo)
   out[order(out$cuando, decreasing = TRUE, na.last = TRUE), , drop = FALSE]
 }
 
@@ -573,6 +576,28 @@ PANORAMA_MENSAJE_MAX <- 500L
 PANORAMA_TIPOS_PUBLICAR <- c("comunicado", "recordatorio", "solicitud", "reconocimiento", "urgente")
 # Tabs a Destacado's button may open.
 PANORAMA_ENLACES <- c("PH", "BNC", "PSV", "CAL", "VEN", "REQ")
+
+# T81: a public note's aviso link (notes_handlers.R): NOTA:<year>-<month> (two digits). The only link of
+# Panorama that is not a tab. Here, not in notes_handlers.R: Panorama reads it
+# too, and its fixtures load this file.
+notas_enlace <- function(year, month) sprintf("NOTA:%04d-%02d", as.integer(year), as.integer(month))
+
+# The first day of the month an aviso link points to, or NULL if it is not one.
+notas_enlace_mes <- function(enlace) {
+  if (!is.character(enlace) || length(enlace) != 1L || is.na(enlace)) return(NULL)
+  m <- regmatches(enlace, regexec("^NOTA:([0-9]{4})-([0-9]{2})$", enlace))[[1]]
+  if (length(m) != 3L) return(NULL)
+  mes <- as.integer(m[3])
+  if (mes < 1L || mes > 12L) return(NULL)
+  as.Date(sprintf("%s-%02d-01", m[2], mes))
+}
+
+# Where an aviso may send its reader: a tab value, or a public note's month
+# (T81, NOTA:<year>-<month>, notas_enlace()). Anything else is no link.
+panorama_enlace_ok <- function(enlace) {
+  is.character(enlace) && length(enlace) == 1L && !is.na(enlace) &&
+    (grepl("^[A-Z]{2,6}$", enlace) || grepl("^NOTA:[0-9]{4}-(0[1-9]|1[0-2])$", enlace))
+}
 
 # Checks the form and returns list(ok = TRUE, aviso = <for avisos_agregar or
 # avisos_personales>, responsables) or list(ok = FALSE, error = <dictionary

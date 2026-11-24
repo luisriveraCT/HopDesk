@@ -12,9 +12,9 @@ notes_handlers <- function(input, output, session, shared,
 
   .last_notes_refresh <- local(Sys.time() - 60)
 
-  .ensure_notes_fresh <- function() {
+  .ensure_notes_fresh <- function(forzar = FALSE) {
     now <- Sys.time()
-    if (as.numeric(now - .last_notes_refresh, units = "secs") < 30)
+    if (!forzar && as.numeric(now - .last_notes_refresh, units = "secs") < 30)
       return(invisible(NULL))
     fresh <- tryCatch(load_notes(client_id = shared$effective_client_id()), error = function(e) NULL)
     if (!is.null(fresh) && is.data.frame(fresh)) notes_df(fresh)
@@ -25,6 +25,16 @@ notes_handlers <- function(input, output, session, shared,
   observeEvent(input$toggle_notes, {
     notes_visible(!notes_visible())
     if (notes_visible()) .ensure_notes_fresh()
+  }, ignoreInit = TRUE)
+
+  # ── Opened from a Panorama aviso (T81): NOTA:<year>-<month> ────────────────
+  # The panel opens (never toggles closed) in the note's month, read fresh.
+  observeEvent(input$abrir_notas, {
+    mes <- notas_enlace_mes(input$abrir_notas)
+    if (is.null(mes)) return()
+    shinyWidgets::updateAirDateInput(session, "month_sel", value = mes)
+    .ensure_notes_fresh(forzar = TRUE)
+    notes_visible(TRUE)
   }, ignoreInit = TRUE)
 
   # ── Month filter — all ledgers visible together ────────────────────────────
@@ -141,6 +151,7 @@ notes_handlers <- function(input, output, session, shared,
       ))
     } else {
       idx <- which(df$id == nid)
+      era_publica <- length(idx) > 0L && notas_es_publica(df$visibility[idx[1]])
       if (length(idx)) {
         df$title[idx]      <- input$note_title_input %||% "(Sin título)"
         df$body[idx]       <- input$note_body_input  %||% ""
@@ -158,6 +169,13 @@ notes_handlers <- function(input, output, session, shared,
       return(invisible(NULL))
     }
     bump_sync_version("notes_df", client_id = shared$effective_client_id())
+    # T81: news for everyone when it becomes public (new, or personal made
+    # public); editing a public note does not tell anyone again.
+    if (notas_es_publica(visibility) && (is.null(nid) || !isTRUE(era_publica))) {
+      nota <- df[df$id == (nid %||% df$id[nrow(df)]), , drop = FALSE]
+      if (nrow(nota)) notas_aviso_publicar(shared$effective_client_id(), nota[1, ],
+                                           por = tryCatch(current_user(), error = function(e) ""))
+    }
     removeModal()
     active_note_id(NULL)
     active_note_lgr(NULL)
@@ -237,6 +255,9 @@ notes_handlers <- function(input, output, session, shared,
     active_note_id(NULL)
     active_note_lgr(NULL)
     showNotification(tr("tablas.notas.aviso.eliminada"), type = "message", duration = 2)
+    # T81: nobody is sent to a note that is gone.
+    notas_aviso_retirar(shared$effective_client_id(), nid,
+                        por = tryCatch(current_user(), error = function(e) ""))
     log_action(
       user        = tryCatch(current_user(), error = function(e) "system"),
       module      = "notes",
@@ -258,4 +279,55 @@ notes_handlers <- function(input, output, session, shared,
   observe({
     .rebuild_observers()
   }) |> bindEvent(notes_df(), input$month_sel, ignoreNULL = FALSE)
+}
+
+# ── T81: public notes as Panorama avisos ─────────────────────────────────────
+# NA visibility reads as public (see .schema_notes).
+notas_es_publica <- function(visibility) {
+  v <- as.character(visibility %||% NA_character_)[1]
+  is.na(v) || identical(v, "public")
+}
+
+.NOTAS_AVISO_CUERPO_MAX <- 200L
+
+# One aviso for every client tier (automatico: niveles_cliente(), no
+# permission: every tier reads notes). clave nota|<id> with repetir = FALSE:
+# the same note never tells anyone twice (two sessions, a retry, made
+# personal and public again). `por` is the author's user: their own aviso is
+# not news to them (panorama_feed). It never throws: the note is already
+# saved, and an aviso that fails must not look like a failed save.
+notas_aviso_publicar <- function(client_id, nota, por = "") {
+  tryCatch({
+    cuerpo <- trimws(as.character(nota$body %||% ""))
+    if (is.na(cuerpo)) cuerpo <- ""
+    if (nchar(cuerpo) > .NOTAS_AVISO_CUERPO_MAX)
+      cuerpo <- paste0(substr(cuerpo, 1L, .NOTAS_AVISO_CUERPO_MAX - 1L), "…")
+    avisos_agregar(client_id, list(
+      tipo     = "automatico",
+      titulo   = tr("avisos.nota.titulo", autor = as.character(nota$author %||% ""),
+                    titulo = as.character(nota$title %||% "")),
+      cuerpo   = cuerpo,
+      severidad = "info",
+      clave    = paste0("nota|", nota$id),
+      repetir  = FALSE,
+      enlace   = notas_enlace(nota$year, nota$month)),
+      por = if (nzchar(por %||% "")) por else "sistema")
+  }, error = function(e) {
+    message("[NOTES] T81: the note's aviso failed: ", conditionMessage(e))
+    invisible(NULL)
+  })
+}
+
+# Retires the live aviso of a deleted note (nothing is deleted from avisos).
+# Never throws, as above.
+notas_aviso_retirar <- function(client_id, nota_id, por = "") {
+  tryCatch({
+    a <- avisos_leer(client_id)
+    ids <- a$id[a$clave %in% paste0("nota|", nota_id) & !(a$retirado %in% TRUE)]
+    for (id in ids) avisos_retirar(client_id, id, por = if (nzchar(por %||% "")) por else "sistema")
+    invisible(length(ids))
+  }, error = function(e) {
+    message("[NOTES] T81: the note's aviso was not retired: ", conditionMessage(e))
+    invisible(NULL)
+  })
 }

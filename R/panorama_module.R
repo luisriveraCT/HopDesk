@@ -95,7 +95,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       # permission avisos_visibles() already applied).
       fl <- ad_filtro()
       if (!is.null(fl)) v <- avisos_de_filtrar_feed(v, fl$pref, fl$cod)
-      panorama_feed(v, visita())
+      panorama_feed(v, visita(), usuario = usr()$user)
     })
     mis_sol <- shiny::reactive({
       v <- visibles(); u <- usr()
@@ -320,9 +320,16 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
 
     # A tab a Destacado or a feed item points to. Only tab values: anything
     # else is ignored.
+    # T81: a public note's aviso (NOTA:<year>-<month>) goes to the Calendar
+    # and opens the notes panel in that month (notes_handlers, input$abrir_notas).
     shiny::observeEvent(input$ir, {
       tab <- input$ir
-      if (is.character(tab) && length(tab) == 1L && grepl("^[A-Z]{2,6}$", tab)) ir_a(tab)
+      if (!panorama_enlace_ok(tab)) return()
+      mes <- notas_enlace_mes(tab)
+      if (is.null(mes)) return(ir_a(tab))
+      ir_a("CAL")
+      shinyjs::runjs(sprintf("Shiny.setInputValue('abrir_notas', '%s', {priority: 'event'});",
+                             format(mes, "NOTA:%Y-%m")))
     }, ignoreInit = TRUE)
 
     # ── Lo que ha pasado ──────────────────────────────────────────────────────
@@ -363,7 +370,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
             meta <- c(tr(etiqueta),
                       if (nzchar(a$cuerpo %||% "")) a$cuerpo,
                       if ((a$contador %||% 1L) > 1L) tr("panorama.feed.veces", n = as.character(a$contador)))
-            enlace <- if (!is.na(a$enlace) && grepl("^[A-Z]{2,6}$", a$enlace)) a$enlace else NULL
+            if (grepl("^nota\\|", a$clave %||% "")) icono <- "note-sticky"   # T81
+            enlace <- if (panorama_enlace_ok(a$enlace)) a$enlace else NULL
             shiny::tags$li(class = paste("pan-item", if (isTRUE(a$nuevo)) "pan-item--nuevo"),
               `data-tipo` = a$tipo_feed,
               shiny::span(class = "pan-item-nuevo", `aria-hidden` = "true"),

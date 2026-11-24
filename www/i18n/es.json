@@ -1745,6 +1745,7 @@
   "avisos.alertas.vacio": "Este cliente todavía no tiene usuarios.",
   "avisos.alertas.editar_titulo": "Alertas de {usuario}",
   "avisos.alertas.guardado": "Alertas guardadas.",
+  "avisos.nota.titulo": "Nota de {autor}: {titulo}",
   "avisos.actividad.crear_item": "{usuario} agregó un item",
   "avisos.actividad.crear_provision": "{usuario} creó una provisión",
   "avisos.actividad.crear_pasivo": "{usuario} creó un pasivo",
