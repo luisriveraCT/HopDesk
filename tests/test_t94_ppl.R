@@ -15,8 +15,9 @@
 #   4  the classification is one of the guide's codes or the default "07":
 #      what a browser sends is never written as is;
 #   5  the real pagarHoyServer (testServer, the harness of test_cm30): a
-#      supplier whose CLABE's bank is outside the catalog (143), mixed with
-#      valid ones (one of them STP, now 90646), says why in the preview, never reaches a file or the payment
+#      supplier whose CLABE's bank is outside the catalog (608), mixed with
+#      valid ones (STP, now 90646; CIBANCO 143, 40 series, as before and
+#      logged), says why in the preview, never reaches a file or the payment
 #      log (one company, the ZIP, nor the ZIP's _002 even if "included"), and
 #      stays pending in the Agenda; the USD file carries the classification
 #      chosen in the preview, checked on the server, and says "por probar".
@@ -106,10 +107,22 @@ ok("3 · Banxico (001) -> 02001 (su clave de 4, a 5 con cero)", banco_de("001180
 ok("3 · BBVA (012) sigue 40012", banco_de("012180001234567890") == "40012")
 ok("3 · 123 instituciones en PPL_BANCOS, todas de 4-5 dígitos y sin prefijo repetido",
    length(PPL_BANCOS) == 123L && all(grepl("^[0-9]{4,5}$", PPL_BANCOS)) && !anyDuplicated(names(PPL_BANCOS)))
-ok("3 · un prefijo fuera del catálogo (143) no tiene clave",
-   is.na(ppl_banco_destino("143180001234567890", "143", "SPI")))
-ok("3 · generate_ppl() se detiene con un banco fuera del catálogo (última red)",
-   inherits(tryCatch(banco_de("143180001234567890"), error = function(e) e), "error"))
+# A 40-series bank missing from the catalog (CIBANCO 143) goes as before
+# (Coordinador): the line master's generate_ppl() wrote for this payment.
+cib <- data.frame(alias = "CIBANCO", clabe_dest = "143180001234567890", banco_dest = "143", medio_pago = "SPI",
+                  importe = 999.99, concepto = "F-143", stringsAsFactors = FALSE)
+CIB_MASTER <- fila_master("0200000020100000000073543010201014014300000000009999920261124SPI4000143180001234567890000000000CIBANCO        000000000000000", "F-143")
+ok("3 · CIBANCO (143, serie 40, fuera del catálogo): sale idéntico a master (40143)",
+   identical(generate_ppl(cib, "073543010201", FECHA, 1L, moneda = "MXN")[2], CIB_MASTER) &&
+     isTRUE(ppl_banco_como_antes("143180001234567890", "143", "SPI")))
+ok("3 · un prefijo fuera del catálogo y fuera de la serie 40 (608, serie 90) no tiene clave",
+   is.na(ppl_banco_destino("608180001234567890", "608", "SPI")) &&
+     !ppl_banco_como_antes("608180001234567890", "608", "SPI"))
+ok("3 · generate_ppl() se detiene con ese banco (última red)",
+   inherits(tryCatch(banco_de("608180001234567890"), error = function(e) e), "error"))
+ok("3 · \"como antes\" nunca para un banco del catálogo, BCO ni la línea en ceros",
+   !any(ppl_banco_como_antes(c("012180001234567890", "030180003333333333", "000000000000000000"),
+                             c("012", "030", ""), c("SPI", "BCO", "SPI"))))
 ok("3 · ppl_banco_destino() es por renglón: BCO 40030, ceros 40000, STP 90646",
    identical(ppl_banco_destino(c("030180003333333333", "000000000000000000", "646180001234567890"),
                                c("030", "", "646"), c("BCO", "SPI", "SPI")), c("40030", "40000", "90646")))
@@ -131,7 +144,11 @@ PPL <- list(); ultimo_modal <- NULL; AVISOS <- character()
                                    importes = ppl_rows$importe)
   invisible(NULL)
 }
-log_action <- function(...) invisible(NULL)
+LOGS <- list()
+log_action <- function(user, module, action, description = "", ..., metadata = NULL) {
+  LOGS[[length(LOGS) + 1L]] <<- list(action = action, description = description, metadata = metadata)
+  invisible(NULL)
+}
 avisos_actividad <- function(...) invisible(NULL)
 bump_sync_version <- function(...) invisible(NULL)
 hd_numero_update <- function(...) invisible(NULL)   # R/ui_components.R; switching the currency calls it
@@ -148,11 +165,13 @@ get_cuentas_ppl_data <- function(emp, cur, shared)
              is_ppl_default = TRUE, stringsAsFactors = FALSE)
 
 EMP <- "Networks"
-CLABE_FUERA <- "143180001234567890"   # 143: not in BanBajío's Anexo 4
+CLABE_FUERA <- "608180001234567890"   # 608: not in BanBajío's Anexo 4, 90 series -> stays out
 CLABE_STP   <- "646180001234567890"   # STP: in it, as 90646
-catalogo <- tibble::tibble(nombre = c("ACME SA", "PAGOS FUERA SA", "PAGOS STP SA"), alias = c("ACME", "PAGOFUERA", "PAGOSTP"),
-                           clabe = c("012345678901234567", CLABE_FUERA, CLABE_STP), medio_pago = "SPEI",
-                           banco = c("012", "143", "646"), Empresa = NA_character_)
+CLABE_CIB   <- "143180001234567890"   # CIBANCO: not in it, 40 series -> as before, 40143, logged
+catalogo <- tibble::tibble(nombre = c("ACME SA", "PAGOS FUERA SA", "PAGOS STP SA", "PAGOS CIBANCO SA"),
+                           alias = c("ACME", "PAGOFUERA", "PAGOSTP", "PAGOCIB"),
+                           clabe = c("012345678901234567", CLABE_FUERA, CLABE_STP, CLABE_CIB), medio_pago = "SPEI",
+                           banco = c("012", "608", "646", "143"), Empresa = NA_character_)
 fila <- function(id, doc, moneda = "MXN", parte = "ACME SA", imp = 100)
   tibble::tibble(id = id, ledger = "AP", Empresa = EMP, Moneda = moneda, Documento = doc, Parte = parte,
                  Codigo = "", Importe = imp, FechaVenc = as.Date("2026-11-25"), status = "pending",
@@ -161,13 +180,15 @@ fila <- function(id, doc, moneda = "MXN", parte = "ACME SA", imp = 100)
 AGENDA <- dplyr::bind_rows(fila("A1", "D1", imp = 100),
                            fila("A4", "D4", parte = "PAGOS FUERA SA", imp = 777),   # bank outside the catalog
                            fila("A5", "D5", parte = "PAGOS STP SA", imp = 333),     # STP: goes in, 90646
+                           fila("A6", "D6", parte = "PAGOS CIBANCO SA", imp = 444), # CIBANCO: goes in, 40143
                            fila("A2", "D2", moneda = "USD", imp = 50))
-SAP <- data.frame(Empresa = "NTS", Documento = c("D1", "D4", "D5", "D2"), Factura = c("F-1", "F-4", "F-5", "F-2"),
-                  Parte = c("ACME SA", "PAGOS FUERA SA", "PAGOS STP SA", "ACME SA"), Moneda = c("MXN", "MXN", "MXN", "USD"),
+SAP <- data.frame(Empresa = "NTS", Documento = c("D1", "D4", "D5", "D6", "D2"), Factura = c("F-1", "F-4", "F-5", "F-6", "F-2"),
+                  Parte = c("ACME SA", "PAGOS FUERA SA", "PAGOS STP SA", "PAGOS CIBANCO SA", "ACME SA"),
+                  Moneda = c("MXN", "MXN", "MXN", "MXN", "USD"),
                   `Fecha de contabilización` = as.Date("2026-11-01"), check.names = FALSE)
 
 correr <- function(modo, clasif = NULL, incluir = character()) {
-  PPL <<- list(); AVISOS <<- character(); ultimo_modal <<- NULL
+  PPL <<- list(); AVISOS <<- character(); ultimo_modal <<- NULL; LOGS <<- list()
   res <- list()
   agenda_rv <- reactiveVal(AGENDA)
   shared <- list(
@@ -207,13 +228,18 @@ correr <- function(modo, clasif = NULL, incluir = character()) {
 detalle <- function(lineas) lineas[startsWith(lineas, "02")]
 sin_fuera <- function(r) !any(unlist(lapply(PPL, `[[`, "clabes")) %in% CLABE_FUERA) &&
   !any(unlist(lapply(PPL, `[[`, "importes")) == 777)
+como_antes <- function() Filter(function(l) identical(l$action, "ppl_banco_fuera_catalogo"), LOGS)
 
 r <- correr("MXN")
-ok("5 · una empresa, MXN: la vista previa dice el motivo del banco fuera del catálogo (prefijo 143)",
-   grepl(tr("tablas.ppl.motivo_banco", prefijo = "143"), r$modal, fixed = TRUE))
+ok("5 · una empresa, MXN: la vista previa dice el motivo del banco fuera del catálogo (prefijo 608)",
+   grepl(tr("tablas.ppl.motivo_banco", prefijo = "608"), r$modal, fixed = TRUE))
 d <- detalle(r$archivo)
-ok("5 · el archivo lleva los 2 pagos válidos: ACME con 40012 y STP con 90646 (antes 40646)",
-   length(d) == 2L && identical(sort(substr(d, 34, 38)), c("40012", "90646")) && !any(grepl(CLABE_FUERA, d, fixed = TRUE)))
+ok("5 · el archivo lleva los 3 pagos válidos: ACME 40012, STP 90646 (antes 40646) y CIBANCO 40143 (como antes)",
+   length(d) == 3L && identical(sort(substr(d, 34, 38)), c("40012", "40143", "90646")) && !any(grepl(CLABE_FUERA, d, fixed = TRUE)))
+ok("5 · CIBANCO deja en el log \"fuera del catálogo de BanBajío, enviado como antes\", con su prefijo y sin cuenta",
+   length(como_antes()) == 1L && identical(como_antes()[[1]]$metadata$prefijos, "143") &&
+     identical(como_antes()[[1]]$metadata$n, 1L) && !grepl(CLABE_CIB, como_antes()[[1]]$description, fixed = TRUE) &&
+     grepl("enviado(s) como antes", como_antes()[[1]]$description, fixed = TRUE))
 ok("5 · el registro de pagos generados no tiene el pago fuera del catálogo", length(PPL) == 1L && sin_fuera())
 ok("5 · el pago fuera del catálogo sigue pendiente en la Agenda", "A4" %in% r$agenda$id &&
      r$agenda$status[r$agenda$id == "A4"] == "pending")
@@ -227,7 +253,9 @@ ok("5 · ZIP: la vista previa marca el pago fuera del catálogo \"banco fuera de
 ok("5 · ZIP: aunque se marque \"incluir\", el pago fuera del catálogo no entra a ningún archivo (ni al _002)",
    !any(grepl(CLABE_FUERA, r$contenido, fixed = TRUE)) && !any(grepl("_002", r$zip, fixed = TRUE)))
 ok("5 · ZIP: el registro no tiene el pago fuera del catálogo y la Agenda lo conserva", sin_fuera() && "A4" %in% r$agenda$id)
-ok("5 · ZIP: el archivo MXN lleva el pago válido", any(grepl("012345678901234567", r$contenido, fixed = TRUE)))
+ok("5 · ZIP: el archivo MXN lleva los pagos válidos, CIBANCO como antes, y su rastro en el log",
+   any(grepl("012345678901234567", r$contenido, fixed = TRUE)) &&
+     any(substr(detalle(r$contenido), 34, 38) == "40143") && length(como_antes()) == 1L)
 
 r <- correr("USD", clasif = "<script>alert(1)</script>")
 ok("5 · USD: el modal trae el selector (\"07 Otro\" elegido) y la nota \"por probar\"",

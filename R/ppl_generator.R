@@ -264,9 +264,28 @@ ppl_banco_destino <- function(clabe_dest, banco_dest, medio_pago) {
   pref <- substr(cl, 1, 3)
   out  <- unname(PPL_BANCOS[pref])
   out  <- ifelse(is.na(out), NA_character_, stringr::str_pad(out, 5, "left", "0"))
+  # A bank of the 40 series (CLABE prefix 0xx-1xx: every 40xxx and 37xxx key
+  # of the catalog is one) missing from the catalog -- CIBANCO 143, say --
+  # keeps what it carried before T94, "40" + its prefix: it may well work,
+  # and leaving it out would be a regression (Coordinador, 2026-11-24).
+  # 6xx-9xx are the 90/91 series: not in the catalog, they stay out.
+  out[ppl_banco_como_antes(clabe_dest, banco_dest, medio_pago)] <-
+    paste0("40", pref[ppl_banco_como_antes(clabe_dest, banco_dest, medio_pago)])
   out[grepl("^0+$", cl)] <- "40000"
   out[ppl_es_bajio(banco_dest, medio_pago)] <- "40030"
   out
+}
+
+# TRUE per row whose bank is missing from BanBajío's catalog but is of the 40
+# series (prefix 0xx-1xx): it goes in the file as before T94 ("40" + prefix)
+# and the Agenda logs it ("fuera del catálogo de BanBajío, enviado como antes").
+ppl_banco_como_antes <- function(clabe_dest, banco_dest, medio_pago) {
+  cl <- trimws(as.character(clabe_dest))
+  cl[is.na(cl)] <- ""
+  cl <- substr(stringr::str_pad(cl, 18, "left", "0"), 1, 18)
+  pref <- substr(cl, 1, 3)
+  !pref %in% names(PPL_BANCOS) & grepl("^[01][0-9]{2}$", pref) & !grepl("^0+$", cl) &
+    !ppl_es_bajio(banco_dest, medio_pago)
 }
 
 # TRUE per Agenda row whose payment can go in the file as far as its bank

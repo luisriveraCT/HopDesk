@@ -615,6 +615,33 @@ pagarHoyUI <- function(id) {
   }
 }
 
+# T94: payments whose bank is missing from BanBajío's catalog but is of the
+# 40 series go in the file as before ("40" + prefix, ppl_banco_como_antes());
+# each file that carries one leaves a trace in the log, with the prefixes
+# and how many -- never an account. Never throws: the download goes on.
+.ph_log_bancos_como_antes <- function(shared, emp, moneda, ppl_rows, fname) {
+  if (is.null(ppl_rows) || !nrow(ppl_rows)) return(invisible(NULL))
+  tryCatch({
+    viejo <- ppl_banco_como_antes(ppl_rows$clabe_dest, dplyr::coalesce(as.character(ppl_rows$banco_dest), ""),
+                                  ppl_rows$medio_pago)
+    if (!any(viejo)) return(invisible(NULL))
+    pref <- substr(stringr::str_pad(trimws(as.character(ppl_rows$clabe_dest[viejo])), 18, "left", "0"), 1, 3)
+    cid  <- tryCatch(shared$effective_client_id(), error = function(e) NULL) %||% Sys.getenv("CLIENT_ID")
+    log_action(
+      tryCatch(shared$current_user(), error = function(e) NULL) %||% "unknown", "pagar_hoy",
+      "ppl_banco_fuera_catalogo",
+      sprintf("Archivo de pago %s: %d pago(s) con banco fuera del catálogo de BanBajío, enviado(s) como antes (40 + %s)",
+              as.character(fname %||% ""), sum(viejo), paste(sort(unique(pref)), collapse = ", ")),
+      target_id = emp,
+      metadata  = list(empresa = emp, moneda = moneda, archivo = as.character(fname %||% NA_character_),
+                       n = sum(viejo), prefijos = sort(unique(pref))),
+      client_id             = cid,
+      viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+    )
+  }, error = function(e) message("[PAGOS_AUDIT] .ph_log_bancos_como_antes failed: ", e$message))
+  invisible(NULL)
+}
+
 pagarHoyServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -1877,6 +1904,8 @@ pagarHoyServer <- function(id, shared) {
             fname = paste0("pagos_", emp, "_", format(hoy(), "%d%m%Y"), "_001.txt"),
             source_type = "individual", banco_origen = banco_origen
           )
+          .ph_log_bancos_como_antes(shared, emp, cur_sel, ppl_rows,
+                                    paste0("pagos_", emp, "_", format(hoy(), "%d%m%Y"), "_001.txt"))
           # T94: the file's currency and, for SPID, the classification chosen
           # in the preview -- checked against the guide's codes, never used raw.
           lines <- generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur_sel,
@@ -3303,6 +3332,7 @@ pagarHoyServer <- function(id, shared) {
               shared, emp, cur, cuenta_origen, ppl_rows,
               fname = basename(fname), source_type = "zip_bulk", banco_origen = banco_origen_z
             )
+            .ph_log_bancos_como_antes(shared, emp, cur, ppl_rows, basename(fname))
             # T94: the currency's divisa; SPID's classification is the default
             # ("07 Otro") -- the ZIP has no per-file selector.
             write_ppl(generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur,
