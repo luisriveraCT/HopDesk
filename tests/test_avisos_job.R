@@ -60,9 +60,9 @@ ok("cada quien en su idioma (ti tiene inglés)", {
 ok("los envíos quedan en correos_enviados.rds", nrow(get("acme/avisos/correos_enviados.rds", envir = .mem)) == 2L)
 ok("las métricas, la semana y los avisos se escriben bajo avisos/",
    all(c("acme/avisos/metricas.rds", "acme/avisos/semana.rds") %in% ls(.mem)))
-ok("correrlo otra vez no reenvía nada", {
+ok("correrlo otra vez no reenvía nada (T80: cada cliente ya salió entero y se salta)", {
   n <- length(fx_enviados); l2 <- lunes()
-  length(fx_enviados) == n && c_(l2, "ya_enviado") == 4L && c_(l2, "enviado") == 0L
+  length(fx_enviados) == n && c_(l2, "ya_corrido") == 2L && c_(l2, "enviado") == 0L
 })
 
 cat("\n-- fallas --\n")

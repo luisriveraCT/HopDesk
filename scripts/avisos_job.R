@@ -47,7 +47,7 @@ JOB_EVENTOS <- c(
   "clientes", "clientes_ok", "omitido_lectura", "omitido_sin_sap", "omitido_sap_viejo",
   "omitido_calculo", "omitido_sin_lunes", "omitido_destinatarios", "error_cliente",
   "destinatarios", "enviado", "fallido", "ya_enviado", "prueba_html", "alertas_umbral",
-  "archivados", "sin_llave_nueva", "moneda_base_omision", "historial_fallido")
+  "archivados", "sin_llave_nueva", "moneda_base_omision", "historial_fallido", "ya_corrido")
 
 .job <- new.env(parent = emptyenv())
 job_reiniciar <- function() .job$cuenta <- stats::setNames(integer(length(JOB_EVENTOS)), JOB_EVENTOS)
@@ -128,6 +128,24 @@ job_destinatarios <- function(cid) {
   }, error = function(e) NULL)
 }
 
+# T80: TRUE when this week's real `modo` email already reached every
+# recipient of the client. The email is started several times on purpose
+# (AWS trigger plus backup crons), and a repeated lunes would otherwise
+# rewrite semana.rds -- the Monday snapshot Friday compares against -- with
+# later data; a repeated viernes would rewrite this week's histories. Then
+# the client is skipped whole -- in test mode too: job_enviar() already
+# skips a recipient whose real email went out, so a test run after the real
+# one left no HTML and only rewrote semana.rds. Anything unreadable or
+# missing means "not yet", so the run goes on exactly as before and only
+# sends what is missing.
+job_ya_salio <- function(cid, modo, fecha) {
+  dests <- job_destinatarios(cid)
+  if (is.null(dests) || !nrow(dests)) return(FALSE)
+  enviados <- tryCatch(leer_tabla_para_escribir(.ENVIADOS_KEY, cid, .schema_enviados), error = function(e) NULL)
+  if (!is.data.frame(enviados) || !nrow(enviados)) return(FALSE)
+  all(job_clave(fecha, modo, dests$usuario) %in% enviados$clave)
+}
+
 # One email per recipient: `construir(dest)` -> list(asunto, html).
 job_enviar <- function(cid, modo, fecha, dests, construir, prueba) {
   enviados <- leer_tabla_para_escribir(.ENVIADOS_KEY, cid, .schema_enviados)
@@ -165,6 +183,7 @@ job_tipos <- function(monedas, base)
   avisos_tipos(monedas, base, tryCatch(fx_fuentes_hoy(), error = function(e) NULL))
 
 job_lunes <- function(cid, hoy, ahora, prueba, url) {
+  if (job_ya_salio(cid, "lunes", hoy)) return(job_contar("ya_corrido"))
   x <- avisos_cliente_datos(cid, ahora)
   if (!x$ok) return(job_contar(x$motivo))
   sh <- x$shared
@@ -190,6 +209,7 @@ job_lunes <- function(cid, hoy, ahora, prueba, url) {
 }
 
 job_viernes <- function(cid, hoy, ahora, prueba, url) {
+  if (job_ya_salio(cid, "viernes", hoy)) return(job_contar("ya_corrido"))
   x <- avisos_cliente_datos(cid, ahora)
   if (!x$ok) return(job_contar(x$motivo))
   s <- correo_semana_leer(cid, hoy)
