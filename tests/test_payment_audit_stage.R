@@ -27,11 +27,12 @@ cat("── Payment-file audit trail (structured log + permission + viewer) ─�
 }
 .chk_true <- function(cond, label) .chk(isTRUE(cond), TRUE, label)
 
+# T100b: the viewer's and tiersServer's files (audit_log_viewer_module.R,
+# bancos_respuesta.R, pagos_audit_viewer_module.R, tiers_module.R, ...) come
+# from tests/helpers/server_usuarios_archivos.R, which _run_saas.R loads
+# before its stand-ins. Loading them again here would undo nothing today, but
+# it is the private copy of the list T100 removed everywhere else.
 source("R/pagos_generados_persistence.R", local = FALSE)
-source("R/audit_log_viewer_module.R",     local = FALSE)  # .audit_viewer_resolve_perms()
-source("R/bancos_respuesta.R",           local = FALSE)  # T93: the viewer calls .btr_servidor()
-source("R/pagos_audit_viewer_module.R",   local = FALSE)
-source("R/tiers_module.R",                local = FALSE)
 
 # Sourcing the whole (huge) pagar_hoy_module.R just to reach the one function
 # under test here (.log_pago_generado, module-scope, no dependency on the

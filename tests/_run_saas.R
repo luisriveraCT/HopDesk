@@ -146,28 +146,17 @@ tryCatch({
   "%||%" <- function(a, b) if (!is.null(a)) a else b
 
   source("R/persistence.R",    local = FALSE)
-  source("R/i18n.R",           local = FALSE)
-  # The table engine: the audit viewers and the payment-file viewer paint
-  # their tables with it (T10).
-  for (.f in c("R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R"))
-    source(.f, local = FALSE)
-  # montos_por_moneda(): the audit viewer writes a ZIP's and a report's totals
-  # one per currency with it (T55c). Only function definitions at top level.
-  source("R/ui_components.R",  local = FALSE)
-  source("R/tier_registry.R",  local = FALSE)
-  source("R/permisos.R",       local = FALSE)
+  # T100b: the real tiersServer's files (and the payment-file viewer's, for
+  # test_payment_audit_stage.R) come from the ONE shared list, loaded here,
+  # BEFORE the stand-ins below -- never from a test module, which would load
+  # them again over those stand-ins for every module after it.
+  source("tests/helpers/server_usuarios_archivos.R", local = FALSE)
+  cargar_server_usuarios()
+  # What the other modules need beyond the server.
   source("R/sap_cache.R",      local = FALSE)
   source("R/jump_logic.R",     local = FALSE)
-  source("R/tiers_tab_config.R", local = FALSE)
-  source("R/auth.R",           local = FALSE)
-  source("R/app_audit.R",      local = FALSE)
   source("R/bancos_persistence.R", local = FALSE)
-  source("R/audit_sticky_ui.R", local = FALSE)
-  source("R/audit_log_viewer_module.R", local = FALSE)
-  source("R/tema_registro.R",  local = FALSE)   # .email_pintar(): the mails resolve their colours with tema_color()
-  source("R/email_service.R",  local = FALSE)
   source("R/secrets_encryption.R",     local = FALSE)
-  source("R/erp_connector_registry.R", local = FALSE)
   source("R/sap_api.R",                local = FALSE)
 
   # ── Override hd-admin direct-read helpers (they bypass .s3_key()) ─────────
