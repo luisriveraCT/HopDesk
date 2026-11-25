@@ -39,7 +39,7 @@ CORREO_TEMA <- "marca"
     marino = "primario", dorado = "acento", dorado_osc = "oro-osc", linea = "lino-bd",
     linea_tabla = "superficie-2", pie = "fondo", arena = "arena", arena_tinta = "arena-fg",
     gris_claro = "niebla-osc", cobre = "aviso-texto", revision = "aviso-suave", revision_tinta = "ambar-osc",
-    verde = "exito", logro_tinta = "acento-texto", riel = "lino-riel", reprog = "niebla-tenue",   # TEMA 6-7: today's tone
+    verde = "exito", logro_tinta = "acento-texto", riel = "lino-riel", reprog = "texto-tenue",   # TEMA 6-9: readable (the Coordinador)
     por_vencer = "bruma", cambio = "borde", liquidado_ar = "arena-osc", liquidado_ap = "pizarra-clara",
     linea_oscura = "marino-claro"),
   clasico = c(
@@ -47,7 +47,7 @@ CORREO_TEMA <- "marca"
     marino = "primario", dorado = "acento", dorado_osc = "acento-texto", linea = "borde",
     linea_tabla = "superficie-2", pie = "fondo", arena = "acento-p12", arena_tinta = "acento-texto",
     gris_claro = "primario-suave", cobre = "aviso-texto", revision = "aviso-suave", revision_tinta = "aviso-texto",
-    verde = "exito", logro_tinta = "acento-texto", riel = "superficie-2", reprog = "texto-tenue",
+    verde = "exito", logro_tinta = "acento-texto", riel = "superficie-2", reprog = "texto-2",   # TEMA 6-9: readable (Clásico's texto-tenue is 2.5)
     por_vencer = "borde-fuerte", cambio = "borde", liquidado_ar = "acento-p45", liquidado_ap = "primario-p40",
     linea_oscura = "primario-hover"))
 .correo_colores <- function(tema = CORREO_TEMA) {

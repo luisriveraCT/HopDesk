@@ -454,7 +454,7 @@ invite_activation_url <- function(token, session = NULL) {
 # un-anchored keeps .html_to_text() from emitting "url: url" twice.
 .email_fallback_url <- function(url, idioma = NULL) {
   sprintf(
-    '<p style="margin:0 0 4px;%sfont-size:12px;color:{{leg-texto-2-7b8794}};">%s</p>
+    '<p style="margin:0 0 4px;%sfont-size:12px;color:{{texto-2}};">%s</p>
      <p style="margin:0 0 8px;%sfont-size:12px;color:{{leg-texto-2-4a5b6b}};word-break:break-all;">%s</p>',
     .EMAIL_SANS, .email_t("boton_falla", idioma), .EMAIL_SANS, .email_esc(url))
 }
@@ -478,7 +478,7 @@ invite_activation_url <- function(token, session = NULL) {
 
         <tr><td bgcolor="{{superficie}}" style="background:{{superficie}};padding:34px 32px 28px;%sfont-size:15px;line-height:1.62;color:{{leg-texto-23303d}};">%s</td></tr>
 
-        <tr><td bgcolor="{{leg-superficie-2-eef1f5}}" style="background:{{leg-superficie-2-eef1f5}};padding:18px 32px;%sfont-size:11px;line-height:1.7;color:{{leg-texto-2-7b8794}};">%s</td></tr>
+        <tr><td bgcolor="{{superficie-2}}" style="background:{{superficie-2}};padding:18px 32px;%sfont-size:11px;line-height:1.7;color:{{texto-2}};">%s</td></tr>
 
       </table>
     </td></tr>
@@ -514,7 +514,7 @@ email_invite_html <- function(display_name, client_name, invite_url,
      <p style="margin:0 0 4px;">%s</p>
      %s
      %s
-     <p style="margin:18px 0 0;font-size:13px;color:{{leg-texto-2-7b8794}};">%s</p>',
+     <p style="margin:18px 0 0;font-size:13px;color:{{texto-2}};">%s</p>',
     .email_t("saludo", idioma, nombre = display_name), opening,
     .email_t("invitacion.que_es", idioma, cliente = client_name),
     .email_t("invitacion.entrar", idioma),
@@ -540,11 +540,11 @@ email_welcome_html <- function(display_name, username, client_name, app_url, tem
      <p style="margin:0 0 18px;">%s</p>
      <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:0 0 6px;">
        <tr>
-         <td bgcolor="{{superficie-2}}" style="background:{{superficie-2}};border:1px solid {{borde}};padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:{{leg-texto-2-7b8794}};width:38%%;">%s</td>
+         <td bgcolor="{{superficie-2}}" style="background:{{superficie-2}};border:1px solid {{borde}};padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:{{texto-2}};width:38%%;">%s</td>
          <td bgcolor="{{superficie-2}}" style="background:{{superficie-2}};border:1px solid {{borde}};padding:12px 14px;font-family:Consolas,Menlo,monospace;font-size:16px;font-weight:bold;letter-spacing:0.04em;color:{{leg-texto-07090d}};">%s</td>
        </tr>
        <tr>
-         <td style="border:1px solid {{borde}};padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:{{leg-texto-2-7b8794}};">%s</td>
+         <td style="border:1px solid {{borde}};padding:12px 14px;%sfont-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:{{texto-2}};">%s</td>
          <td style="border:1px solid {{borde}};padding:12px 14px;%sfont-size:14px;color:{{leg-texto-2-4a5b6b}};">%s</td>
        </tr>
      </table>
@@ -573,7 +573,7 @@ email_password_reset_html <- function(display_name, reset_url, expires_hours = 2
      <p style="margin:0 0 6px;">%s</p>
      %s
      %s
-     <p style="margin:18px 0 0;font-size:13px;color:{{leg-texto-2-7b8794}};">%s</p>',
+     <p style="margin:18px 0 0;font-size:13px;color:{{texto-2}};">%s</p>',
     .email_t("saludo", idioma, nombre = display_name),
     .email_t("contrasena.intro", idioma),
     .email_button(reset_url, tr("niveles.correo.contrasena.boton", idioma = idioma %||% hd_idioma())),
@@ -592,7 +592,7 @@ email_user_limit_warning_html <- function(client_name, current_users, max_users,
   remaining <- max_users - current_users
   .email_pintar(sprintf('
 <div style="font-family:sans-serif;max-width:520px;margin:auto;padding:32px">
-  <h2 style="color:{{leg-aviso-texto-f59e0b}}">&#9888; %s</h2>
+  <h2 style="color:{{aviso-texto}}">&#9888; %s</h2>
   <p>%s</p>
   <table style="border-collapse:collapse;width:100%%;margin:16px 0">
     <tr>
@@ -605,7 +605,7 @@ email_user_limit_warning_html <- function(client_name, current_users, max_users,
     </tr>
     <tr>
       <td style="padding:8px;border:1px solid {{borde}};color:{{texto-2}}">%s</td>
-      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold;color:{{leg-aviso-texto-f59e0b}}">%d</td>
+      <td style="padding:8px;border:1px solid {{borde}};font-weight:bold;color:{{aviso-texto}}">%d</td>
     </tr>
   </table>
   <p style="color:{{leg-texto-2-666666}};font-size:13px">
@@ -718,7 +718,7 @@ notify_user_limit <- function(client_id) {
 email_limit_change_html <- function(client_name, old_limit, new_limit,
                                     changed_by, deactivated = character(0), tema = NULL, idioma = NULL) {
   sube  <- new_limit > old_limit
-  color <- if (sube) "{{leg-exito-16a34a}}" else "{{peligro}}"
+  color <- if (sube) "{{exito-texto}}" else "{{peligro}}"
   deact_section <- if (length(deactivated)) {
     paste0(
       '<p><strong>', .email_t("cambio.desactivadas", idioma), '</strong></p>',

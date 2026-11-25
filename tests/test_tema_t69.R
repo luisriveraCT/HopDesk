@@ -134,13 +134,10 @@ pares_bajos <- function(h, t) {
   }
   unique(malos)
 }
-# Clásico's account mails look like today (TEMA 4b): their pairs below AA are
-# a debt, listed by colour, that may only shrink (Luis decides a fix): the
-# footer's grey, the limit warning's amber, the limit change's green.
-.CLASICO_DEUDA_CORREOS <- c("#7B8794", "#F59E0B", "#16A34A")
+# The Coordinador's decision (readability, not brand): no debt left; every text
+# of these mails reads >= 4.5 (3 for large text) in both themes.
 for (t in c("clasico", "marca")) for (n in names(cs <- correos(t))) {
   m <- pares_bajos(cs[[n]], t)
-  if (t == "clasico") m <- m[!substr(m, 1, 7) %in% .CLASICO_DEUDA_CORREOS]
   ok(sprintf("f: [%s] %s: every text colour >= 4.5 on its background%s", t, n,
              if (length(m)) paste0(" (", paste(m, collapse = "; "), ")") else ""), !length(m) && !grepl("{{", cs[[n]], fixed = TRUE))
 }

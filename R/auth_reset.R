@@ -152,7 +152,7 @@ email_reset_html <- function(cuentas, minutos = RESET_MINUTOS, tema = NULL) {
     .email_esc(tr("cuentas.olvide.correo.hola")), "</p>",
     '<p style="margin:0 0 6px;">', .email_esc(tr("cuentas.olvide.correo.intro")), "</p>",
     paste(bloques, collapse = ""),
-    '<p style="margin:18px 0 0;font-size:13px;color:{{leg-texto-2-7b8794}};">',
+    '<p style="margin:18px 0 0;font-size:13px;color:{{texto-2}};">',
     .email_esc(tr("cuentas.olvide.correo.caduca", minutos = as.character(minutos))), "</p>")
   .email_shell(body, preheader = tr("cuentas.olvide.correo.caduca", minutos = as.character(minutos)),
                footer = .email_footer_default(tr("cuentas.olvide.correo.no_fuiste")), tema = tema)

@@ -205,16 +205,6 @@ contraste <- tema$tema_contraste
                       # TEMA 6-7: Clásico's texto-tenue (#9CA3AF, 2.4-2.5) stays as it is: Clásico
                       # looks like today; a fix is a debt for later, with Luis's leave. Marca's passes.
                       "texto-tenue/superficie", "texto-tenue/fondo", "texto-tenue/superficie-2")
-# Debt outside the themes (TEMA 6-7, the Diseñador's decision): the weekly
-# mail's "reprogramado" keeps Marca's old texto-tenue (palette niebla-tenue)
-# so nobody's mail changes without a decision. It is below AA on the mail's
-# paper; raising it (to Marca's texto-tenue #5F6D87) is Luis's to decide.
-# This check fails the day it changes, so the debt is closed on purpose.
-.DEUDA_CORREO <- list(par = c("niebla-tenue", "blanco"), hoy = 2.95)
-r_deuda <- local({ pal <- tema$.HD_PALETA; tema$tema_contraste(pal[[.DEUDA_CORREO$par[1]]], pal[[.DEUDA_CORREO$par[2]]]) })
-ok(sprintf("debt, listed: the weekly mail's reprogramado (%s on %s) = %.2f, below AA until Luis decides",
-           .DEUDA_CORREO$par[1], .DEUDA_CORREO$par[2], r_deuda),
-   abs(r_deuda - .DEUDA_CORREO$hoy) < 0.01)
 ok("every listed Clásico exception is a pair this test checks",
    all(.CLASICO_BAJO_AA %in% vapply(.PARES, paste, character(1), collapse = "/")))
 for (t in names(tema$HD_TEMAS)) {
@@ -267,7 +257,7 @@ ok("the generated CSS puts the default theme on :root",
 # A migration (stage 4) may add legacy tokens, but only by removing at least
 # as many hand-written colours: raise .TOPE_LEGADO and lower .TRINQUETE in
 # the same commit. Their sum never grows. Then the legacy only shrinks.
-.TOPE_LEGADO   <- 233L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36, Notas (-35) +9; the rest (-64) +9; reporte_module.R (157 -> 0) +31; hdtable.css palette and bubble (23 -> 12) +18; the rest (12 -> 0) +5; requisiciones.css (28 -> 0) +1; email_service.R (79 -> 0) +9; settings_policies.R (20 -> 0) +8; app.R (99 -> 0) +2; pagos_audit_viewer_module.R (7 -> 0) +1; TEMA 5b (26 -> 0) +3; TEMA 6-2 Pasivos, Calendario, Proveedores (10 -> 0) +1; TEMA 6-1 tiers_module.R (34 -> 0) +7; TEMA 6-3 Actividad, its PDF and the sticky bar (21 -> 0) +1; TEMA 6-9 the limit warning's text by aviso-texto (aviso-texto-f59e0b) +1
+.TOPE_LEGADO   <- 230L   # stage 4: cashflow_preview.css (70 -> 0) +22, pasivos_table_styles.R (39 -> 4) +13; TEMA-P1: pasivos' dead CSS gone, -13; treasury_map_module.R (76 -> 4) +37; bancos_module.R (62 -> 11) +18; cashflow_export_module.R (203 -> 0) +18, its tags to etq-* -2; ui_components.R Calendario (-125) +36, Notas (-35) +9; the rest (-64) +9; reporte_module.R (157 -> 0) +31; hdtable.css palette and bubble (23 -> 12) +18; the rest (12 -> 0) +5; requisiciones.css (28 -> 0) +1; email_service.R (79 -> 0) +9; settings_policies.R (20 -> 0) +8; app.R (99 -> 0) +2; pagos_audit_viewer_module.R (7 -> 0) +1; TEMA 5b (26 -> 0) +3; TEMA 6-2 Pasivos, Calendario, Proveedores (10 -> 0) +1; TEMA 6-1 tiers_module.R (34 -> 0) +7; TEMA 6-3 Actividad, its PDF and the sticky bar (21 -> 0) +1; TEMA 6-9 the limit warning's text by aviso-texto (aviso-texto-f59e0b) +1; the account mails readable (the Coordinador): 3 legacy tokens no longer used, -3
 .TOTAL_INICIAL <- 1338L   # sum(.TRINQUETE) + .TOPE_LEGADO on e2d3882 + TEMA stage 1
 leg <- tema$.HD_LEGADO
 ok(sprintf("legacy tokens: %d (ratchet %d)", length(leg), .TOPE_LEGADO), length(leg) <= .TOPE_LEGADO)

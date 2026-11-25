@@ -92,9 +92,10 @@ ok("every field keeps its value but the two unified ones (Marca's roles and pale
   esperado <- c(fondo = "#EDEBE4", papel = "#FFFFFF", tinta = "#1A2233", gris = "#5A6474", marino = "#13213A",
     dorado = "#C9AE6E", dorado_osc = "#B0924F", linea = "#E4E1D8", pie = "#F7F6F2", arena = "#EFE6D2",
     arena_tinta = "#6B5320", gris_claro = "#9AA6BA", cobre = "#9A4524", revision = "#F7E9E1",
-    revision_tinta = "#7C3519", verde = "#2F6B4F", logro_tinta = "#8A6D2C", riel = "#ECE9E1", reprog = "#8B97AD",
+    revision_tinta = "#7C3519", verde = "#2F6B4F", logro_tinta = "#8A6D2C", riel = "#ECE9E1", reprog = "#5F6D87",
     por_vencer = "#D7DCE5", liquidado_ar = "#E6D6AC", liquidado_ap = "#5B6A86", linea_oscura = "#2A3A58",
     linea_tabla = "#F3F1EA", cambio = "#D9D4C6")   # the last two: superficie-2 (was #EFECE4), borde (was #D9D3C4)
+  # reprog: Marca's texto-tenue, #5F6D87 since TEMA 6-7/6-9 (was #8B97AD, 2.95:1; the Coordinador's readability decision)
   cc <- callr::r(function(raiz) {
     setwd(raiz); e <- new.env(parent = globalenv())
     assign("%||%", function(a, b) if (is.null(a)) b else a, envir = e)

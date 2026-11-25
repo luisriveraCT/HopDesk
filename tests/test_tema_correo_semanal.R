@@ -140,6 +140,12 @@ for (p in pares) {
   r <- contraste(CLASICO[[p[1]]], CLASICO[[p[2]]])
   ok(sprintf("5: Clásico %s on %s: %.2f:1 >= 4.5", p[1], p[2], r), r >= 4.5)
 }
+# TEMA 6-9 (the Coordinador's readability decision): "reprogramado" reads on
+# the mail's paper in both themes.
+for (tt in c("marca", "clasico")) {
+  cc <- unlist(.correo_colores(tt)); r <- contraste(cc[["reprog"]], cc[["papel"]])
+  ok(sprintf("5: %s reprogramado (%s) on papel: %.2f:1 >= 4.5", tt, cc[["reprog"]], r), r >= 4.5)
+}
 ok("5: Clásico's roles are its own: collections gold (acento), payments navy (primario)",
    identical(toupper(CLASICO[["dorado"]]), toupper(tema_color("acento", "clasico"))) &&
    identical(toupper(CLASICO[["marino"]]), toupper(tema_color("primario", "clasico"))))
