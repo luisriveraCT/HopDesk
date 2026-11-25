@@ -150,7 +150,7 @@ ui <- bslib::page_navbar(
     tags$head(tags$script(src = "overlay_init.js?v=10", `data-pagina` = "app")),
     # Brand tokens (navy, gold, Fraunces) and Panorama, each under its root class.
     tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=2"),   # TEMA 6-5: --hd-sube-tinta
-    tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=2"),   # TEMA 6-5: colours by variable
+    tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=3"),   # TEMA 6-5: colours by variable; 6-10: gold as text = acento-texto
     tags$script(src = "panorama.js?v=1"),
     # Hide shinymanager's default floating session/logout widget (uses .mfb-* classes)
     tags$style(HTML("[id*=shinymanager],[class*=shinymanager],[class*=mfb-]{display:none!important}")),
