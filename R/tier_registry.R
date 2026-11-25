@@ -164,26 +164,98 @@ nivel_unico_vivo <- function(tier) isTRUE(.nivel(tier)$unico_vivo)
 # NULL = every client tab.
 nivel_pestanas <- function(tier) .nivel(tier)$pestanas
 
-# ── The navbar's first paint (T69c) ──────────────────────────────────────────
-# The server's "Pestañas por nivel" observer hides a tier's other tabs, but
-# its message only reaches the page once the session's first load ends
-# (minutes on a busy machine). This CSS goes in the page itself, so a tier
-# with a tab list never sees the other tabs, not even for a frame. It only
-# applies while <html> lacks the class `hd-nivel-aplicado`, which that
-# observer adds on its first run: from then on its inline styles rule, so a
-# later tier change ("ver como", a jump) still works. `tier` must come from
-# the server (the shinymanager token), never from the browser.
-# Returns NULL -- nothing to add, the navbar as before -- for a tier with no
-# list or an unknown one. Pure: no session, no S3.
-nivel_css_pestanas_iniciales <- function(tier, pestanas_cliente) {
-  if (!.nivel_conocido(tier)) return(NULL)
-  lista <- tryCatch(nivel_pestanas(tier), error = function(e) NULL)
-  if (is.null(lista)) return(NULL)
-  ocultas <- setdiff(pestanas_cliente, lista)
-  if (!length(ocultas)) return(NULL)
-  sel <- c(sprintf("html:not(.hd-nivel-aplicado) .navbar .nav-link[data-value='%s']", ocultas),
-           sprintf("html:not(.hd-nivel-aplicado) .navbar li:has(> .nav-link[data-value='%s'])", ocultas))
-  paste0(paste(sel, collapse = ",\n"), "{display:none!important}")
+# ── The ☰ menu: one rule for every entry (T87-M8) ────────────────────────────
+# Before M8, five pieces painted the menu (two static CSS rules, the T69c
+# first-paint CSS and three observers) and two of those observers wrote the
+# same inline style without agreeing: a staff "ver como" from Compras to Admin
+# left the tabs that should come back hidden until a jump. Now:
+#   1. HD_MENU_CSS_OCULTO: every navbar entry (a[data-value] and its li) is
+#      born hidden, in every deployment -- a new entry too, until it is here.
+#   2. menu_css_inicial(): the first paint SHOWS what the token's tier may see
+#      (a client's tabs without a permission), so a client is not left
+#      waiting; anything it cannot know stays hidden.
+#   3. menu_visible(): the one decision, from usuario_sesion(), for each entry.
+#   4. menu_js_pintar(): the one writer, called by the one observer in app.R;
+#      every entry shown or hidden explicitly with an inline !important.
+# tests/test_t87_m8.R (with the one-writer guardian), test_t69c_barra_inicial.
+
+# The Grupo dropdown: its toggle and its two entries.
+HD_MENU_GRUPO <- c("GRUPO", "TIERS", "EMP")
+
+# An entry that also needs a permission besides the tier's tab list.
+HD_PESTANA_PERMISO <- list(
+  REQ   = "can_view_requisiciones",
+  TIERS = "can_view_tiers",
+  EMP   = "can_manage_empresas"
+)
+
+# The selectors never use .nav-link: bslib adds that class with its own
+# JavaScript after the first paint (T87-M7).
+HD_MENU_CSS_OCULTO <- ".navbar a[data-value],.navbar li:has(> a[data-value]){display:none!important}"
+
+# How a shown entry displays: the dropdown's entries as block, the rest flex.
+.menu_display <- function(entrada) if (entrada %in% setdiff(HD_MENU_GRUPO, "GRUPO")) "block" else "flex"
+
+# Named logical over `pestanas` (the client tabs, HD_PESTANAS_FINANCIERAS) and
+# HD_MENU_GRUPO. `u` is usuario_sesion(): its tier is the EFFECTIVE one (a
+# staff "ver como" sees what that tier sees) and its permisos are resolved.
+# `en_cliente`: FALSE only for staff at home in the admin deployment, who see
+# no client tab. Fail-closed: no user, an unknown tier or any error, all FALSE.
+menu_visible <- function(u, pestanas, en_cliente = TRUE) {
+  todas <- c(pestanas, HD_MENU_GRUPO)
+  vis <- stats::setNames(rep(FALSE, length(todas)), todas)
+  r <- tryCatch({
+    tier <- u$tier
+    if (is.null(u) || !.nivel_conocido(tier)) return(vis)
+    permite <- function(e) {
+      p <- HD_PESTANA_PERMISO[[e]]
+      is.null(p) || isTRUE(tryCatch(puede(u, p), error = function(e) FALSE))
+    }
+    if (!isTRUE(u$is_staff) || isTRUE(en_cliente))
+      for (t in pestanas) vis[[t]] <- nivel_pestana_permitida(tier, t) && permite(t)
+    for (e in setdiff(HD_MENU_GRUPO, "GRUPO")) vis[[e]] <- permite(e)
+    vis[["GRUPO"]] <- any(vis[setdiff(HD_MENU_GRUPO, "GRUPO")])
+    vis
+  }, error = function(e) NULL)
+  if (is.logical(r) && identical(names(r), todas) && !anyNA(r)) r else vis
+}
+
+# The navbar's first paint (T69c, now by showing): the page itself carries
+# the entries the token's tier may see, so a client never waits for the
+# session's first load (minutes on a busy machine) and never sees another
+# tier's tab. Only entries the tier alone decides: one behind a permission
+# (HD_PESTANA_PERMISO) waits for the observer, since the token has no
+# permission overrides. Staff get nothing (at home in the admin deployment
+# they see no client tab). It applies while <html> lacks `hd-nivel-aplicado`,
+# which the observer adds; from then on its inline styles rule. `tier` must
+# come from the server (the shinymanager token), never from the browser.
+# NULL -- everything stays hidden -- for an unknown tier. Pure.
+menu_css_inicial <- function(tier, pestanas) {
+  if (!.nivel_conocido(tier) || is_staff_tier(tier)) return(NULL)
+  ver <- pestanas[vapply(pestanas, function(t)
+    nivel_pestana_permitida(tier, t) && is.null(HD_PESTANA_PERMISO[[t]]), logical(1))]
+  if (!length(ver)) return(NULL)
+  # nav.navbar outranks the hidden rule's .navbar (one more type selector).
+  a  <- sprintf("html:not(.hd-nivel-aplicado) nav.navbar a[data-value='%s']", ver)
+  li <- sprintf("html:not(.hd-nivel-aplicado) nav.navbar li:has(> a[data-value='%s'])", ver)
+  paste0(paste(a, collapse = ",\n"), "{display:flex!important}\n",
+         paste(li, collapse = ",\n"), "{display:list-item!important}")
+}
+
+# The one writer of the entries' display (T87-M8): JavaScript that shows or
+# hides EVERY entry of `vis` (menu_visible()) with an inline !important, the
+# link and its li, and then marks <html> with `hd-nivel-aplicado`. Never
+# removes a style (a static !important rule would win again).
+menu_js_pintar <- function(vis) {
+  partes <- vapply(names(vis), function(e) {
+    si <- isTRUE(vis[[e]])
+    sprintf(paste0(
+      "document.querySelectorAll('.navbar a[data-value=\"%s\"]').forEach(function(el) {",
+      " el.style.setProperty('display', '%s', 'important');",
+      " var li = el.closest('li'); if (li) li.style.setProperty('display', '%s', 'important'); });"),
+      e, if (si) .menu_display(e) else "none", if (si) "list-item" else "none")
+  }, "")
+  paste(c(partes, "document.documentElement.classList.add('hd-nivel-aplicado');"), collapse = "\n")
 }
 
 # ── Which tables travel to a tier's browser (T69) ────────────────────────────

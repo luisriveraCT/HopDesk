@@ -82,7 +82,7 @@ correr <- function(et, nivel) {
     p <- m$response$payloadData %||% ""; n_marcos <<- n_marcos + 1L
     claves_marcos <<- c(claves_marcos, regmatches(p, regexpr('^\\{"[A-Za-z_-]+"', p)))
     if (grepl("remove-tab", p, fixed = TRUE)) quitar_msgs <<- c(quitar_msgs, substr(p, 1, 160))
-    if (grepl("ocultaNivel", p, fixed = TRUE)) n_oculta <<- n_oculta + 1L
+    if (grepl("hd-nivel-aplicado", p, fixed = TRUE)) n_oculta <<- n_oculta + 1L   # T87-M8: the menu's one painter
     if (grepl("t69_quitadas", p, fixed = TRUE)) quitar_msgs <<- c(quitar_msgs, paste("runjs T69 recibido:", substr(p, 1, 80)))
     if (grepl("hdt-datos", p, fixed = TRUE)) {
       t <- regmatches(p, gregexpr('"tabla":"[a-z_0-9]+"', p))[[1]]
@@ -136,10 +136,10 @@ correr <- function(et, nivel) {
   cat("      | consola T69:", paste(grep("T69", consola, value = TRUE), collapse = " / "), "\n")
   cat("      | consola errores:", paste(utils::head(grep("rror|shinyjs|undefined|not a function", consola, value = TRUE), 8), collapse = " / "), "\n")
   cat("      | CAL display:", tryCatch(ev("(function(){ var a = document.querySelector(\".navbar .nav-link[data-value='CAL']\");
-      return a ? getComputedStyle(a).display + ' oculta=' + a.dataset.ocultaNivel : 'no'; })()"), error = function(e) "?"),
+      return a ? getComputedStyle(a).display + ' en línea=' + a.style.display : 'no'; })()"), error = function(e) "?"),
       "| shinyjs:", tryCatch(ev("typeof shinyjs"), error = function(e) "?"),
       "| t69_quitadas:", tryCatch(ev("String((Shiny.shinyapp.$inputValues || {}).t69_quitadas)"), error = function(e) "?"), "\n")
-  cat("      | marcos con el CSS de ocultar (ocultaNivel):", n_oculta, "\n")
+  cat("      | marcos del pintor del menú (T87-M8):", n_oculta, "\n")
   tt <- table(claves_marcos)
   cat("      | marcos totales:", n_marcos, "| tipos:", paste(names(tt), tt, collapse = " "), "\n")
   cat("      | mensajes remove-tab / runjs T69:", length(quitar_msgs), if (length(quitar_msgs)) quitar_msgs[1] else "", "\n")

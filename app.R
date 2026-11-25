@@ -103,35 +103,10 @@ AP_CONFIG <- list(
 # he approved it on 2026-11-12 (B4). FALSE puts the Calendar back as home.
 PANORAMA_ES_INICIO <- TRUE
 
-# The financial tabs a staff user only sees inside a client context (admin
-# deployment). One list for both places that hide them: the static CSS below,
-# which hides them before the server knows who logged in, and the server's
-# observer that shows them. Two copies drifted: REQ was missing from the CSS,
-# so "Requisiciones" showed alone while the app loaded (T51).
+# The client tabs: the ones a staff user only sees inside a client context
+# (admin deployment) and a tier's tab list chooses from. One list for the
+# first paint (menu_css_inicial) and the menu's one observer (T87-M8).
 HD_PESTANAS_FINANCIERAS <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
-
-# T87-M7: the Grupo menu (Usuarios, Empresas) is born hidden -- its toggle AND
-# every entry of its dropdown, which the ☰ panel showed loose ("TIERS EMP")
-# for ~10 s after a client signed in, before the server's rules arrived. Only
-# the observer of usuario_sesion() shows an entry, with an inline
-# !important, and only when the session may: if it never runs or fails, the
-# entries stay hidden (fail-closed). tests/test_t87_m7.R.
-# The toggle by a[data-value]: bslib only adds .nav-link to it with its own
-# JavaScript, after the first paint (a .nav-link selector left it visible).
-.MENU_GRUPO_CSS <- paste0(
-  ".navbar a[data-value='GRUPO'],",
-  ".navbar li:has(> a[data-value='GRUPO']),",
-  ".navbar .dropdown-menu a[data-value],",
-  ".navbar .dropdown-menu li:has(> a[data-value]){display:none!important}")
-
-# Which Grupo entries a session may see, by usuario_sesion(): the EFFECTIVE
-# tier and its resolved permissions -- staff in "ver como" see what the tier
-# they view sees (as T87-M6's table gate), at home their own.
-menu_grupo_visibles <- function(u) {
-  ver <- function(p) isTRUE(tryCatch(puede(u, p), error = function(e) FALSE))
-  tiers <- ver("can_view_tiers"); emp <- ver("can_manage_empresas")
-  c(GRUPO = tiers || emp, TIERS = tiers, EMP = emp)
-}
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
 ui <- bslib::page_navbar(
@@ -158,14 +133,10 @@ ui <- bslib::page_navbar(
     tags$script(src = "panorama.js?v=1"),
     # Hide shinymanager's default floating session/logout widget (uses .mfb-* classes)
     tags$style(HTML("[id*=shinymanager],[class*=shinymanager],[class*=mfb-]{display:none!important}")),
-    # Hide the GRUPO menu -- its toggle and every dropdown entry -- by default;
-    # the server shows each one only to who may (T87-M7, .MENU_GRUPO_CSS).
-    tags$style(HTML(.MENU_GRUPO_CSS)),
-    # In admin deployment: hide all financial tabs until a client context is jumped into
-    if (IS_ADMIN_DEPLOYMENT) tags$style(HTML(paste0(
-      paste0(".navbar .nav-link[data-value='", HD_PESTANAS_FINANCIERAS, "']", collapse = ","),
-      "{display:none!important}"
-    ))),
+    # T87-M8: every menu entry is born hidden, in every deployment; the first
+    # paint (menu_css_inicial) and the menu's one observer show what may be
+    # seen (R/tier_registry.R).
+    tags$style(HTML(HD_MENU_CSS_OCULTO)),
     tags$script(HTML("
       $(document).on('shiny:connected', function() {
         function hideSmWidgets() {
@@ -530,8 +501,10 @@ ui <- bslib::page_navbar(
 # token's user row -- the same one res_auth$tier reads in the server -- is in
 # shinymanager's own registry. So the tier is looked up server side, from the
 # token shinymanager has already resolved; nothing the browser sends is taken
-# as the tier. shinymanager:::.tok is internal: on any error there is no CSS,
-# the navbar as before (test_t69c_barra_inicial checks it still exists).
+# as the tier. Since T87-M8 the CSS SHOWS the tier's tabs (every entry is born
+# hidden, HD_MENU_CSS_OCULTO): on any error -- shinymanager:::.tok is
+# internal -- there is no CSS and the menu stays hidden until the observer
+# (fail-closed; test_t69c_barra_inicial checks .tok still exists).
 # is_valid_server(), never is_valid(): is_valid() is single use (it counts
 # each call), secure_app() has just spent it, and a second call here would
 # both fail and spend the token again.
@@ -540,7 +513,7 @@ ui <- bslib::page_navbar(
     token <- gsub("\"", "", shiny::parseQueryString(request$QUERY_STRING %||% "")$token %||% "")
     tok <- shinymanager:::.tok
     if (nzchar(token) && isTRUE(tok$is_valid_server(token)))
-      nivel_css_pestanas_iniciales(tok$get(token)$tier, HD_PESTANAS_FINANCIERAS)
+      menu_css_inicial(tok$get(token)$tier, HD_PESTANAS_FINANCIERAS)
   }, error = function(e) NULL)
   if (is.null(css)) NULL else tags$head(tags$style(id = "hd-t69c-pestanas", HTML(css)))
 }
@@ -1989,100 +1962,41 @@ server <- function(input, output, session) {
     if (!identical(v, isolate(req_version()))) req_version(v)
   })
 
-  # ── Show GRUPO menu and control per-panel visibility ─────────────────────────
-  # GRUPO toggle is hidden by default via CSS (display:none!important).
-  # Empresas  → dev + admin  (can_manage_empresas permission, TRUE for both by default).
-  # Usuarios  → dev only; hidden from admin's dropdown so they don't see the option.
-  observeEvent(usuario_sesion(), {
-    # T87-M7: every Grupo entry is shown or hidden explicitly (an inline
-    # !important beats .MENU_GRUPO_CSS); nothing here means hidden.
-    vis <- menu_grupo_visibles(usuario_sesion())
-    shinyjs::runjs(paste(vapply(names(vis), function(v) sprintf(
-      "document.querySelectorAll('.navbar [data-value=\"%s\"]').forEach(function(el) {
-         el.style.setProperty('display', '%s', 'important');
-         var li = el.closest('li');
-         if (li) li.style.setProperty('display', '%s', 'important');
-       });",
-      v, if (vis[[v]]) (if (v == "GRUPO") "flex" else "block") else "none",
-      if (vis[[v]]) "list-item" else "none"), ""), collapse = "\n"))
-  }, ignoreInit = FALSE)
-
-  # ── Pestañas por nivel (registro) ───────────────────────────────────────────
-  # A tier with a `pestanas` list sees only those client tabs. Runs after the
-  # admin-deployment rule below, and only ever hides.
-  # A tab tied to a permission (REQ) is also hidden without it.
-  .TABS_CLIENTE <- HD_PESTANAS_FINANCIERAS
+  # ── The ☰ menu (T87-M8) ──────────────────────────────────────────────────────
+  # ONE observer paints every menu entry -- the client tabs and the Grupo
+  # dropdown -- from usuario_sesion() (the effective tier, its resolved
+  # permissions) and whether a staff session is inside a client.
+  # menu_visible() decides and menu_js_pintar() writes (R/tier_registry.R);
+  # no other code sets an entry's display (tests/test_t87_m8.R's guardian).
+  # While the tier is unknown nothing is sent: the hidden rule and the first
+  # paint's CSS stay (fail-closed). It replaces the Grupo observer (T87-M7),
+  # "Pestañas por nivel" and the admin deployment's tab observer, which wrote
+  # the same inline style without agreeing: a "ver como" from Compras to Admin
+  # left the tabs that should come back hidden until a jump.
+  # It is only CSS: what keeps treasury data away from a tier without those
+  # tabs is server side -- the table gate (hd_table_server), the read gate on
+  # the treasury reactives and the write gate in .s3_write() (tier_registry.R).
+  menu_vis <- reactive({
+    u <- usuario_sesion()
+    if (!.nivel_conocido(u$tier %||% "")) return(NULL)
+    en_cliente <- !IS_ADMIN_DEPLOYMENT || !is.null(tryCatch(jump_client_id(), error = function(e) NULL))
+    menu_visible(u, HD_PESTANAS_FINANCIERAS, en_cliente)
+  })
   observe({
-    .tier_pest <- tier_efectivo()
-    lista <- nivel_pestanas(.tier_pest)
-    ocultas <- if (is.null(lista)) character() else setdiff(.TABS_CLIENTE, lista)
-    u_req <- tryCatch(shared$usuario(), error = function(e) NULL)
-    if (!puede(u_req, "can_view_requisiciones")) ocultas <- union(ocultas, "REQ")
-    for (tab in .TABS_CLIENTE) {
-      oculta <- tab %in% ocultas
-      shinyjs::runjs(sprintf("
-        document.querySelectorAll('.navbar .nav-link[data-value=\"%s\"]').forEach(function(el) {
-          var li = el.closest('li');
-          if (%s) { el.style.setProperty('display', 'none', 'important');
-                    if (li) li.style.setProperty('display', 'none', 'important'); }
-          else if (el.dataset.ocultaNivel) { el.style.removeProperty('display');
-                    if (li) li.style.removeProperty('display'); }
-          el.dataset.ocultaNivel = %s ? '1' : '';
-        });
-      ", tab, tolower(oculta), tolower(oculta)))
-    }
-    # T69c: with the tier known, this observer's inline styles take over from
-    # the first paint's CSS (nivel_css_pestanas_iniciales). Sent after the
-    # loop, in the same flush, so no tab flashes in between. While the tier is
-    # unknown the first paint's CSS stays.
-    if (.nivel_conocido(.tier_pest))
-      shinyjs::runjs("document.documentElement.classList.add('hd-nivel-aplicado');")
-    if (length(ocultas) && isTRUE(input$nav %in% ocultas) && length(lista))
-      updateNavbarPage(session, "nav", selected = lista[1])
+    vis <- menu_vis()
+    if (!is.null(vis)) shinyjs::runjs(menu_js_pintar(vis))
+  }, priority = -1)
+  # The active client tab just hidden (a "ver como", a tier change): go to the
+  # first client tab the session may see. Moves the tab, never paints.
+  observe({
+    vis <- menu_vis()
+    fin <- if (is.null(vis)) character() else names(vis)[vis & names(vis) %in% HD_PESTANAS_FINANCIERAS]
+    if (length(fin) && isTRUE(input$nav %in% setdiff(HD_PESTANAS_FINANCIERAS, fin)))
+      updateNavbarPage(session, "nav", selected = fin[1])
   }, priority = -1)
 
-  # T69/T69b: the hiding above does reach the page -- it is sent once the
-  # session's first load lets this observer run (seen with shiny.trace), so
-  # it can arrive minutes after signing in on a busy machine. It is only CSS;
-  # what keeps treasury data away from a tier without those tabs is server
-  # side: the table gate (hd_table_server), the read gate on the treasury
-  # reactives and the write gate in .s3_write() (tier_registry.R).
-
-  # ── Admin deployment: hide financial tabs until a client context is active ────
-  # Uses runjs with setProperty(...,'important') to override the initial CSS rule
-  # that also uses !important — shinyjs::show/hide cannot beat !important stylesheets.
+  # ── Admin deployment: the staff landing tab and the hop grants ──────────────
   if (IS_ADMIN_DEPLOYMENT) {
-    FINANCIAL_TABS <- HD_PESTANAS_FINANCIERAS   # the same list the static CSS hides
-
-    observe({
-      tier <- tryCatch(shared$current_user_info()$tier, error = function(e) "")
-      # Hopdesk staff only see financial modules when jumped into a client
-      # context. All other tiers are clients and always see them.
-      is_staff      <- isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
-      in_client_ctx <- !is.null(tryCatch(jump_client_id(), error = function(e) NULL))
-      show_tabs     <- if (is_staff) in_client_ctx else nzchar(tier)
-
-      lapply(FINANCIAL_TABS, function(tab) {
-        if (show_tabs) {
-          shinyjs::runjs(sprintf("
-            document.querySelectorAll('.navbar .nav-link[data-value=\"%s\"]').forEach(function(el) {
-              el.style.setProperty('display', 'flex', 'important');
-              var li = el.closest('li');
-              if (li) li.style.removeProperty('display');
-            });
-          ", tab))
-        } else {
-          shinyjs::runjs(sprintf("
-            document.querySelectorAll('.navbar .nav-link[data-value=\"%s\"]').forEach(function(el) {
-              el.style.setProperty('display', 'none', 'important');
-              var li = el.closest('li');
-              if (li) li.style.setProperty('display', 'none', 'important');
-            });
-          ", tab))
-        }
-      })
-    })
-
     # After login: staff sessions get moved off the default CAL landing tab to
     # TIERS (Usuarios, inside the Grupo dropdown) — "GRUPO" itself is a
     # bslib::nav_menu (dropdown container), not a selectable nav_panel, so it

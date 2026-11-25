@@ -8,12 +8,14 @@
 # <html>). Never after a fixed wait.
 #   - as Compras (the client test user read as "compras" in that process,
 #     ARR_FORZAR_NIVEL): not one sample, the first one included, shows a tab
-#     other than PAN and REQ; the first frame already has the CSS; samples
-#     were taken while the load was still running (otherwise nothing was
-#     measured); after the take-over it is still PAN and REQ only;
-#   - as the same user with its own tier (every tab): the first frame has no
-#     first-paint CSS and, after the take-over, the treasury tabs show, as
-#     before (the counter-proof).
+#     other than PAN and REQ; the first frame already has the CSS and shows
+#     PAN (T87-M8: the first paint SHOWS, every entry being born hidden), and
+#     REQ, behind a permission, waits for the server; samples were taken
+#     while the load was still running (otherwise nothing was measured);
+#     after the take-over it is PAN and REQ only, no Grupo entry either;
+#   - as the same user with its own tier (every tab): the first frame carries
+#     its own first-paint CSS and already shows the treasury tabs; after the
+#     take-over they still show (the counter-proof).
 # Visible = the link and its <li> are not display:none. Not by size: inside
 # the collapsed ☰ menu at 1293 px every link measures 0.
 # Fails if the sign-in form is still showing.
@@ -69,7 +71,7 @@ TESORERIA_TABS <- setdiff(CLIENTE, c("PAN", "REQ"))
 # tabs, whether the first paint's CSS is in the page, whether the server has
 # taken over, and whether the loading overlay is still up.
 MUESTRA_JS <- "(function(){
-  var links = document.querySelectorAll('.navbar .nav-link[data-value]');
+  var links = document.querySelectorAll('.navbar a[data-value]');   /* T87-M8: no .nav-link (bslib adds it later) */
   if (!links.length || document.getElementById('auth-user_id')) return null;
   var vis = Array.from(links).filter(function(a){
       var li = a.closest('li');
@@ -130,7 +132,8 @@ correr <- function(et, nivel) {
   cat("      | primer marco: visibles =", prim$vis, "| CSS inicial =", prim$css, "\n")
   cat("      | todas las pestañas vistas alguna vez:", paste(unique(unlist(vis)), collapse = " "), "\n")
   cat("      | al final:", if (is.list(fin)) fin$vis else "?", "\n")
-  list(vis = vis, prim = prim, fin = fin, n_cargando = n_cargando, aplicado = length(t_aplic) > 0L)
+  list(vis = vis, aplic = lapply(muestras, function(m) isTRUE(m$aplicado)), prim = prim, fin = fin,
+       n_cargando = n_cargando, aplicado = length(t_aplic) > 0L)
 }
 
 # ── Compras ──────────────────────────────────────────────────────────────────
@@ -143,6 +146,9 @@ if (is.list(r)) {
   # the first frame is only required to show no treasury tab.)
   ok(sprintf("[compras] first frame: no treasury tab visible (%s)", paste(primeras, collapse = " ")),
      !length(intersect(primeras, TESORERIA_TABS)))
+  ok("[compras] first frame: PAN already shows (the first paint shows it; T87-M8)", "PAN" %in% primeras)
+  ok("[compras] before the take-over REQ (behind a permission) never shows",
+     !any(vapply(seq_along(r$vis), function(i) "REQ" %in% r$vis[[i]] && !isTRUE(r$aplic[[i]]), logical(1))))
   malas <- unique(intersect(unlist(r$vis), TESORERIA_TABS))
   ok(sprintf("[compras] no sample, from the first frame to the take-over, shows a treasury tab (%s)",
              if (length(malas)) paste(malas, collapse = ",") else "none"), !length(malas))
@@ -150,15 +156,17 @@ if (is.list(r)) {
      r$n_cargando >= 20L)
   ok("[compras] the server took over (hd-nivel-aplicado)", isTRUE(r$aplicado))
   fin <- strsplit(r$fin$vis %||% "", " ", fixed = TRUE)[[1]]
-  ok(sprintf("[compras] after the take-over: PAN and REQ, and no treasury tab (%s)", paste(fin, collapse = " ")),
-     all(c("PAN", "REQ") %in% fin) && !length(intersect(fin, TESORERIA_TABS)))
+  ok(sprintf("[compras] after the take-over: PAN and REQ, and nothing else -- no treasury tab, no Grupo entry (%s)", paste(fin, collapse = " ")),
+     all(c("PAN", "REQ") %in% fin) && setequal(fin, c("PAN", "REQ")))
 }
 try(b$close(), silent = TRUE); b <- NULL; stop_bg_app(app); app <- NULL
 
 # ── The same user with its own tier (counter-proof) ──────────────────────────
 r <- if (identical(Sys.getenv("T69C_SOLO_COMPRAS"), "1")) NULL else correr("[propio]", "")
 if (is.list(r)) {
-  ok("[propio] the first frame has no first-paint CSS", !isTRUE(r$prim$css))
+  ok("[propio] the first frame carries its own first-paint CSS (T87-M8: it shows)", isTRUE(r$prim$css))
+  ok("[propio] the first frame already shows the treasury tabs",
+     all(c("CAL", "PH", "VEN") %in% strsplit(r$prim$vis %||% "", " ", fixed = TRUE)[[1]]))
   fin <- strsplit(r$fin$vis %||% "", " ", fixed = TRUE)[[1]]
   ok("[propio] after the take-over: the treasury tabs still show", all(c("CAL", "PH", "VEN") %in% fin))
 }
