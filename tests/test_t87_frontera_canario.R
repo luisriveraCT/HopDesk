@@ -46,16 +46,9 @@ suppressPackageStartupMessages({ library(shiny); library(jsonlite) })
 # while still listed FAILS: take it out of the list in the same commit that
 # fixes it. The list only goes down (as T72's DEUDA_CAMINO); a new case is
 # never added to it.
-DEUDA <- c(
-  "1.1"         = "M1: el diccionario completo (nombres de permisos internos) va en la página",
-  "1.8"         = "M2: Invitaciones nombra RESEND_API_KEY / .Renviron / runbook",
-  "2.1"         = "M1: el diccionario completo va en la página",
-  "3.1 admin"   = "M5: la pestaña Usuarios se construye para todos",
-  "3.2 admin"   = "M5: el rechazo nombra el permiso que falta",
-  "3.3 admin"   = "M1 (diccionario)",
-  "3.1 finance" = "M5",
-  "3.2 finance" = "M5",
-  "3.3 finance" = "M1")
+# T87 M1/M2/M5 (2026-11-24): every case passes -- DEUDA is empty. It stays
+# as the mechanism: a case is never added to it.
+DEUDA <- stats::setNames(character(0), character(0))
 
 .pass <- 0L; .fail <- 0L; .pend <- 0L
 ok <- function(label, cond, detalle = NULL) {

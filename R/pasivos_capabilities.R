@@ -48,8 +48,9 @@ has_capability <- function(user, capability, empresa = NULL) {
 pasivos_autoriza <- function(capability) {
   if (has_capability(NULL, capability)) return(TRUE)
   permiso <- PASIVOS_CAPABILITIES[[capability]]
-  msg <- if (is.null(permiso) || is.na(permiso)) capability else permiso_nombre(permiso)
-  tryCatch(shiny::showNotification(tr("permisos.denegado", permiso = msg), type = "error"),
+  # T87-M5: the same refusal as puede_o_avisa (the permission named only to
+  # who can see Usuarios).
+  tryCatch(shiny::showNotification(permiso_denegado_texto(.usuario_de_sesion(), permiso), type = "error"),
            error = function(e) NULL)
   FALSE
 }

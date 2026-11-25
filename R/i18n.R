@@ -83,8 +83,20 @@ i18n_head_parcial <- function(prefijo, idioma = hd_idioma()) {
     "window.HD_I18N=Object.assign(window.HD_I18N||{},", json, ");")))
 }
 
+# T87-M1: keys that never travel to a page -- the names of HopDesk's internal
+# permissions and of the staff tiers. The page's <head> is built before
+# anyone signs in, so it is the same for everyone: they are left out for all.
+# R still has them (tr() reads the dictionary on the server); no JavaScript
+# asks for them (tests/test_t87_m125.R checks every hdT("...") of www/).
+# From the registries (R/permisos.R, R/tier_registry.R), never a list here.
+i18n_claves_internas <- function() {
+  c(if (exists("permisos_internos", mode = "function")) paste0("permisos.", permisos_internos()),
+    if (exists("niveles_staff", mode = "function")) paste0("niveles.nombre.", niveles_staff()))
+}
+
 i18n_head <- function(idioma = hd_idioma()) {
   dic <- utils::modifyList(i18n_dict("es"), i18n_dict(idioma))
+  dic <- dic[setdiff(names(dic), i18n_claves_internas())]
   # "</" escaped, as in i18n_head_parcial(): a text holding "</script>" would
   # end the <script> early.
   json <- gsub("</", "<\\/", as.character(jsonlite::toJSON(dic, auto_unbox = TRUE)), fixed = TRUE)

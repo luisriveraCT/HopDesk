@@ -152,6 +152,8 @@
   "niveles.ver_como": "Ver como",
   "niveles.ver_como_ayuda": "Cambia los permisos y pestañas de esta sesión. Tu identidad no cambia.",
   "niveles.viendo_como": "Viendo como {nivel}",
+  "permisos.denegado_generico": "No tienes permiso para esto. Pídelo a quien administra los usuarios de tu empresa.",
+  "niveles.correo.estado.cliente_manual": "Si la invitación no llega por correo, comparte el enlace a mano.",
   "permisos.denegado": "No tienes permiso para esto: {permiso}.",
   "permisos.grupo.grupo": "Usuarios y grupo",
   "permisos.grupo.tesoreria": "Provisiones, pagos y pasivos",

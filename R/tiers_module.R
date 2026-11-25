@@ -1052,6 +1052,10 @@ tiersServer <- function(id, shared) {
       if (!is.null(built_tabs_ui())) return()                # already built
       info <- shared$current_user_info()
       if (is.null(info) || info$user == "unknown") return()  # not resolved yet
+      # T87-M5: a session that cannot open Usuarios gets no tab bar at all (its
+      # tabs used to be built and only the menu item hidden). Re-checked when
+      # its permissions change, so a later grant builds it.
+      if (!isTRUE(req_authorized())) return()
       visible <- tiers_visible_tab_keys(isTRUE(info$is_staff))
       panels  <- .tiers_all_panels(ns)[visible]
       built_tabs_ui(do.call(bslib::navset_pill, c(
@@ -3004,6 +3008,16 @@ tiersServer <- function(id, shared) {
     # whole tab was rebuilt -- without rebuilding the form or the tables.
     output$inv_estado_correo <- renderUI({
       invites_refresh()
+      # T87-M2: the email service's state (its key, .Renviron, the runbook)
+      # is HopDesk's operation: staff see it whole; a client is only told to
+      # share the link by hand when no email goes out.
+      if (!isTRUE(viewer_is_staff())) {
+        vivo <- isTRUE(tryCatch(email_service_status()$live, error = function(e) FALSE))
+        if (vivo) return(NULL)
+        return(div(class = "alert alert-warning d-flex align-items-start gap-2 mt-3 mb-0 py-2",
+                   icon("triangle-exclamation", class = "mt-1"),
+                   div(class = "small", tr("niveles.correo.estado.cliente_manual"))))
+      }
       esvc <- tryCatch(email_service_status(),
                        error = function(e) list(mode = "unconfigured",
                                                 label = "Estado desconocido",

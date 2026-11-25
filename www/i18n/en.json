@@ -152,6 +152,8 @@
   "niveles.ver_como": "View as",
   "niveles.ver_como_ayuda": "Changes this session's permissions and tabs. Your identity does not change.",
   "niveles.viendo_como": "Viewing as {nivel}",
+  "permisos.denegado_generico": "You don't have permission for this. Ask whoever manages your company's users.",
+  "niveles.correo.estado.cliente_manual": "If the invitation does not arrive by email, share the link by hand.",
   "permisos.denegado": "You don't have permission for this: {permiso}.",
   "permisos.grupo.grupo": "Users and group",
   "permisos.grupo.tesoreria": "Provisions, payments and liabilities",

@@ -3224,8 +3224,9 @@ pagarHoyServer <- function(id, shared) {
       filename = function() paste0("pagos_todos_", format(hoy(), "%d%m%Y"), ".zip"),
       content  = function(file) {
         # No file at all without the permission: stop() before anything is built.
-        if (!puede_o_avisa(shared, "can_register_payments")) stop(tr("permisos.denegado",
-          permiso = permiso_nombre("can_register_payments")), call. = FALSE)
+        if (!puede_o_avisa(shared, "can_register_payments"))
+          stop(permiso_denegado_texto(tryCatch(isolate(shared$usuario()), error = function(e) NULL),
+                                      "can_register_payments"), call. = FALSE)   # T87-M5
         s <- staged() |> dplyr::filter(ledger == "AP")
         if (!nrow(s)) { writeLines("", file); return() }
         tmpdir <- tempfile(); dir.create(tmpdir)

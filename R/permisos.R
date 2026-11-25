@@ -155,6 +155,17 @@ puede <- function(usuario, permiso) {
   isTRUE(p[[permiso]])
 }
 
+# T87-M5: the refusal's text for `usuario`. The permission is named only to
+# someone who can see Usuarios (staff, or can_view_tiers) -- who can do
+# something about it; anyone else is told to ask who manages the users, and
+# never learns the names of permissions they do not hold.
+permiso_denegado_texto <- function(usuario, permiso = NULL) {
+  ve_usuarios <- isTRUE(usuario$is_staff) || isTRUE(tryCatch(puede(usuario, "can_view_tiers"), error = function(e) FALSE))
+  nombre <- if (!is.null(permiso) && length(permiso) == 1L && !is.na(permiso) && permiso %in% permisos_claves())
+    permiso_nombre(permiso) else NULL
+  if (ve_usuarios && !is.null(nombre)) tr("permisos.denegado", permiso = nombre) else tr("permisos.denegado_generico")
+}
+
 # For observers: shows the standard refusal and returns FALSE when the
 # session's user lacks `permiso`. Usage: if (!puede_o_avisa(shared, "k")) return()
 puede_o_avisa <- function(shared, permiso, session = shiny::getDefaultReactiveDomain()) {
@@ -163,7 +174,6 @@ puede_o_avisa <- function(shared, permiso, session = shiny::getDefaultReactiveDo
   message(sprintf("[permisos] denegado %s a %s (%s)", permiso,
                   u$user %||% "?", u$tier %||% "?"))
   if (!is.null(session))
-    shiny::showNotification(tr("permisos.denegado", permiso = permiso_nombre(permiso)),
-                            type = "error", session = session)
+    shiny::showNotification(permiso_denegado_texto(u, permiso), type = "error", session = session)
   FALSE
 }
