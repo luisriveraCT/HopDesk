@@ -1,0 +1,166 @@
+id	nombre	tipo	padre	archivo	ancla	niveles	permiso	tablas	diseno	notas
+pagina.carga	Pantalla de carga	pagina		www/overlay_init.js	texto:window._hldSoltar				pendiente	Cubre la app mientras se recarga después del login
+pagina.invite	Activación de invitado	pagina		app.R	pagina:invite				pendiente	Arriba de secure_app; no pasa por el login
+pagina.login	Inicio de sesión	pagina		app.R	texto:shinymanager::secure_app(				pendiente	
+pagina.olvide	Olvidé mi contraseña	pagina		app.R	pagina:olvide				pendiente	
+pagina.reset	Nueva contraseña (enlace del correo)	pagina		app.R	pagina:reset				pendiente	
+boton.agregar	Botón Agregar	boton		app.R	texto:actionButton("btn_add_entry"				pendiente	
+boton.buscar	Botón Buscar facturas (lupa)	boton		app.R	texto:actionButton("btn_search"				pendiente	
+boton.config	Botón Configuración	boton		app.R	texto:actionButton("btn_settings"				pendiente	
+boton.exportar	Botón Exportar Flujo	boton		app.R	texto:actionButton("btn_export"				pendiente	
+pieza.hd_modal	Ventana estándar (hd_modal)	modal	pieza.hd_table	R/hd_table.R	modal:hd_modal				pendiente	El marco de casi todos los modales nuevos
+pieza.hd_table	Motor de tablas (hd_table)	pieza		R/hd_table.R	fn:hd_table_ui				pendiente	Las 59 tablas; cada una está en su pantalla
+pieza.hd_table.excel	Exportar cualquier tabla a Excel	excel	pieza.hd_table	R/hd_table.R	descarga:excel				pendiente	La pieza excel del motor: cada tabla la hereda
+pan	Panorama	pestana		app.R	nav:PAN				pendiente	
+pan.alertas	Alertas del equipo	panel	pan	R/avisos_alertas_module.R	fn:alertas_equipo_ui			alertas_equipo	pendiente	OJO: alertas_equipo_ui() no se llama en ningún lado hoy
+pan.alertas.editar	Editar alertas de una persona	modal	pan.alertas	R/avisos_alertas_module.R	modal:alertas_equipo_server@tabla$accion()				pendiente	
+pan.avisos_de	De quién recibo avisos	modal	pan	R/panorama_module.R	modal:panoramaServer@input$req_avisos_abrir			avisos_de	pendiente	
+pan.publicar	Publicar y Publicadas	panel	pan	R/panorama_publicar_module.R	fn:panoramaPublicarUI			avisos_publicados	pendiente	
+cal	Calendario	pestana		app.R	nav:CAL				pendiente	
+cal.agregar	¿Qué tipo de entrada?	modal	boton.agregar	app.R	modal:server@input$btn_add_entry				pendiente	
+cal.dia	Detalle del día	modal	cal	R/ledger_module.R	modal:.render_day_modal			detalle_dia_detalle;detalle_dia_resumen	pendiente	Resumen y Detalle
+cal.dia.abono	Abono parcial	modal	cal.dia	R/staging_browse_module.R	modal:show_abono_modal			abono_parcial	pendiente	
+cal.dia.combinado	Movimiento combinado	modal	cal.dia	R/staging_browse_module.R	modal:show_combined_entry_modal				pendiente	Sin título; revisar
+cal.dia.crudos	Datos crudos del día	modal	cal.dia	R/ledger_module.R	modal:.dia_crudos				pendiente	
+cal.dia.editar_manual	Editar movimiento manual	modal	cal.dia	R/manual_entry_handlers.R	modal:manual_edit_handlers				pendiente	
+cal.dia.editar_sap	Editar movimiento de SAP	modal	cal.dia	R/ledger_module.R	modal:.open_sap_edit_modal				pendiente	
+cal.flujo	Vista previa del Flujo de caja	panel	cal	R/cashflow_preview_module.R	fn:cashflowPreviewUI			flujo_caja	pendiente	Se desliza sobre el calendario
+cal.notas	Notas del mes	panel	cal	R/ui_components.R	fn:notes_panel_ui				pendiente	Barra fija abajo, fuera de las pestañas
+cal.notas.editar	Editar nota	modal	cal.notas	R/ui_components.R	modal:note_edit_modal				pendiente	
+cal.notas.eliminar	Eliminar nota	modal	cal.notas	R/notes_handlers.R	modal:.rebuild_observers@input[[paste0("delete_note_",nid)]]				pendiente	
+cal.notas.nota	Nota	modal	cal.notas	R/notes_handlers.R	modal:.show_note_modal				pendiente	
+cal.sin_movimientos	Día sin movimientos	modal	cal	R/ledger_module.R	modal:ledgerModuleServer@input$cal_click				pendiente	
+cal.sin_movimientos_2	Día sin movimientos (sin ERP)	modal	cal	R/ledger_module.R	modal:ledgerModuleServer@input$cal_click#2				pendiente	Segunda variante del mismo clic; revisar si se unen
+ven	Vencidos	pestana		app.R	nav:VEN			vencidos	pendiente	
+ph	Agenda de Hoy	pestana		app.R	nav:PH				pendiente	
+ph.descargar_todo	Descargar todos los pagos	modal	ph	R/pagar_hoy_module.R	modal:pagarHoyServer@input$preview_all			descargar_pagos	pendiente	
+ph.descargar_todo.archivo	Todos los archivos de pago	descarga	ph.descargar_todo	R/pagar_hoy_module.R	descarga:download_all				pendiente	
+ph.empresa	Pestaña de una empresa (dinámica)	subpestana	ph	R/pagar_hoy_module.R	nav:pagarHoyServer#1			agenda_pagos;agenda_cobros	pendiente	Una por empresa con movimientos del día
+ph.empresa.archivo	Archivo de pagos de una empresa	modal	ph.empresa	R/pagar_hoy_module.R	modal:pagarHoyServer@input[[paste0("dl_preview_",emp)]]				pendiente	
+ph.empresa.confirmar_cobros	Confirmar cobros	modal	ph.empresa	R/pagar_hoy_module.R	modal:pagarHoyServer@input[[paste0("confirm_ar_",emp)]]				pendiente	
+ph.empresa.confirmar_pagos	Confirmar pagos	modal	ph.empresa	R/pagar_hoy_module.R	modal:pagarHoyServer@input[[paste0("confirm_ap_",emp)]]				pendiente	
+ph.empresa.ppl	Archivo PPL del banco	descarga	ph.empresa.archivo	R/pagar_hoy_module.R	descarga:paste0("dl_ppl_",emp)				pendiente	
+ph.vaciar	¿Vaciar toda la agenda?	modal	ph	R/pagar_hoy_module.R	modal:pagarHoyServer@input$clear_all				pendiente	
+ph.vincular_proveedor	Vincular proveedor	modal	ph.empresa	R/pagar_hoy_module.R	modal:.render_lookup_modal				pendiente	
+bnc	Bancos	pestana		app.R	nav:BNC				pendiente	
+bnc.cuentas	Cuentas	subpestana	bnc	R/bancos_module.R	nav:cuentas			cuentas_bancos	pendiente	
+bnc.eliminar_conf	¿Eliminar esta confirmación?	modal	bnc.historial.confirmaciones	R/bancos_module.R	modal:.bnc_pedir_eliminar_conf				pendiente	
+bnc.eliminar_mov	¿Eliminar movimientos?	modal	bnc.libro	R/bancos_module.R	modal:.bnc_pedir_eliminar			eliminar_mov	pendiente	
+bnc.eliminar_sesion	¿Eliminar sesión de importación?	modal	bnc.importar	R/bancos_module.R	modal:bancosServer@input$btn_eliminar_sesion				pendiente	
+bnc.historial	Historial / Papelera	subpestana	bnc	R/bancos_module.R	nav:historial				pendiente	
+bnc.historial.confirmaciones	Historial de confirmaciones	subpestana	bnc.historial	R/bancos_module.R	nav:Historial de confirmaciones			historial_conf	pendiente	
+bnc.historial.papelera	Papelera	subpestana	bnc.historial	R/bancos_module.R	nav:Papelera			papelera	pendiente	
+bnc.importar	Importar TXT	subpestana	bnc	R/bancos_module.R	nav:importar			importar_txt	pendiente	
+bnc.libro	Libro de Banco	subpestana	bnc	R/bancos_module.R	nav:libro			libro_banco	pendiente	
+bnc.libro.excel	Libro de Banco en Excel	excel	bnc.libro	R/bancos_module.R	descarga:download_libro				pendiente	
+bnc.mov_manual	Editar movimiento manual	modal	bnc.libro	R/bancos_module.R	modal:.show_manual_mov_modal				pendiente	
+bnc.reasignar	Reasignar cuenta	modal	bnc.libro	R/bancos_module.R	modal:bancosServer@input$btn_reasignar			reasignar	pendiente	
+ic	Intercompany	pestana		app.R	nav:IC				pendiente	
+ic.mapa	Mapa IC	panel	ic	R/treasury_map_module.R	fn:treasuryMapUI			mapa_ic	pendiente	
+ic.saldos	Saldos y facturas intercompany	panel	ic	R/interco_module.R	fn:intercoUI			ic_saldos;ic_detalle	pendiente	
+psv	Pasivos	pestana		app.R	nav:PSV				pendiente	
+psv.asistente	Asistente de pasivo	modal	psv.lista	R/pasivos_wizard_module.R	modal:.pwiz_modal			amortizacion;provisiones_asistente	pendiente	
+psv.asistente.cancelar	¿Salir del asistente?	modal	psv.asistente	R/pasivos_wizard_module.R	modal:setup_pasivos_wizard@input$pwiz_cancel				pendiente	Sin título; revisar
+psv.comprobante	Gestionar comprobante de provisión	modal	psv.tabla	R/pasivos_module.R	modal:pasivos_manage_converted_modal_ui				pendiente	
+psv.comprobante.eliminar	¿Eliminar provisión?	modal	psv.comprobante	R/pasivos_module.R	modal:setup_pasivos_module@input$pcm_delete_provision				pendiente	
+psv.conflictos	Confirmación de cambios	modal	psv.tabla	R/pasivos_edit_confirm_module.R	modal:.pec_modal_ui			conflictos_pasivo	pendiente	
+psv.conflictos.cancelar	¿Descartar los cambios?	modal	psv.conflictos	R/pasivos_edit_confirm_module.R	modal:setup_pasivos_edit_confirm@input$pec_cancel				pendiente	Sin título; revisar
+psv.convertir	Convertir provisión a comprobante	modal	psv.tabla	R/pasivos_module.R	modal:pasivos_convert_modal_ui				pendiente	
+psv.deuda	Costo de la deuda	subpestana	psv	R/pasivos_table_module.R	nav:deuda			deuda_pasivos;servicio_deuda	pendiente	
+psv.lista	Lista de pasivos	subpestana	psv	R/pasivos_table_module.R	nav:lista			lista_pasivos	pendiente	
+psv.lista.pausar	Pausar pasivo	modal	psv.lista	R/pasivos_list_module.R	modal:.pedir_pausa				pendiente	
+psv.papelera	Papelera	subpestana	psv	R/pasivos_table_module.R	nav:papelera			papelera_pasivos	pendiente	
+psv.papelera.borrar	Borrar pasivo	modal	psv.papelera	R/pasivos_list_module.R	modal:.pedir_borrar				pendiente	
+psv.provision_manual	Nueva provisión manual	modal	psv.tabla	R/pasivos_table_module.R	modal:.ppm_modal_ui				pendiente	
+psv.tabla	Tabla	subpestana	psv	R/pasivos_table_module.R	nav:tabla			pasivos_tabla	pendiente	
+psv.tabla.celda	Lo que suma esta celda	modal	psv.tabla	R/pasivos_table_module.R	modal:pasivos_table_module_server@tabla$accion()			provisiones_celda	pendiente	
+req	Requisiciones	pestana		app.R	nav:REQ			requisiciones	pendiente	
+req.carpeta	Nueva carpeta	modal	req	R/requisiciones_module.R	modal:modal_carpeta				pendiente	
+req.desde_provision	Agregar evidencia a una provisión	modal	req	R/requisiciones_module.R	modal:requisicionesServer@input$desde_provision			provisiones	pendiente	
+req.detalle	Requisición abierta	modal	req	R/requisiciones_module.R	modal:abrir_detalle				pendiente	Panel con 4 pestañas internas
+req.detalle.comentarios	Comentarios	subpestana	req.detalle	R/requisiciones_module.R	nav:comentarios				pendiente	
+req.detalle.datos	Datos	subpestana	req.detalle	R/requisiciones_module.R	nav:datos				pendiente	
+req.detalle.evidencia	Evidencia	subpestana	req.detalle	R/requisiciones_module.R	nav:evidencia			evidencia_excel	pendiente	
+req.detalle.historial	Historial	subpestana	req.detalle	R/requisiciones_module.R	nav:historial				pendiente	
+req.detalle.pdf	Requisición en PDF	pdf	req.detalle	R/requisiciones_module.R	descarga:descargar				pendiente	
+req.mover	Mover requisiciones a carpeta	modal	req	R/requisiciones_module.R	modal:requisicionesServer@t$accion()				pendiente	
+req.nueva	Nueva requisición	modal	req	R/requisiciones_module.R	modal:requisicionesServer@input$nueva				pendiente	
+fc	Forecasting	pestana		app.R	nav:FC				pendiente	
+fc.metodos	Métodos y suscripciones	subpestana	fc	R/forecasting_module.R	nav:Métodos y suscripciones			pronostico_metodos;pronostico_subs	pendiente	
+fc.metodos.editar_sub	Editar suscripción	modal	fc.metodos	R/forecasting_module.R	modal:forecastingServer@subs_t$accion()				pendiente	
+fc.metodos.nueva_sub	Nueva suscripción global	modal	fc.metodos	R/forecasting_module.R	modal:forecastingServer@input$btn_add_global_sub				pendiente	
+fc.registro	Registro de consultas	subpestana	fc	R/forecasting_module.R	nav:Registro de consultas			bitacora_pronosticos	pendiente	
+fc.registro.detalle	Detalle de la consulta	modal	fc.registro	R/forecasting_module.R	modal:forecastingServer@consultas_t$accion()				pendiente	
+fc.series	Series	subpestana	fc	R/forecasting_module.R	nav:Series				pendiente	
+rpt	Reporte	pestana		app.R	nav:RPT				pendiente	Pestaña oculta en la barra; se abre desde el menú
+rpt.html	Reporte en HTML	descarga	rpt	R/reporte_module.R	descarga:dl_html				pendiente	
+rpt.pdf	Reporte en PDF	pdf	rpt	R/reporte_module.R	descarga:dl_pdf				pendiente	
+grupo	Grupo	menu		app.R	nav:GRUPO				pendiente	
+tiers	Usuarios	pestana	grupo	app.R	nav:TIERS				pendiente	
+tiers.actividad	Actividad	subpestana	tiers	R/tiers_module.R	nav:actividad			actividad	pendiente	Actividad y Archivos de pago
+tiers.actividad.detalle	Detalle de la actividad	modal	tiers.actividad	R/audit_log_viewer_module.R	modal:auditLogViewerServer@audit_t$accion()				pendiente	
+tiers.actividad.pdf	Bitácora en PDF	pdf	tiers.actividad	R/audit_log_viewer_module.R	descarga:audit_export_pdf				pendiente	
+tiers.archivos_pago	Archivos de pago	panel	tiers.actividad	R/pagos_audit_viewer_module.R	fn:pagosAuditViewerUI			archivos_pago	pendiente	Vista dentro de Actividad
+tiers.archivos_pago.comprobante	Comprobante de pago en PDF	pdf	tiers.archivos_pago.detalle	R/pagos_audit_viewer_module.R	descarga:dl_pago_pdf				pendiente	
+tiers.archivos_pago.detalle	Detalle del archivo de pagos	modal	tiers.archivos_pago	R/pagos_audit_viewer_module.R	modal:pagosAuditViewerServer@pagos_t$accion()				pendiente	
+tiers.archivos_pago.pdf	Archivos de pago en PDF	pdf	tiers.archivos_pago	R/pagos_audit_viewer_module.R	descarga:pagos_export_pdf				pendiente	
+tiers.bitacora_global	Bitácora Global	subpestana	tiers	R/tiers_module.R	nav:global_audit				pendiente	
+tiers.cambiar_cliente	Cambiar contexto de cliente	modal	tiers	R/tiers_module.R	modal:tiersServer@input$btn_switch_ctx				pendiente	
+tiers.clientes	Clientes	subpestana	tiers	R/tiers_module.R	nav:clients			clientes;solicitudes	pendiente	
+tiers.clientes.confirmar	Confirmar cambios del cliente	modal	tiers.clientes.editar	R/tiers_module.R	modal:tiersServer@input$btn_save_client_edit				pendiente	
+tiers.clientes.contactos	Contactos de un cliente	modal	tiers.clientes	R/tiers_module.R	modal:tiersServer@clientes_t$contactos()			contactos	pendiente	
+tiers.clientes.editar	Editar cliente	modal	tiers.clientes	R/tiers_module.R	modal:tiersServer@clientes_t$editar()				pendiente	
+tiers.clientes.revisar	Revisar solicitud	modal	tiers.clientes	R/tiers_module.R	modal:tiersServer@solicitudes_t$revisar()				pendiente	
+tiers.clientes.solicitud	Solicitud de nuevo cliente	modal	tiers.clientes	R/tiers_module.R	modal:tiersServer@input$btn_new_client_req				pendiente	
+tiers.config_niveles	Config. de Tiers	subpestana	tiers	R/tiers_module.R	nav:tier_config				pendiente	
+tiers.invitaciones	Invitaciones	subpestana	tiers	R/tiers_module.R	nav:invites			invitaciones	pendiente	
+tiers.invitaciones.enviada	Invitación enviada	modal	tiers.invitaciones	R/tiers_module.R	modal:tiersServer@input$btn_send_invite				pendiente	
+tiers.notificaciones	Notificaciones	subpestana	tiers	R/tiers_module.R	nav:notifications			cola_correos	pendiente	
+tiers.salto	Accesos de Salto	subpestana	tiers	R/tiers_module.R	nav:hop_perms			accesos_salto	pendiente	
+tiers.seguridad	Seguridad	subpestana	tiers	R/tiers_module.R	nav:security			cuentas_bloqueadas	pendiente	
+tiers.usuarios	Usuarios	subpestana	tiers	R/tiers_module.R	nav:usuarios			usuarios	pendiente	
+tiers.usuarios.eliminar	Eliminar cuenta	modal	tiers.usuarios	R/tiers_module.R	modal:tiersServer@usuarios_t$eliminar()				pendiente	
+emp	Empresas	pestana	grupo	app.R	nav:EMP			empresas	pendiente	
+emp.erp	Conexiones ERP de una empresa	modal	emp	R/empresas_module.R	modal:.abrir_erp				pendiente	
+flujo	Exportar Flujo de Caja	modal	boton.exportar	R/cashflow_export_module.R	modal:show_cashflow_export_modal				pendiente	
+flujo.en_progreso	Generación en progreso	modal	flujo	R/cashflow_export_module.R	modal:setup_cashflow_export_server				pendiente	
+flujo.excel	Flujo de Caja en Excel	excel	flujo	R/cashflow_export_module.R	descarga:btn_download_excel_ready				pendiente	
+flujo.pdf	Flujo de Caja en PDF	pdf	flujo	R/cashflow_export_module.R	descarga:btn_export_pdf				pendiente	
+flujo.word	Flujo de Caja en Word	descarga	flujo	R/cashflow_export_module.R	descarga:btn_export_word				pendiente	
+lupa	Buscar facturas (la lupa)	modal	boton.buscar	R/search_module.R	modal:lupaServer@abrir()			facturas_lupa	pendiente	
+lupa.datos_sap	Datos SAP crudos	modal	lupa	R/search_module.R	modal:datos_sap_visor			datos_sap	pendiente	También se abre desde el detalle del día
+config	Configuración	modal	boton.config	R/settings/settings_hub.R	modal:show_settings_modal				pendiente	Menú lateral con 6 secciones
+config.catalogo	Configuración › Catálogo de proveedores	seccion	config	R/proveedores_module.R	fn:proveedoresUI				pendiente	
+config.catalogo.activo	Catálogo activo	subpestana	config.catalogo	R/proveedores_module.R	nav:catalogo			proveedores	pendiente	
+config.catalogo.editar	Proveedor (nuevo o editar)	modal	config.catalogo.activo	R/proveedores_module.R	modal:.show_edit_modal				pendiente	
+config.catalogo.importar	Importar Excel	subpestana	config.catalogo	R/proveedores_module.R	nav:importar			revision_excel_prov	pendiente	
+config.catalogo.inactivar	Inactivar proveedor	modal	config.catalogo.activo	R/proveedores_module.R	modal:.pedir_inactivar				pendiente	
+config.catalogo.inactivar_bloque	Inactivar selección	modal	config.catalogo.activo	R/proveedores_module.R	modal:.pedir_inactivar_bloque				pendiente	
+config.catalogo.inactivos	Inactivos	subpestana	config.catalogo	R/proveedores_module.R	nav:inactivos			proveedores_inactivos	pendiente	
+config.catalogo.plantilla	Plantilla de proveedores en Excel	excel	config.catalogo.importar	R/proveedores_module.R	descarga:descargar_plantilla				pendiente	
+config.catalogo.reactivar	Reactivar proveedor	modal	config.catalogo.inactivos	R/proveedores_module.R	modal:.pedir_reactivar				pendiente	
+config.cuentas	Configuración › Cuentas	seccion	config	R/settings/settings_cuentas.R	fn:.cuentas_panel_ui			bancos_cat;cuentas_empresa	pendiente	
+config.cuentas.banco_en_uso	No se puede eliminar el banco	modal	config.cuentas	R/settings/settings_cuentas.R	modal:.banco_en_uso_modal				pendiente	
+config.empresas	Configuración › Empresas	seccion	config	R/settings/settings_companies.R	fn:.companies_panel_ui				pendiente	
+config.empresas.aplicar	Aplicar políticas de pago	modal	config.empresas	R/settings/settings_companies.R	modal:.cmp_apply_modal				pendiente	
+config.interco	Configuración › Intercompany	seccion	config	R/settings/settings_hub.R	texto:"stg_btn_interco"			ic_registro	pendiente	
+config.interco.bp	Business Partners SAP	panel	config.interco	R/settings/settings_bp.R	fn:.bp_panel_ui			bp_sap	pendiente	
+config.interco.escaner	Escáner IC	modal	config.interco	R/settings/settings_hub.R	modal:settings_observers@input$scan_ic_btn			escaner_ic	pendiente	
+config.interco.sin_guardar	Cambios sin guardar	modal	config.interco	R/settings/settings_hub.R	modal:.ic_unsaved_modal				pendiente	
+config.politicas	Configuración › Políticas	seccion	config	R/settings/settings_policies.R	fn:.policies_panel_ui			politicas_preview	pendiente	
+config.politicas.eliminar	Eliminar política	modal	config.politicas	R/settings/settings_policies.R	modal:.policy_delete_confirm_modal				pendiente	
+config.politicas.revertir	Revertir fechas de política	modal	config.politicas	R/settings/settings_policies.R	modal:.cmp_revert_modal				pendiente	
+config.sincro	Configuración › Sincronización	seccion	config	R/settings/settings_sincro.R	fn:.sincro_panel_ui			sincro_preview	pendiente	
+config.sincro.activar	Activar sincronización	modal	config.sincro	R/settings/settings_sincro.R	modal:.sincro_activar_modal				pendiente	
+config.sincro.desactivar	Desactivar sincronización	modal	config.sincro	R/settings/settings_sincro.R	modal:settings_sincro_observer@input$sincro_toggle_change				pendiente	
+app.cambio_contrasena	Cambio de contraseña requerido	modal	pagina.login	app.R	modal:server				pendiente	Aparece al entrar cuando la contraseña debe cambiarse
+correo.bienvenida	Correo: bienvenida	correo		R/email_service.R	correo:email_welcome_html				pendiente	
+correo.invitacion	Correo: invitación	correo		R/email_service.R	correo:email_invite_html				pendiente	
+correo.limite_alcanzado	Correo: límite de usuarios alcanzado	correo		R/email_service.R	correo:email_user_limit_reached_html				pendiente	
+correo.limite_aviso	Correo: cerca del límite de usuarios	correo		R/email_service.R	correo:email_user_limit_warning_html				pendiente	
+correo.limite_cambio	Correo: cambio de límite de usuarios	correo		R/email_service.R	correo:email_limit_change_html				pendiente	
+correo.lunes	Correo del lunes (la semana)	correo		R/avisos_correos.R	correo:correo_lunes_html				pendiente	
+correo.password_reset	Correo: restablecer contraseña (invitado)	correo		R/email_service.R	correo:email_password_reset_html				pendiente	
+correo.reset	Correo: restablecer contraseña	correo		R/auth_reset.R	correo:email_reset_html				pendiente	
+correo.solicitud_usuarios	Correo: solicitud de más usuarios	correo		R/email_service.R	correo:email_user_request_html				pendiente	
+correo.viernes	Correo del viernes (lo que pasó)	correo		R/avisos_correos.R	correo:correo_viernes_html				pendiente	
