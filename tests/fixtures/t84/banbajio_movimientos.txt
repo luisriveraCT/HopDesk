@@ -1,0 +1,30 @@
+EMPRESA FICTICIA DEMO SA DE CV,0009876543,Cuenta Ficticia Pesos,1,15-Mar-2026,09:30:00,Mes Actual,TODOS,01-Mar-2026 al 15-Mar-2026,,26,0.00,0.00
+#,Fecha Movimiento,Hora,Recibo,Descripción,Cargos,Abonos,Saldo
+1,02-Mar-2026,10:15:01,5001,SPEI Enviado: | Beneficiario: PROVEEDOR INVENTADO UNO SA DE CV (Dato no verificado por esta institucion) | RFC Beneficiario: PIU010101AA1 | Clave de Rastreo: BBFICT0000000001 | Referencia: 1234567 | Concepto del Pago: PAGO FACTURA F-0001 por (1500.50) mxn,1500.50,,98499.50
+2,02-Mar-2026,10:15:01,5001,Comisión por transferencia SPEI por (6.00) mxn,,,98499.50
+3,02-Mar-2026,10:15:01,5001,IVA Comisión por transferencia SPEI por (0.96) mxn,,,98499.50
+4,03-Mar-2026,11:00:00,5002,SPEI Enviado: | Beneficiario PROVEEDOR INVENTADO DOS Aut. 777 | Concepto del Pago: SERVICIO, MANTENIMIENTO Y SOPORTE | Clave de Rastreo: BBFICT0000000002,2300.00,,96199.50
+5,03-Mar-2026,12:30:45,5003,SPEI Recibido: | Ordenante: CLIENTE FICTICIO SA DE CV Cuenta Ordenante: 000000000000000001 | RFC Ordenante: CFI020202BB2 | Clave de Rastreo: OTROBANCO0000001 | Referencia: 7654321 | Concepto del Pago: COBRO FACTURA A-0042,,12000.00,108199.50
+6,04-Mar-2026,08:05:00,5004,SPEI Recibido: | Ordenante: OTRO CLIENTE INVENTADO | Concepto del Pago: ANTICIPO,,350.25,108549.75
+7,04-Mar-2026,09:10:00,5005,TEF Recibido por 5000.00 mxn 0026F1100000000001 BEmisor.BANCOX Ordenante CLIENTE TEF FICTICIO | Recibo # 5005,,5000.00,113549.75
+8,04-Mar-2026,09:20:00,5006,TEF Enviado por 800.00 mxn 0026F1100000000002 Beneficiario PROVEEDOR TEF FICTICIO | Recibo # 5006,800.00,,112749.75
+9,05-Mar-2026,10:00:00,5007,Retiro de Recursos Suc. 5mar Fondo ficticio de caja Aut.100001 | Beneficiario | CUENTA PROPIA FICTICIA | Recibo # 5007,10000.00,,102749.75
+10,05-Mar-2026,10:05:00,5008,Entrega de Recursos Suc. 5mar Traspaso ficticio Aut.100002 | Recibo # 5008,,2500.00,105249.75
+11,06-Mar-2026,13:00:00,5009,Devolución de SPEI | Ordenante: BANCO FICTICIO RFC Ordenante: BFI030303CC3 | Clave de Rastreo: DEVFICT000000001,,900.00,106149.75
+12,06-Mar-2026,14:00:00,5010,Retiro de Nomina empresas por (45000.00) mxn | Recibo # 5010,45000.00,,61149.75
+13,07-Mar-2026,07:00:00,5011,Retiro por domiciliación SERVICIO INVENTADO SA RefB[0000111] | por (499.00) mxn,499.00,,60650.75
+14,07-Mar-2026,07:30:00,5012,Pago de Servicios LUZ FICTICIA referencia 999,1200.00,,59450.75
+15,08-Mar-2026,18:45:10,5013,Compra - Disposicion por POS TIENDA FICTICIA,350.00,,59100.75
+16,09-Mar-2026,11:11:11,5014,Retiro por operacion cambios USD ficticios,20000.00,,39100.75
+17,09-Mar-2026,11:30:00,5015,Plazo-Inversion ficticia 28 dias,10000.00,,29100.75
+18,10-Mar-2026,00:00:01,5016,Gasto admon mensual ficticio,150.00,,28950.75
+19,10-Mar-2026,15:00:00,5017,Outgoing Wire Beneficiary: FAKE SUPPLIER LLC | Reference: INV-777 | Trace: FAKETRACE001 | Concept: Parts,1000.00,,27950.75
+20,10-Mar-2026,15:30:00,5018,Incoming Wire Sender: FAKE CUSTOMER INC | Reference: PO-888 | Tracking: FAKETRACK002,,3000.00,30950.75
+21,11-Mar-2026,09:00:00,5019,Wire fee for outgoing transfer,25.00,,30925.75
+22,11-Mar-2026,09:05:00,5020,Internal transfer between accounts ficticia,,100.00,31025.75
+23,11-Mar-2026,09:10:00,5021,Payroll batch ficticio,500.00,,30525.75
+24,12-Mar-2026,16:20:00,5022,Movimiento sin forma conocida ficticio,10.00,,30515.75
+25,12-Mar-2026,16:20:00,linea rota sin campos suficientes
+26,13-Mar-2026,10:00:00,5023,Comisión por manejo de cuenta,1.00,,30514.75
+
+27,14-Mar-2026,10:00:00,5024,SPEI Enviado: | Beneficiario: SIN RFC NI RASTREO SA | Concepto del Pago: PAGO SIMPLE,45.00,,30469.75
