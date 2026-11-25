@@ -148,6 +148,14 @@ ESTILOS_JS <- "(function(){
   document.querySelectorAll('body *').forEach(function(e){
     if (!(e.offsetParent !== null || getComputedStyle(e).position === 'fixed')) return;
     var r = e.getBoundingClientRect(); if (r.width === 0 || r.height === 0) return;
+    // Clipped away by a 0x0 box with overflow hidden: never painted. That is
+    // selectize's hidden measurer (measureString: body > div[aria-hidden] >
+    // span), which copies the font of the last input it measured; after the
+    // .hd-marca folder form it followed the theme (T6-10, 2026-11-26).
+    for (var a = e.parentElement; a && a !== document.body; a = a.parentElement) {
+      var ra = a.getBoundingClientRect();
+      if ((ra.width === 0 || ra.height === 0) && getComputedStyle(a).overflow !== 'visible') return;
+    }
     if (r.bottom < 0 || r.top > window.innerHeight) return;
     var s = getComputedStyle(e), v = {};
     props.forEach(function(p){ v[p] = s.getPropertyValue(p); });
