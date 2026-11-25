@@ -760,13 +760,26 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
 }
 
 # ── Revision summary renderer ──────────────────────────────────────────────────
-# T77: the Revisión's cost lines -- financiero: the cost of the financing
-# (interest + charges + taxes, never the capital) with its breakdown, and
-# per year; regular and tarjeta: per month and per year, and with an end
-# date the total up to it.
-.wiz_costeo_filas <- function(draft) {
+# T109: the draft's cost from the SAME schedule as the amortization table
+# (the rate just fetched -- usar_indice = FALSE -- and the client's day), so
+# the summary and the table always add up to the same figures.
+.wiz_costeo <- function(draft) {
   liab <- tryCatch(pasivos_wizard_draft_to_liability(draft, mode = "create", user = "preview"), error = function(e) NULL)
-  c <- if (is.null(liab)) NULL else tryCatch(pasivos_costeo(liab), error = function(e) NULL)
+  if (is.null(liab)) return(NULL)
+  tryCatch(pasivos_costeo(liab, hoy = hoy_cliente(), usar_indice = FALSE), error = function(e) NULL)
+}
+
+# Whether any currency still has less to pay than its whole term (a payment
+# already behind): then the "por pagar" lines are worth showing.
+.wiz_hay_pasadas <- function(todo, falta) any(abs(todo - falta) > 0.005, na.rm = TRUE)
+
+# T77: the Revisión's cost lines -- financiero: the cost of the financing
+# (interest + charges + taxes, never the capital) over the whole term with its
+# breakdown, what is still to pay (T109, when a payment is behind) and the
+# next 12 months; regular and tarjeta: per month and the next 12 months, and
+# with an end date the total up to it.
+.wiz_costeo_filas <- function(draft) {
+  c <- .wiz_costeo(draft)
   if (is.null(c) || !nrow(c$filas)) return(list())
   f <- c$filas
   mm <- function(x) paste(monto_moneda(x, f$moneda), collapse = " \u00b7 ")
@@ -774,9 +787,11 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
     desglose <- paste(vapply(seq_len(nrow(f)), function(i) tr("tablas.pasivos.costeo.desglose",
       intereses = monto_moneda(f$intereses[i], f$moneda[i]), cargos = monto_moneda(f$cargos[i], f$moneda[i]),
       impuestos = monto_moneda(f$impuestos[i], f$moneda[i])), character(1)), collapse = " \u00b7 ")
-    return(list(c(tr("tablas.pasivos.costeo.total_financiamiento"), mm(f$total)),
-                c(tr("tablas.pasivos.costeo.desglose_titulo"), desglose),
-                c(tr("tablas.pasivos.costeo.por_ano"), mm(f$anual))))
+    return(c(list(c(tr("tablas.pasivos.costeo.total_financiamiento"), mm(f$total)),
+                  c(tr("tablas.pasivos.costeo.desglose_titulo"), desglose)),
+             if (.wiz_hay_pasadas(f$total, f$total_faltan))
+               list(c(tr("tablas.pasivos.costeo.por_pagar"), mm(f$total_faltan))),
+             list(c(tr("tablas.pasivos.costeo.por_ano"), mm(f$anual)))))
   }
   out <- list(c(tr("tablas.pasivos.costeo.por_mes"), mm(f$mes)), c(tr("tablas.pasivos.costeo.por_ano"), mm(f$anual)))
   if (any(!is.na(f$total))) out <- c(out, list(c(tr("tablas.pasivos.costeo.hasta_fin"), mm(f$total))))
@@ -896,13 +911,25 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
     }, character(1)), collapse = " \u00b7 "))))
   # T63: what the taxes add up to over the whole term (loans) or on each
   # payment (regular and tarjeta), by currency, never added across currencies.
+  # T109: a loan's whole term is EVERY payment, from pasivos_costeo() -- the
+  # breakdown's own figure; it used to add only the table of the next
+  # payments, i.e. what was still to pay. That one now has its own line.
   if (length(imps)) {
-    fin <- identical(cat, "financiero")
-    v <- tryCatch(if (fin) pasivos_vista_amortizacion(draft) else pasivos_vista_provisiones(draft), error = function(e) NULL)
-    if (!is.null(v) && nrow(v)) {
-      t <- tapply(v$impuestos, v$moneda, if (fin) sum else function(x) x[1])
-      rows <- c(rows, list(c(tr(if (fin) "tablas.pasivos.impuestos.total_plazo" else "tablas.pasivos.impuestos.por_pago"),
-                             paste(monto_moneda(as.numeric(t), names(t)), collapse = " \u00b7 "))))
+    if (identical(cat, "financiero")) {
+      co <- .wiz_costeo(draft)
+      if (!is.null(co) && nrow(co$filas)) {
+        mm <- function(x) paste(monto_moneda(x, co$filas$moneda), collapse = " \u00b7 ")
+        rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.total_plazo"), mm(co$filas$impuestos))))
+        if (.wiz_hay_pasadas(co$filas$impuestos, co$filas$impuestos_faltan))
+          rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.por_pagar"), mm(co$filas$impuestos_faltan))))
+      }
+    } else {
+      v <- tryCatch(pasivos_vista_provisiones(draft), error = function(e) NULL)
+      if (!is.null(v) && nrow(v)) {
+        t <- tapply(v$impuestos, v$moneda, function(x) x[1])
+        rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.por_pago"),
+                               paste(monto_moneda(as.numeric(t), names(t)), collapse = " \u00b7 "))))
+      }
     }
   }
 
@@ -923,7 +950,26 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
 # scroll; it used to show the first 12, "…" and the last 3). Regular and
 # tarjeta: the first 12 provisions, as before. NULL when the draft cannot be
 # turned into a liability yet.
-pasivos_vista_amortizacion <- function(draft) {
+# T109: completa = TRUE gives every payment of the contract, past ones too
+# ("Ver tabla completa"), so its sums are the whole term's and the next
+# payments' sums are what is still to pay -- the Revisión's two lines. Every
+# row carries its saldo insoluto (the capital left after it) and its estado:
+# "pagada" when its provision (liability_id + occurrence_index = periodo) is
+# paid (PROVISION_PAGADA), else "pasada" before the client's day, else
+# "por_pagar". Same schedule and currency as pasivos_costeo() in the wizard.
+.wiz_saldo_insoluto <- function(s, principal) {
+  sp <- if ("saldo_post" %in% names(s)) suppressWarnings(as.numeric(s$saldo_post)) else rep(NA_real_, nrow(s))
+  # An imported (custom) schedule may bring no balance: the principal less the
+  # capital paid so far, in date order; without a principal, unknown (NA).
+  if (all(is.na(sp)) && length(principal) == 1L && !is.na(principal)) {
+    cap <- suppressWarnings(as.numeric(s$capital)); cap[is.na(cap)] <- 0
+    cap[s$origin %in% "initial_fee"] <- 0
+    sp <- pmax(0, round(principal - cumsum(cap), 2))
+  }
+  sp
+}
+
+pasivos_vista_amortizacion <- function(draft, completa = FALSE, provs = NULL, liability_id = NULL) {
   # A variable rate takes the value just fetched (tasa_actual + spread), not
   # the estimates' store, and stays variable: nominal annual, Act/360 (it used
   # to be turned into a fixed one, which the engine takes as effective).
@@ -935,18 +981,35 @@ pasivos_vista_amortizacion <- function(draft) {
   sched <- tryCatch(pasivos_generate_schedule(liab_row, today = hoy_cliente(), usar_indice = FALSE),
                     error = function(e) NULL)
   if (is.null(sched) || !nrow(sched)) return(NULL)
-  futuras <- sched[!isTRUE_safe(sched$historico), , drop = FALSE]
+  sched <- sched[order(as.Date(sched$fecha), sched$periodo), , drop = FALSE]
+  sched$.saldo <- .wiz_saldo_insoluto(sched, suppressWarnings(as.numeric(liab_row$principal_original[1])))
+  futuras <- if (isTRUE(completa)) sched else sched[!isTRUE_safe(sched$historico), , drop = FALSE]
+  # The currency as pasivos_costeo() has it: the row's, else the quoted one
+  # (cotizado_en), else the payment's.
+  base_m <- as.character(liab_row$cotizado_en[1] %||% NA_character_)
+  if (is.na(base_m) || !nzchar(base_m)) base_m <- draft$moneda_pago %||% NA_character_
+  mon <- if ("moneda" %in% names(futuras)) as.character(futuras$moneda) else rep(NA_character_, nrow(futuras))
+  mon[is.na(mon) | !nzchar(mon)] <- base_m
+  pagada <- get0("PROVISION_PAGADA", ifnotfound = character())
+  occ_pagadas <- if (is.data.frame(provs) && nrow(provs) && length(liability_id) == 1L && !is.na(liability_id) &&
+                     all(c("liability_id", "occurrence_index", "estado") %in% names(provs)))
+    provs$occurrence_index[provs$liability_id %in% liability_id & provs$estado %in% pagada] else integer()
+  num <- function(x) { x <- suppressWarnings(as.numeric(x)); x[is.na(x)] <- 0; x }
   filas <- data.frame(
-    id      = paste0("p", futuras$periodo),
+    id      = make.unique(paste0("p", futuras$periodo)),
     periodo = as.integer(futuras$periodo),
     fecha   = as.Date(futuras$fecha),
     capital = as.numeric(futuras$capital %||% 0),
     interes = as.numeric(futuras$interes %||% 0),
+    cargos  = num(futuras$fees),
     total   = as.numeric(futuras$total %||% 0),
     # T63: each payment's taxes and the payment with them (0 / total with none)
     impuestos  = if ("impuestos" %in% names(futuras)) as.numeric(futuras$impuestos) else 0,
     total_pago = if ("total_pago" %in% names(futuras)) as.numeric(futuras$total_pago) else as.numeric(futuras$total %||% 0),
-    moneda  = rep(draft$moneda_pago %||% NA_character_, nrow(futuras)),
+    saldo   = as.numeric(futuras$.saldo),
+    estado  = ifelse(futuras$periodo %in% occ_pagadas, "pagada",
+                     ifelse(isTRUE_safe(futuras$historico), "pasada", "por_pagar")),
+    moneda  = mon,
     stringsAsFactors = FALSE)
   attr(filas, "reamortizada") <- any(!is.na(sched$re_amortized) & sched$re_amortized, na.rm = TRUE)
   filas
@@ -973,9 +1036,9 @@ pasivos_vista_provisiones <- function(draft) {
 }
 
 .wiz_vacia_amort <- data.frame(id = character(), periodo = integer(), fecha = as.Date(character()),
-                               capital = numeric(), interes = numeric(), total = numeric(),
-                               impuestos = numeric(), total_pago = numeric(),
-                               moneda = character(), stringsAsFactors = FALSE)
+                               capital = numeric(), interes = numeric(), cargos = numeric(), total = numeric(),
+                               impuestos = numeric(), total_pago = numeric(), saldo = numeric(),
+                               estado = character(), moneda = character(), stringsAsFactors = FALSE)
 .wiz_vacia_prov  <- data.frame(id = character(), fecha = as.Date(character()), monto = numeric(),
                                impuestos = numeric(), moneda = character(), stringsAsFactors = FALSE)
 
@@ -985,6 +1048,7 @@ pasivos_vista_provisiones <- function(draft) {
   if (identical(draft$categoria %||% "", "financiero")) {
     filas <- pasivos_vista_amortizacion(draft)
     shiny::tagList(
+      shiny::uiOutput("pwiz_amort_cabecera"),   # T109: the title and "Ver tabla completa"
       if (isTRUE(attr(filas, "reamortizada"))) shiny::div(
         class = "alert alert-warning small py-1 mb-2", tr("tablas.pasivos.amort.reamortizada")),
       hd_table_ui("pwiz_amort", alto = "320px"))
@@ -994,20 +1058,31 @@ pasivos_vista_provisiones <- function(draft) {
 }
 
 # The two tables' servers, once per session (from setup_pasivos_wizard).
-.wiz_tablas_vista_previa <- function(wiz) {
+# T109: the amortization table shows the next payments or, with "Ver tabla
+# completa" (wiz$amort_vista), every payment of the contract with its estado;
+# its sums are the Revisión's "por pagar" and "todo el plazo" lines.
+.wiz_tablas_vista_previa <- function(wiz, shared = NULL) {
   hd_table_server("pwiz_amort", tabla = "amortizacion",
     datos = shiny::reactive({
       if (!identical(wiz$draft$categoria %||% "", "financiero")) return(.wiz_vacia_amort)
-      pasivos_vista_amortizacion(wiz$draft) %||% .wiz_vacia_amort
+      provs <- tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL)
+      pasivos_vista_amortizacion(wiz$draft, completa = identical(wiz$amort_vista, "completa"),
+                                 provs = provs, liability_id = wiz$edit_target_id) %||% .wiz_vacia_amort
     }),
     columnas = list(
       col_numero("periodo", "tablas.pasivos.amort.periodo"),
       col_fecha("fecha",    "tablas.pasivos.amort.fecha"),
-      col_dinero("capital", "tablas.pasivos.amort.capital", moneda = "moneda", sumar = FALSE),
-      col_dinero("interes", "tablas.pasivos.amort.interes", moneda = "moneda", sumar = FALSE),
-      col_dinero("total",   "tablas.pasivos.amort.total",   moneda = "moneda", sumar = FALSE),
+      col_dinero("capital", "tablas.pasivos.amort.capital", moneda = "moneda", sumar = TRUE),
+      col_dinero("interes", "tablas.pasivos.amort.interes", moneda = "moneda", sumar = TRUE),
+      col_dinero("cargos",  "tablas.pasivos.amort.cargos",  moneda = "moneda", sumar = TRUE, opcional = TRUE, visible = FALSE),
+      col_dinero("total",   "tablas.pasivos.amort.total",   moneda = "moneda", sumar = TRUE, opcional = TRUE, visible = FALSE),
       col_dinero("impuestos",  "tablas.pasivos.amort.impuestos",  moneda = "moneda", sumar = TRUE),
-      col_dinero("total_pago", "tablas.pasivos.amort.total_pago", moneda = "moneda", sumar = TRUE)),
+      col_dinero("total_pago", "tablas.pasivos.amort.total_pago", moneda = "moneda", sumar = TRUE),
+      col_dinero("saldo",   "tablas.pasivos.amort.saldo",   moneda = "moneda", sumar = FALSE),
+      col_insignia("estado", "tablas.pasivos.amort.estado", mapa = list(
+        pagada    = list(texto = "tablas.pasivos.amort.estado_pagada",    tono = "exito"),
+        pasada    = list(texto = "tablas.pasivos.amort.estado_pasada",    tono = "neutro"),
+        por_pagar = list(texto = "tablas.pasivos.amort.estado_por_pagar", tono = "info")))),
     vacio = "tablas.pasivos.amort.vacio")
   hd_table_server("pwiz_prov", tabla = "provisiones_asistente",
     datos = shiny::reactive({
@@ -1058,11 +1133,12 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     validation_errors = list(),
     cargos_list      = list(),     # in-progress cargo rows for the cargos step
     impuestos_list   = list(),     # T63: in-progress tax rows (cargos step)
-    custom_dates     = character() # accumulating dates for "custom" recurrence
+    custom_dates     = character(), # accumulating dates for "custom" recurrence
+    amort_vista      = "proximas"   # T109: "proximas" | "completa"
   )
 
   # The Revisión step's previews (amortizacion / provisiones_asistente, T18)
-  .wiz_tablas_vista_previa(wiz)
+  .wiz_tablas_vista_previa(wiz, shared)
 
   # ── Rate dual-input: last-touched tracking ────────────────────────────────
   last_tasa_touched    <- shiny::reactiveVal("anual")
@@ -1661,6 +1737,20 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     .wiz_revision_schedule_html(wiz$draft)
   })
 
+  # T109: the amortization table's title and its switch between the next
+  # payments and the whole contract (the same table, inside this modal: a
+  # second modal would close the wizard).
+  output$pwiz_amort_cabecera <- shiny::renderUI({
+    completa <- identical(wiz$amort_vista, "completa")
+    shiny::div(class = "d-flex align-items-baseline gap-3 mb-1",
+      shiny::tags$h6(class = "mb-0", tr(if (completa) "tablas.pasivos.amort.titulo_completa" else "tablas.pasivos.amort.titulo_proximas")),
+      shiny::actionLink("pwiz_amort_vista", class = "small",
+                        tr(if (completa) "tablas.pasivos.amort.ver_proximas" else "tablas.pasivos.amort.ver_completa")))
+  })
+  shiny::observeEvent(input$pwiz_amort_vista, {
+    wiz$amort_vista <- if (identical(wiz$amort_vista, "completa")) "proximas" else "completa"
+  }, ignoreInit = TRUE)
+
   output$pwiz_revision_notice <- shiny::renderUI({
     shiny::tagList(
       shiny::tags$span(pasivos_aviso_generacion(wiz$draft)),   # T70b
@@ -1819,7 +1909,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
 .pwiz_modal <- function() {
   shiny::modalDialog(
     title     = shiny::uiOutput("pwiz_modal_title"),
-    size      = "l",
+    size      = "xl",   # T109: the amortization table read whole at 1293 px (Diseñador, 2026-11-25)
     easyClose = FALSE,
     shiny::uiOutput("pwiz_step_indicator"),
     shiny::uiOutput("pwiz_step_content"),

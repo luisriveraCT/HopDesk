@@ -791,12 +791,9 @@ pasivos_step_ui_revision <- function(draft, errors = list()) {
     ),
     shiny::fluidRow(
       shiny::column(12, class = "mt-2",
-        shiny::tags$h6(
-          if (identical(draft$categoria, "financiero"))
-            "Amortización (próximas cuotas)"
-          else
-            "Próximas provisiones"
-        ),
+        # T109: a financiero's title (and its "Ver tabla completa") comes with
+        # its table, in pwiz_amort_cabecera.
+        if (!identical(draft$categoria, "financiero")) shiny::tags$h6("Próximas provisiones"),
         shiny::uiOutput("pwiz_revision_schedule")
       )
     ),

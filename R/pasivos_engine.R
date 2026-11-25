@@ -685,18 +685,28 @@ pasivos_provisiones_tras_fin <- function(existing, liability) {
 #     twelfth of it ("por mes") and, with an end date (T70), everything up
 #     to it ("total"); taxes included (amount_pago carries them, T63).
 # Returns list(categoria, filas = data.frame(moneda, intereses, cargos,
-# impuestos, total, anual, mes)); NA where it does not apply (total without
-# an end date; intereses/cargos/impuestos for regular and tarjeta).
-pasivos_costeo <- function(liability, hoy = hoy_en(), client_id = pasivos_cliente_sesion()) {
+# impuestos, total, anual, mes, impuestos_faltan, total_faltan)); NA where it
+# does not apply (total without an end date; intereses/cargos/impuestos and
+# the *_faltan for regular and tarjeta).
+# T109, one rule for every figure, all from the SAME schedule:
+#   "todo el plazo" = every payment of the contract (total, intereses,
+#     cargos, impuestos), past ones included;
+#   "por pagar"     = the payments dated today or later (the client's day;
+#     the schedule's historico == FALSE): impuestos_faltan, total_faltan;
+#   "próximos 12 meses" = [hoy, hoy + 1 year): anual (and mes = anual / 12).
+# usar_indice: as pasivos_generate_schedule(); the wizard passes FALSE and the
+# client's day, like its amortization table, so both show the same schedule.
+pasivos_costeo <- function(liability, hoy = hoy_en(), client_id = pasivos_cliente_sesion(), usar_indice = TRUE) {
   hoy <- as.Date(hoy)
   un_ano <- seq(hoy, by = "1 year", length.out = 2L)[2]
   cat <- as.character(liability$categoria[1] %||% "")
   vacio <- data.frame(moneda = character(), intereses = numeric(), cargos = numeric(), impuestos = numeric(),
-                      total = numeric(), anual = numeric(), mes = numeric(), stringsAsFactors = FALSE)
+                      total = numeric(), anual = numeric(), mes = numeric(),
+                      impuestos_faltan = numeric(), total_faltan = numeric(), stringsAsFactors = FALSE)
   por_moneda <- function(m, f) { if (!length(m)) return(numeric()); vapply(split(f, m), sum, numeric(1)) }
 
   if (identical(cat, "financiero")) {
-    s <- pasivos_generate_schedule(liability, today = hoy, client_id = client_id)
+    s <- pasivos_generate_schedule(liability, today = hoy, client_id = client_id, usar_indice = usar_indice)
     if (!nrow(s)) return(list(categoria = cat, filas = vacio))
     base_m <- as.character(liability$cotizado_en[1] %||% NA_character_)
     if (is.na(base_m) || !nzchar(base_m)) base_m <- as.character(liability$moneda_pago[1] %||% NA_character_)
@@ -714,6 +724,9 @@ pasivos_costeo <- function(liability, hoy = hoy_en(), client_id = pasivos_client
       anual = vapply(monedas, function(x) sum(costo[prox & m == x]), numeric(1), USE.NAMES = FALSE),
       stringsAsFactors = FALSE)
     filas$mes <- filas$anual / 12
+    falta <- as.Date(s$fecha) >= hoy   # T109: "por pagar" (= !historico)
+    filas$impuestos_faltan <- vapply(monedas, function(x) sum(imp[falta & m == x]), numeric(1), USE.NAMES = FALSE)
+    filas$total_faltan     <- vapply(monedas, function(x) sum(costo[falta & m == x]), numeric(1), USE.NAMES = FALSE)
     return(list(categoria = cat, filas = filas))
   }
 
@@ -734,7 +747,8 @@ pasivos_costeo <- function(liability, hoy = hoy_en(), client_id = pasivos_client
     total <- if (is.na(fin)) rep(NA_real_, length(monedas))
              else vapply(monedas, function(x) suma(f <= fin & m == x), numeric(1), USE.NAMES = FALSE)
     return(list(categoria = cat, filas = data.frame(moneda = monedas, intereses = NA_real_, cargos = NA_real_,
-      impuestos = NA_real_, total = total, anual = anual, mes = anual / 12, stringsAsFactors = FALSE)))
+      impuestos = NA_real_, total = total, anual = anual, mes = anual / 12,
+      impuestos_faltan = NA_real_, total_faltan = NA_real_, stringsAsFactors = FALSE)))
   }
   list(categoria = cat, filas = vacio)
 }
