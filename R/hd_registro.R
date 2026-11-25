@@ -71,11 +71,6 @@ hd_registro <- list(
   archivos_pago = list(nombre = "Ver archivos de pago", clase = "C", archivo = "pagos_audit_viewer_module.R",
     agregar = character(), quitar = character(),
     notas = character()),
-  # T93: the preview of BajíoNet's report (R/bancos_respuesta.R, shown from
-  # Archivos de pago): one row per payment, confirmar / omitir per row.
-  respuesta_banco = list(nombre = "Reporte de BajíoNet", clase = "B", archivo = "bancos_respuesta.R",
-    agregar = c("opcion_fila"), quitar = c("tachado"),
-    notas = character()),
   bitacora_pronosticos = list(nombre = "Bitácora de descargas (pronósticos)", clase = "C", archivo = "forecasting_module.R",
     agregar = character(), quitar = character(),
     notas = character()),
