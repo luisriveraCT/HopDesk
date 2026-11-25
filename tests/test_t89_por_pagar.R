@@ -109,7 +109,14 @@ ok("un registro IC que falla detiene el cálculo (nunca deja pasar la IC)",
                      error = function(e) e), "error"))
 
 cat("\n-- las tarjetas --\n")
-pintar <- function(tier, ar = AR, ap = AP, zona = "UTC") {
+# The cards' day is the user's zone day (CM27: as.Date(Sys.time(), tz = zona)),
+# and the fixture's HOY is Sys.Date(), the machine's day. They must be the
+# same day: with zona = "UTC" fixed, from 18:00 in Mexico (UTC already the
+# next day) the invoices due HOY were "yesterday" for the cards and the test
+# failed (2026-11-24, 19:30). So the cards render in a zone whose day IS HOY.
+ZONA_HOY <- Filter(function(z) identical(as.Date(Sys.time(), tz = z), HOY), unique(c("UTC", Sys.timezone())))[1]
+if (is.null(ZONA_HOY) || is.na(ZONA_HOY)) stop("no zone has the fixture's day: HOY = ", HOY)
+pintar <- function(tier, ar = AR, ap = AP, zona = ZONA_HOY) {
   shared <- c(sh, list(
     effective_client_id = function() "cli", usuario = function() list(user = "ana", tier = tier, permisos = list()),
     current_user_info = function() list(user = "ana", name = "Ana", is_staff = FALSE),
