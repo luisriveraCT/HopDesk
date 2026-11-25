@@ -1592,7 +1592,7 @@ empresasServer <- function(id, shared) {
               valores <- c("", union(ofrec, if (nzchar(actual)) actual))
               muestra <- function(t) tags$span(class = "d-inline-flex gap-1 me-2 align-middle",
                 lapply(c("barra-fondo", "primario", "fondo", "acento"), function(r)
-                  tags$span(class = "d-inline-block rounded-circle border",
+                  tags$span(class = "d-inline-block rounded-circle border hd-muestra-tema",   # a theme's preview: its own colours on purpose (TEMA 6-6b)
                             style = sprintf("width:14px;height:14px;background:%s;", tema_color(r, t)))))
               nombres <- lapply(valores, function(t) {
                 if (!nzchar(t)) return(tagList(muestra(HD_TEMA_OMISION),
