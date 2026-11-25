@@ -239,6 +239,10 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # Usuarios / Invitaciones after a save; it saves nothing, and the save is
     # logged by its caller -- same shape as .rni_avisar above.
     "avisar_senal",
+    # avisar_foto_erp() (T103 F2, R/sap_api.R): the ERP snapshot's signal after
+    # a save that worked; it saves nothing -- the snapshot's write logs in
+    # .s3_write and scripts/actualizar_erp.R logs erp_actualizado.
+    "avisar_foto_erp",
     # modificar_bancos_confirmados() (2026-11-01, R/bancos_persistence.R):
     # the fresh-read-then-write wrapper around save_bancos_confirmados(); its
     # callers (the Agenda AP/AR confirm handlers) log their own action.
@@ -623,6 +627,7 @@ DEUDA_CAMINO <- c(
     "R/persistence.R :: .proveedores_guardar",
     "R/persistence.R :: .rni_avisar",
     "R/auth.R :: avisar_senal",   # T83: a signal only, like .rni_avisar (no data saved, the caller logs)
+    "R/sap_api.R :: avisar_foto_erp",   # T103 F2: the ERP snapshot's signal only (the snapshot's write logs in .s3_write; the refresher logs erp_actualizado)
     "R/persistence.R :: update_client_user_count",
     "R/persistence.R :: append_hd_notification",
     "R/persistence.R :: create_invite",
