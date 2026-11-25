@@ -1740,6 +1740,9 @@ hd_boton_listo <- function(session, id, ok = TRUE) {
 # archivo = where it is; pantalla = its id in docs/diseno/pantallas.tsv (T97),
 # when it has one.
 HD_BOTONES_SIN_ESPERA <- data.frame(
-  id = character(0), archivo = character(0), pantalla = character(0), razon = character(0),
+  id = c("me_agenda_toggle"),
+  archivo = c("R/manual_entry_handlers.R"),
+  pantalla = c("cal.dia.combinado"),
+  razon = c("Interruptor en el navegador (Agregar a Agenda de hoy): cambia su propio texto y color; ningún observer responde al clic, el servidor lee me_agenda_active al guardar"),
   stringsAsFactors = FALSE)
 

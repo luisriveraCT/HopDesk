@@ -190,14 +190,32 @@ ok(sprintf("G5 every exception (HD_BOTONES_SIN_ESPERA, %d) has its reason and it
      all(vapply(seq_len(nrow(lista)), function(i) any(grepl(lista$id[i], textos[[lista$archivo[i]]] %||% "", fixed = TRUE)), logical(1))))
 # every espera = "no" (hd_boton or hd_espera_attr) is in the list, by its id
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
+# on the parsed code (a call spans lines): hd_boton(<id>, ..., espera = "no"),
+# and a tags$button(id = <id>, ..., hd_espera_attr("no")); <id> a literal or ns("<literal>")
+.recorrer <- function(e, f) {
+  if (is.call(e)) {
+    f(e)
+    for (i in seq_along(e)[-1]) { if (is.symbol(e[[i]]) && identical(as.character(e[[i]]), "")) next; .recorrer(e[[i]], f) }
+  } else if (is.expression(e) || is.list(e) || is.pairlist(e)) {
+    for (i in seq_along(e)) { if (is.symbol(e[[i]]) && identical(as.character(e[[i]]), "")) next; .recorrer(e[[i]], f) }
+  }
+}
+.literal <- function(x) if (is.character(x)) x[1] else if (is.call(x) && length(x) == 2L && is.character(x[[2]])) x[[2]][1] else NA_character_
 nos <- unlist(lapply(archivos, function(f) {
-  t <- textos[[f]]; k <- grep('espera *= *"no"|hd_espera_attr\\("no"\\)', t)
-  if (!length(k)) return(character(0))
-  ids <- regmatches(t[k], regexpr('hd_boton\\(\\s*(ns\\()?"[^"]+"', t[k]))
-  sprintf("%s:%s", f, sub('.*"([^"]+)"$', "\\1", ids))
+  enc <- character(0)
+  for (e in tryCatch(parse(f, keep.source = FALSE), error = function(err) NULL)) .recorrer(e, function(cl) {
+    cab <- paste(deparse(cl[[1]]), collapse = "")
+    a <- as.list(cl)[-1]; nm <- names(a) %||% rep("", length(a))
+    if (cab %in% c("hd_boton") && identical(a[["espera"]], "no"))
+      enc <<- c(enc, .literal(if ("inputId" %in% nm) a[["inputId"]] else a[[which(!nzchar(nm))[1]]]))
+    if (cab %in% c("tags$button", "shiny::tags$button", "htmltools::tags$button") &&
+        grepl('hd_espera_attr\\("no"\\)', paste(deparse(cl, width.cutoff = 500L), collapse = " ")))
+      enc <<- c(enc, .literal(a[["id"]]))
+  })
+  if (length(enc)) sprintf("%s:%s", f, enc) else character(0)
 }))
-ok(sprintf("G6 every espera = \"no\" in the code is in HD_BOTONES_SIN_ESPERA (%s)", paste(nos, collapse = ", ")),
-   all(sub("^.*:", "", nos) %in% lista$id))
+ok(sprintf("G6 every espera = \"no\" in the code is in HD_BOTONES_SIN_ESPERA, with its file (%s)", paste(nos, collapse = ", ")),
+   length(nos) == nrow(lista) && all(nos %in% sprintf("%s:%s", lista$archivo, lista$id)))
 
 # The ratchets: what is still to migrate, per file. A file may go down (then
 # lower its number here); it may never go up, and a new file is a failure.

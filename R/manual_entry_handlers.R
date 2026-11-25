@@ -44,9 +44,10 @@ manual_entry_tab_content <- function(ledger, empresas, monedas = character(),
     ),
     div(class = "mt-3",
       div(class = "mb-2",
-        actionButton("me_agenda_toggle",
+        hd_boton("me_agenda_toggle",   # T107: a toggle in the browser only (HD_BOTONES_SIN_ESPERA)
           label = "Agregar a Agenda de hoy",
-          class = "btn btn-sm btn-outline-success"
+          class = "btn btn-sm btn-outline-success",
+          espera = "no"
         )
       ),
       div(
