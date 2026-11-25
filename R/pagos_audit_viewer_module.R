@@ -61,6 +61,52 @@ pagos_cuenta_origen_texto <- function(cuenta, tipo, enmascarar = FALSE) {
   out
 }
 
+# T104: the origin account of a payment confirmation. Every confirmation
+# carries one (the Agenda's modal requires it, the server checks it, the
+# bank's report resolves its batch's). Its log keeps a snapshot,
+# list(ultimos4, alias, banco), so the account still reads the same if it is
+# renamed or removed later -- never the whole number.
+#   cuenta_foto(): the snapshot of `cuenta_id` in the client's catalog
+#     (ctas_cuentas, ctas_bancos), or NULL if it is not there or its currency
+#     is not `moneda` (moneda NULL: any).
+#   cuenta_confirmacion_texto(): as shown, always masked
+#     ("••••1234 · NTSBB — BanBajío"): the snapshot; else cuenta_id looked
+#     up in the catalog as it is now (a confirmation from before T104); else
+#     "No registrada" -- never a guessed account.
+#   cuenta_id_de_numero(): the catalog id of an account NUMBER (the bank's
+#     report and its batch carry the number), in that currency; NA if none,
+#     or if more than one and the company does not tell them apart.
+.cuenta_digitos <- function(x) { x <- gsub("[^0-9]", "", as.character(x)); x[is.na(x)] <- ""; sub("^0+", "", x) }
+cuenta_foto <- function(cuenta_id, ctas, bancos = NULL, moneda = NULL) {
+  cuenta_id <- as.character(cuenta_id %||% NA_character_)[1]
+  if (is.na(cuenta_id) || !nzchar(trimws(cuenta_id)) || !is.data.frame(ctas) || !nrow(ctas)) return(NULL)
+  k <- which(as.character(ctas$id) %in% cuenta_id)
+  if (length(k) != 1L) return(NULL)
+  if (!is.null(moneda) && !identical(toupper(as.character(ctas$Moneda[k])), toupper(as.character(moneda)[1]))) return(NULL)
+  num <- .cuenta_digitos(ctas$cuenta[k])
+  if (!nzchar(num) && "clabe_interbancaria" %in% names(ctas)) num <- .cuenta_digitos(ctas$clabe_interbancaria[k])
+  banco <- if (is.data.frame(bancos) && nrow(bancos) && "banco_id" %in% names(ctas))
+    as.character(bancos$nombre)[match(as.character(ctas$banco_id[k]), as.character(bancos$id))] else NA_character_
+  list(ultimos4 = if (nchar(num) >= 4) substr(num, nchar(num) - 3, nchar(num)) else NA_character_,
+       alias = as.character(ctas$alias[k] %||% NA_character_), banco = banco)
+}
+cuenta_confirmacion_texto <- function(foto = NULL, cuenta_id = NA_character_, ctas = NULL, bancos = NULL) {
+  if (!is.list(foto) || !length(foto)) foto <- cuenta_foto(cuenta_id, ctas, bancos)
+  ult <- as.character(foto$ultimos4 %||% NA_character_)[1]
+  if (is.null(foto) || is.na(ult) || !grepl("^[0-9]{4}$", ult)) return(tr("tablas.archivos_pago.cuenta_no_registrada"))
+  lleno <- function(x) { x <- as.character(x %||% NA_character_)[1]; if (is.na(x) || !nzchar(trimws(x))) NULL else trimws(x) }
+  nombre <- paste(c(lleno(foto$alias), lleno(foto$banco)), collapse = " — ")
+  paste0(strrep("•", 4), ult, if (nzchar(nombre)) paste0(" · ", nombre))
+}
+cuenta_id_de_numero <- function(numero, ctas, moneda, empresa = NULL) {
+  num <- .cuenta_digitos(numero %||% NA_character_)[1]
+  if (!nzchar(num) || !is.data.frame(ctas) || !nrow(ctas)) return(NA_character_)
+  k <- which(.cuenta_digitos(ctas$cuenta) == num & toupper(as.character(ctas$Moneda)) %in% toupper(as.character(moneda)[1]))
+  if (length(k) > 1L && length(empresa)) k <- k[as.character(ctas$Empresa[k]) %in% as.character(empresa)]
+  if (length(k) != 1L) return(NA_character_)
+  as.character(ctas$id[k])
+}
+
 .tipo_label <- function(tipo) {
   t <- as.character(tipo)
   clave <- unname(.PAGOS_TIPO_LABELS[t])
