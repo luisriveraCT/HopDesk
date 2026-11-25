@@ -43,7 +43,9 @@ STAFF <- setdiff(niveles_todos(), niveles_cliente())[1]
 auth_load_usuarios <- function(client_id = NULL) data.frame(
   username = c("ana", "beto", "caro", "soporte"), display_name = c("Ana", "Beto", "Caro", "Soporte"),
   tier = c("admin", "finance", "analysis", STAFF), deleted = FALSE, activo = TRUE, stringsAsFactors = FALSE)
-denegado <- sub("%s.*$", "", tr("permisos.denegado", permiso = "%s"))
+# Finanzas cannot see Usuarios, so since T87-M5 its refusal is the generic one
+# (permiso_denegado_texto): it is never told which permission it lacks.
+denegado <- tr("permisos.denegado_generico")
 
 sesion <- function(nivel, guion) {
   avisos <<- character(); toggles <<- list(); registro <<- list(); modales <<- 0L; cerrados <<- 0L

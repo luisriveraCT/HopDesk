@@ -88,7 +88,10 @@ probar <- function(nivel) {
   }, error = function(e) conditionMessage(e))
   s <- en_s3()
   list(r = r, traidas = traidas, escrituras = .mem_escrituras - antes, s = s, avisos = avisos,
-       denegados = sum(grepl(sub("%s.*$", "", tr("permisos.denegado", permiso = "%s")), avisos, fixed = TRUE)))
+       # T87-M5: who cannot see Usuarios gets the generic refusal, staff the
+       # named one; both count, so "S: no refusals" still sees either.
+       denegados = sum(grepl(sub("%s.*$", "", tr("permisos.denegado", permiso = "%s")), avisos, fixed = TRUE) |
+                       grepl(tr("permisos.denegado_generico"), avisos, fixed = TRUE)))
 }
 
 # ── N: no permission ─────────────────────────────────────────────────────────
