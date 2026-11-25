@@ -399,3 +399,96 @@ registrar_respuestas_banco <- function(client_id, filas, evento = NULL) {
            else modificar_tabla(S3_KEYS$respuestas_banco, client_id, .schema_respuestas_banco, cambio, evento = evento)
   list(tabla = tabla, nuevas = nuevas %||% f[0, , drop = FALSE], repetidas = nrow(f) - nrow(nuevas %||% f[0, , drop = FALSE]))
 }
+
+# ── T93 · The screen's data: from the report to what may be confirmed ───────
+# The registered account of each Agenda row's supplier, for path B. EXACT
+# matches only -- the Agenda's own fuzzy matching lives in its server, and a
+# suggestion the user confirms must never come from a guess: the Parte's
+# saved link (parte_alias_map), else the supplier's code, else its exact
+# name or alias. Ambiguous or none: NA (that row is never suggested).
+btr_agenda_cuentas <- function(agenda, proveedores, alias_map = NULL) {
+  n <- nrow(agenda)
+  out <- rep(NA_character_, n)
+  if (!n || !is.data.frame(proveedores) || !nrow(proveedores)) return(out)
+  up <- function(x) toupper(trimws(as.character(x)))
+  cuenta <- dplyr::coalesce(as.character(proveedores$clabe), as.character(proveedores[["no_cuenta"]] %||% NA_character_))
+  unica <- function(i) { i <- unique(i[!is.na(cuenta[i]) & nzchar(cuenta[i])]); if (length(i) == 1L) cuenta[i] else NA_character_ }
+  for (r in seq_len(n)) {
+    parte <- up(agenda$Parte[r]); emp <- as.character(agenda$Empresa[r])
+    al <- if (is.data.frame(alias_map) && nrow(alias_map))
+      alias_map$alias[up(alias_map$Parte) == parte & (is.na(alias_map$Empresa) | alias_map$Empresa %in% c("", emp))] else character()
+    k <- if (length(al)) which(up(proveedores$alias) %in% up(al))
+         else if (nzchar(up(agenda[["Codigo"]][r] %||% ""))) which(up(proveedores$codigo) == up(agenda$Codigo[r]))
+         else integer()
+    if (!length(k)) k <- which(up(proveedores$nombre) == parte | up(proveedores$alias) == parte)
+    out[r] <- unica(k)
+  }
+  out
+}
+
+# Everything the preview shows and the server needs, from one report:
+#   reporte    leer_transferencias_bajionet()'s result
+#   generados  the client's pagos_generados (read_pagos_generados())
+#   agenda     the pending AP rows of the Agenda (id, Empresa, Moneda,
+#              Documento, Parte, Codigo, Importe)
+#   proveedores, alias_map  for path B (btr_agenda_cuentas)
+#   registradas  llaves already in respuestas_banco (an upload twice)
+# Returns list(camino = "A" | "B", generado = pagos_generados row or NULL,
+# filas = one row per payment): linea, fecha, alias, cuenta (masked),
+# importe, moneda, estatus, mensaje, registro, autorizacion, clave_rastreo,
+# referencia, comision, iva_comision, llave, estado, agenda_item_id,
+# empresa, elegible (may be confirmed), marcado (ticked by default: only
+# path A's "confirmar"). Estados besides btr_casar_a()'s / btr_sugerir_b()'s:
+#   "ya_registrado"  this payment's report row was uploaded before
+#   "ya_confirmado"  its Agenda row is no longer pending
+#   "sin_agenda"     A's match, but the file predates 2b (no Agenda row in
+#                    it): never confirmed alone, the user does it in the Agenda
+btr_preparar <- function(reporte, generados, agenda, proveedores = NULL, alias_map = NULL, registradas = character()) {
+  p <- reporte$pagos
+  n <- nrow(p)
+  gi <- btr_lote_generado(reporte$lote, p, generados)
+  camino <- if (is.na(gi)) "B" else "A"
+  filas <- data.frame(
+    linea = as.integer(p$linea), fecha = p$fecha, alias = p$alias, cuenta = btr_enmascarar(p$cuenta_destino),
+    importe = p$importe, moneda = btr_moneda(p$divisa), estatus = p$estatus, mensaje = p$mensaje,
+    registro = btr_registro(p), autorizacion = p$autorizacion, clave_rastreo = p$clave_rastreo,
+    referencia = p$referencia, comision = p$comision, iva_comision = p$iva_comision,
+    llave = btr_llave(p$autorizacion, reporte$lote$archivo, p$linea),
+    estado = rep("sin_casar", n), agenda_item_id = rep(NA_character_, n), empresa = rep(NA_character_, n),
+    stringsAsFactors = FALSE)
+  filas$candidatos <- replicate(n, character(0), simplify = FALSE)
+  pend <- if (is.data.frame(agenda)) agenda else data.frame(id = character())
+  if (camino == "A") {
+    ben <- btr_beneficiarios(generados$beneficiarios[gi])
+    ca  <- btr_casar_a(p, ben)
+    filas$estado <- ca$estado
+    filas$agenda_item_id <- ben$agenda_item_id[ca$beneficiario]
+    sin_ag <- filas$estado == "confirmar" & is.na(filas$agenda_item_id)
+    filas$estado[sin_ag] <- "sin_agenda"
+  } else {
+    if (nrow(pend)) pend$clabe_dest <- btr_agenda_cuentas(pend, proveedores, alias_map)
+    sb <- btr_sugerir_b(p, pend)
+    filas$estado <- sb$estado
+    filas$candidatos <- sb$candidatos
+    uno <- filas$estado == "sugerido"
+    filas$agenda_item_id[uno] <- vapply(sb$candidatos[uno], `[`, "", 1L)
+  }
+  # Its Agenda row must still be pending; else it was confirmed meanwhile.
+  con_fila <- !is.na(filas$agenda_item_id)
+  ya <- con_fila & !filas$agenda_item_id %in% as.character(pend$id)
+  filas$estado[ya & filas$estado %in% c("confirmar", "sugerido")] <- "ya_confirmado"
+  filas$empresa <- as.character(pend$Empresa)[match(filas$agenda_item_id, as.character(pend$id))]
+  filas$estado[filas$llave %in% registradas] <- "ya_registrado"
+  filas$elegible <- filas$estado %in% c("confirmar", "sugerido")
+  filas$marcado  <- filas$estado == "confirmar"
+  list(camino = camino, generado = if (camino == "A") generados[gi, , drop = FALSE] else NULL, filas = filas)
+}
+
+# What is confirmed, decided on the server from the preview it built itself
+# (never from the browser's copy): every elegible row that is ticked -- A's
+# "confirmar" come ticked, B's "sugerido" only if the user ticked them.
+# `marcados`: the lines the user left ticked (anything else is ignored).
+btr_a_confirmar <- function(prep, marcados) {
+  f <- prep$filas
+  f[f$elegible & f$linea %in% suppressWarnings(as.integer(marcados)) & !is.na(f$agenda_item_id), , drop = FALSE]
+}

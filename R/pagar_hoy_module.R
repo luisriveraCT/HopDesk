@@ -267,7 +267,7 @@ pagarHoyUI <- function(id) {
 # .link_counter: the calling server's own (its failure notice and the
 # tables' refresh counter).
 .ph_confirmar_ap <- function(shared, emp, cur, rows, cuenta_sel, fecha_pago, .parte_ap,
-                             .ph_fallido, .link_counter) {
+                             .ph_fallido, .link_counter, extra = NULL) {
   abono_error <- NULL   # T72-F (a): the abono's save error, if it failed
   # Split: abono rows go to abonos_db; invoice rows go through normal path
   abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
@@ -322,6 +322,16 @@ pagarHoyUI <- function(id) {
         # even if the ERP later moves its balance.
         fecha_factura   = as.Date(factura_rows$fecha_factura[i] %||% NA)
       )))
+    # T93: a confirmation that comes from the bank's report carries its
+    # clave de rastreo, authorisation and row in respuestas_banco (extra:
+    # agenda_item_id + those 3). Without `extra` (the Agenda's own Confirmar)
+    # nothing here runs and `nuevas` is exactly as before.
+    if (!is.null(extra) && nrow(nuevas)) {
+      m <- match(nuevas$agenda_item_id, as.character(extra$agenda_item_id))
+      nuevas$clave_rastreo <- as.character(extra$clave_rastreo)[m]
+      nuevas$autorizacion  <- as.character(extra$autorizacion)[m]
+      nuevas$respuesta_id  <- as.character(extra$respuesta_id)[m]
+    }
     # Appended to what S3 holds now (modificar_bancos_confirmados). If
     # that fails, stop here: the items stay in Agenda, unconfirmed,
     # instead of leaving Agenda with no confirmation saved.

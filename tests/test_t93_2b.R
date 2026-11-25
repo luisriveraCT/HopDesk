@@ -158,7 +158,7 @@ ok("3 · ZIP: el _002 (incluido sin cuenta) con A3 y su documento",
 ok("4 · .ph_confirmar_ap() es una función del archivo, con la firma que usa el servidor",
    is.function(.ph_confirmar_ap) &&
      identical(names(formals(.ph_confirmar_ap)), c("shared", "emp", "cur", "rows", "cuenta_sel", "fecha_pago",
-                                                   ".parte_ap", ".ph_fallido", ".link_counter")))
+                                                   ".parte_ap", ".ph_fallido", ".link_counter", "extra")))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
