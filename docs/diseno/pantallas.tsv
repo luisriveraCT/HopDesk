@@ -104,6 +104,8 @@ tiers.archivos_pago	Archivos de pago	panel	tiers.actividad	R/pagos_audit_viewer_
 tiers.archivos_pago.comprobante	Comprobante de pago en PDF	pdf	tiers.archivos_pago.detalle	R/pagos_audit_viewer_module.R	descarga:dl_pago_pdf				pendiente	
 tiers.archivos_pago.detalle	Detalle del archivo de pagos	modal	tiers.archivos_pago	R/pagos_audit_viewer_module.R	modal:pagosAuditViewerServer@pagos_t$accion()				pendiente	
 tiers.archivos_pago.pdf	Archivos de pago en PDF	pdf	tiers.archivos_pago	R/pagos_audit_viewer_module.R	descarga:pagos_export_pdf				pendiente	
+tiers.archivos_pago.btr	Subir reporte de BajíoNet	modal	tiers.archivos_pago	R/bancos_respuesta.R	modal:.btr_servidor@input$btr_subir		can_confirm_payments		pendiente	T93
+tiers.archivos_pago.btr.vista	Reporte de BajíoNet: qué se confirma	modal	tiers.archivos_pago.btr	R/bancos_respuesta.R	modal:.btr_servidor@input$btr_archivo		can_confirm_payments	respuesta_banco	pendiente	T93
 tiers.bitacora_global	Bitácora Global	subpestana	tiers	R/tiers_module.R	nav:global_audit				pendiente	
 tiers.cambiar_cliente	Cambiar contexto de cliente	modal	tiers	R/tiers_module.R	modal:tiersServer@input$btn_switch_ctx				pendiente	
 tiers.clientes	Clientes	subpestana	tiers	R/tiers_module.R	nav:clients			clientes;solicitudes	pendiente	
