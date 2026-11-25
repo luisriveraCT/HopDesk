@@ -334,7 +334,9 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
     )
     if (inherits(fila, "error")) { motivo <<- fila; return(fresco) }
     liab_row <<- fila
-    if (wiz$mode == "edit") fresco <- fresco[fresco$id != fila$id, , drop = FALSE]
+    # T99: %in%, never NA. With `!=`, a row whose id is NA became an all-NA
+    # row on every edit of any other liability.
+    if (wiz$mode == "edit") fresco <- fresco[!(fresco$id %in% fila$id), , drop = FALSE]
     dplyr::bind_rows(fresco, fila)
   }), error = function(e) e)
   # T72: every exit of this save is in the log, also the ones that save
@@ -1287,7 +1289,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     }
     liabs <- tryCatch(shared$pasivos_liabilities_db(),
                       error = function(e) .schema_pasivos_liability())
-    row <- liabs[liabs$id == lid, , drop = FALSE]
+    row <- liabs[!is.na(liabs$id) & liabs$id == lid, , drop = FALSE]   # T99: an NA id is not a match
     if (!nrow(row)) {
       shiny::showNotification(tr("tablas.pasivos.no_encontrado"), type = "error"); return()
     }

@@ -118,10 +118,10 @@ pasivos_table_build_long <- function(provisions, manual_items,
     # Liability metadata
     lib_row <- if (!is.na(p$liability_id) && nzchar(p$liability_id %||% "") &&
                    nrow(liabs_in_scope)) {
-      liabs_in_scope[liabs_in_scope$id == p$liability_id, , drop = FALSE]
+      liabs_in_scope[!is.na(liabs_in_scope$id) & liabs_in_scope$id == p$liability_id, , drop = FALSE]   # T99
     } else NULL
 
-    is_fee          <- identical(as.character(p$origin[[1L]]), "initial_fee")
+    is_fee         <- identical(as.character(p$origin[[1L]]), "initial_fee")
     parent_lid      <- if (!is.null(lib_row) && nrow(lib_row)) p$liability_id[[1L]] else NA_character_
     parent_label    <- if (!is.null(lib_row) && nrow(lib_row)) lib_row$nombre[1] else
                          (p$parte[1] %||% "Sin nombre")
@@ -193,10 +193,10 @@ pasivos_table_build_long <- function(provisions, manual_items,
 
       lib_row <- if (!is.na(p$liability_id) && nzchar(p$liability_id %||% "") &&
                      nrow(liabs_in_scope)) {
-        liabs_in_scope[liabs_in_scope$id == p$liability_id, , drop = FALSE]
+        liabs_in_scope[!is.na(liabs_in_scope$id) & liabs_in_scope$id == p$liability_id, , drop = FALSE]   # T99
       } else NULL
 
-      row_id          <- if (!is.null(lib_row) && nrow(lib_row)) p$liability_id[1] else paste0("orphan_", p$id[1])
+      row_id         <- if (!is.null(lib_row) && nrow(lib_row)) p$liability_id[1] else paste0("orphan_", p$id[1])
       row_label       <- if (!is.null(lib_row) && nrow(lib_row)) lib_row$nombre[1] else (p$parte[1] %||% "")
       row_empresa     <- p$empresa[1] %||% ""
       row_categoria   <- if (!is.null(lib_row) && nrow(lib_row)) lib_row$categoria[1] else "regular"
