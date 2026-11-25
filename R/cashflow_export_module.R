@@ -2343,7 +2343,6 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
   # "Descargar Excel" after the async job finishes.
   .xl_log_params <- reactiveVal(NULL)
   .xl_start    <- reactiveVal(NULL)   # POSIXct when job was launched
-  .xl_timer    <- reactiveTimer(1000) # 1-second poll tick
   # Elapsed-seconds threshold for next warning dialog; bumped by 60 each time shown
   # so clicking "Seguir esperando" doesn't re-trigger the modal immediately.
   .xl_warn_at  <- reactiveVal(60)
@@ -2865,11 +2864,16 @@ setup_cashflow_export_server <- function(input, output, session, shared) {
     .xl_state("building")
   }, ignoreInit = TRUE)
 
-  # ── Poll for job completion (every 1 s) ───────────────────────────────────
+  # ── Poll for job completion (every 1 s, only while a job runs) ────────────
+  # T88-1d: the tick is asked for AFTER the state check. A reactiveTimer read
+  # first woke this observer every second in every session, job or not -- and
+  # each run sends Shiny's busy/idle to the browser, so the loading overlay
+  # never saw its 1.5 s of silence and always went by its 30 s cap. Idle, this
+  # observer now waits on .xl_state() alone; a new job wakes it.
   observe({
-    .xl_timer()
     state <- .xl_state()
     if (!(state %in% c("building", "warn60"))) return()
+    invalidateLater(1000)
 
     info <- .xl_job()
     if (is.null(info)) { .xl_state("idle"); return() }
