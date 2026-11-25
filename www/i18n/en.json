@@ -2364,6 +2364,8 @@
   "requisiciones.log.papelera_evidencia": "Evidence sent to the trash",
   "requisiciones.log.restaurar_evidencia": "Evidence restored from the trash",
   "avisos.log.preferencias": "Preferences changed: {claves}",
+  "avisos.log.descartar": "Took {n} notice(s) off their view",
+  "avisos.log.restaurar": "Showed {n} notice(s) again",
   "comun.tema.clasico": "Classic",
   "comun.tema.marca": "Brand",
   "tablas.empresas.tema.titulo": "Company theme",

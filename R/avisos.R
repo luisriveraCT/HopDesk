@@ -50,7 +50,8 @@ AVISOS_CLASES     <- c("comunicado", "recordatorio", "reconocimiento", "solicitu
   retirado    = logical(),
   retirado_por = character(),
   retirado_en = as.POSIXct(character(), tz = "UTC"),
-  hechos      = character()    # JSON array of usernames who marked it done
+  hechos      = character(),   # JSON array of usernames who marked it done
+  descartados = character()    # T95: JSON array of usernames who took it off their own view
 )
 
 .schema_preferencias <- function() tibble::tibble(
@@ -228,6 +229,7 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
         df$titulo[i]      <- aviso$titulo %||% df$titulo[i]
         df$cuerpo[i]      <- aviso$cuerpo %||% df$cuerpo[i]
         df$hechos[i]      <- .json(character())   # news again: nobody has it done
+        df$descartados[i] <- .json(character())   # T95: nor discarded
         id_final <<- df$id[i]
         return(df)
       }
@@ -242,7 +244,8 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
       creado = ahora, actualizado = ahora,
       vence = as.POSIXct(aviso$vence %||% NA, tz = "UTC"),
       retirado = FALSE, retirado_por = NA_character_,
-      retirado_en = as.POSIXct(NA, tz = "UTC"), hechos = .json(character()))
+      retirado_en = as.POSIXct(NA, tz = "UTC"), hechos = .json(character()),
+      descartados = .json(character()))
     dplyr::bind_rows(df, fila)
   })
   id_final
@@ -268,6 +271,117 @@ avisos_marcar_hecho <- function(client_id, id, usuario) {
     df
   })
   invisible(TRUE)
+}
+
+# ── T95: each user's own view (descartar, restaurar, what leaves by itself) ──
+# Descartar takes an aviso off ONE user's view (`descartados`, like `hechos`):
+# everyone else still sees it, and it stays in that user's history. Nothing
+# is deleted: retirar (for everyone) stays the author's or a moderator's.
+
+# How many days after it came an aviso already SEEN leaves the default view,
+# by its Panorama kind (panorama_tipo_feed()). A comunicado only without a
+# vence (with one, the vence decides, as today). Solicitudes and alerts never
+# leave by days: a solicitud for me waits for "Hecho", an alert for its vence
+# or for being solved.
+AVISOS_VENTANA_VISTO <- c(act = 3, req = 7, com = 14)
+
+# Who has it discarded, one logical per row of `df` (lower-cased usernames).
+avisos_descartado <- function(df, usuario) {
+  u <- tolower(trimws(usuario %||% ""))
+  if (!nrow(df) || !nzchar(u)) return(rep(FALSE, nrow(df)))
+  d <- df$descartados %||% rep(NA_character_, nrow(df))
+  vapply(d, function(s) u %in% tolower(.de_json(s)), logical(1), USE.NAMES = FALSE)
+}
+
+# What `usuario` may take off their view, one logical per row: everything but
+# a solicitud addressed to them that they have not done (it goes when they
+# mark it "Hecho", or when its author retires it). Checked on the server.
+avisos_descartable <- function(df, usuario) {
+  u <- tolower(trimws(usuario %||% ""))
+  if (!nrow(df)) return(logical())
+  para_mi <- df$tipo %in% "personal" &
+    vapply(df$usuarios, function(s) u %in% tolower(.de_json(s)), logical(1), USE.NAMES = FALSE)
+  hecha <- vapply(df$hechos, function(s) u %in% tolower(.de_json(s)), logical(1), USE.NAMES = FALSE)
+  !(df$clase %in% "solicitud" & para_mi & !hecha)   # an old row without clase is never a solicitud
+}
+
+# Whether a SEEN aviso already left the default view by its days (it stays in
+# the history). Seen = it came at or before the user's last visit to Panorama
+# (preferencias ultima_visita): what was never seen never leaves by itself.
+# Vectors of one length: tipo_feed (act | req | com | sol | ale), cuando (when
+# it came or was refreshed), vence; ultima_visita one value or NULL.
+avisos_fuera_de_vista <- function(tipo_feed, cuando, ultima_visita, vence = NULL,
+                                  ahora = .ahora(), ventanas = AVISOS_VENTANA_VISTO) {
+  n <- length(tipo_feed)
+  if (!n) return(logical())
+  uv <- suppressWarnings(as.POSIXct(ultima_visita %||% NA, tz = "UTC"))
+  cuando <- as.POSIXct(cuando, tz = "UTC")
+  vence <- if (is.null(vence)) rep(as.POSIXct(NA, tz = "UTC"), n) else as.POSIXct(vence, tz = "UTC")
+  visto <- !is.na(uv) & !is.na(cuando) & cuando <= uv
+  dias <- unname(ventanas[as.character(tipo_feed)])
+  dias[tipo_feed %in% "com" & !is.na(vence)] <- NA   # a comunicado with a vence: the vence decides
+  edad <- as.numeric(difftime(ahora, cuando, units = "days"))
+  visto & !is.na(dias) & !is.na(edad) & edad >= dias
+}
+
+# The write of a user's view change: strict re-read, the change on the fresh
+# copy, one retry -- as .s3_modificar() -- but always with its T72 event, so
+# the log has who discarded what (the write logs itself once S3 has it).
+modificar_avisos_vista <- function(cid, cambio, evento) {
+  for (intento in 1:2) {
+    fresco <- .normalizar(.avisos_leer_para_escribir(cid), .schema_avisos)
+    nuevo  <- cambio(fresco)
+    ok <- tryCatch({ .s3_write(nuevo, .AVISOS_KEY, client_id = cid, evento = evento); TRUE },
+                   error = function(e) { message("[avisos] escritura falló (descartar): ", e$message); FALSE })
+    if (ok) return(invisible(nuevo))
+  }
+  stop("[avisos] no se pudo guardar ", .AVISOS_KEY, call. = FALSE)
+}
+
+# Take avisos off `usuario`'s view. `accion`: "descartar_aviso" (one, the x
+# or a swipe) or "limpiar_avisos" (Limpiar lo visto, many at once). What may
+# not be discarded (avisos_descartable()) is refused here, whatever the
+# screen sent. Returns list(descartados, rechazados): ids.
+avisos_descartar <- function(client_id, ids, usuario, home = NULL,
+                             accion = c("descartar_aviso", "limpiar_avisos")) {
+  cid <- .avisos_cid(client_id)
+  accion <- match.arg(accion)
+  u <- tolower(trimws(usuario %||% ""))
+  ids <- unique(as.character(ids %||% character()))
+  res <- list(descartados = character(), rechazados = character())
+  if (!nzchar(u) || !length(ids)) return(invisible(res))
+  evento <- list(usuario = u, modulo = "panorama", accion = accion,
+                 descripcion = tr("avisos.log.descartar", n = length(ids)), home = home)
+  modificar_avisos_vista(cid, function(df) {
+    i <- which(df$id %in% ids)
+    puede <- avisos_descartable(df[i, , drop = FALSE], u)
+    res$rechazados  <<- df$id[i[!puede]]
+    res$descartados <<- df$id[i[puede]]
+    for (j in i[puede]) df$descartados[j] <- .json(union(.de_json(df$descartados[j]), u))
+    df
+  }, evento = evento)
+  invisible(res)
+}
+
+# Put discarded avisos back on `usuario`'s view (the history's "Volver a
+# mostrar", and Deshacer). Returns the ids it changed.
+avisos_restaurar <- function(client_id, ids, usuario, home = NULL) {
+  cid <- .avisos_cid(client_id)
+  u <- tolower(trimws(usuario %||% ""))
+  ids <- unique(as.character(ids %||% character()))
+  hechos <- character()
+  if (!nzchar(u) || !length(ids)) return(invisible(hechos))
+  evento <- list(usuario = u, modulo = "panorama", accion = "restaurar_aviso",
+                 descripcion = tr("avisos.log.restaurar", n = length(ids)), home = home)
+  modificar_avisos_vista(cid, function(df) {
+    for (j in which(df$id %in% ids)) {
+      antes <- .de_json(df$descartados[j])
+      if (u %in% tolower(antes)) hechos <<- c(hechos, df$id[j])
+      df$descartados[j] <- .json(setdiff(antes, u))
+    }
+    df
+  }, evento = evento)
+  invisible(hechos)
 }
 
 # Comments and mentions: one personal aviso per recipient, grouped per

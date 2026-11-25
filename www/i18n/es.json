@@ -2364,6 +2364,8 @@
   "requisiciones.log.papelera_evidencia": "Evidencia enviada a la papelera",
   "requisiciones.log.restaurar_evidencia": "Evidencia restaurada de la papelera",
   "avisos.log.preferencias": "Preferencias cambiadas: {claves}",
+  "avisos.log.descartar": "Quitó {n} aviso(s) de su vista",
+  "avisos.log.restaurar": "Volvió a mostrar {n} aviso(s)",
   "comun.tema.clasico": "Clásico",
   "comun.tema.marca": "Marca",
   "tablas.empresas.tema.titulo": "Tema de la empresa",
