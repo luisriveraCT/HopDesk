@@ -49,14 +49,27 @@ raton <- function(tipo, p, botones = 0L, n = 1L)
   b$Input$dispatchMouseEvent(type = tipo, x = p[[1]], y = p[[2]], button = if (tipo == "mouseMoved") "none" else "left",
                              buttons = botones, clickCount = n)
 clic <- function(js_el) { p <- centro(js_el); raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p); Sys.sleep(0.6) }
-# The tab by its own link's click(), not a mouse event: in this fixture the
-# active tab's content covers the navbar's links (elementFromPoint at the
-# link's centre is the tab-pane), on master too (test_registros_hd_chromote's
-# P block fails there the same way, 2026-11-24). Every other click is real.
+# As a person does since T51 (2026-11-17): the tabs live in the ☰ menu's
+# panel, hidden (and click-through) until #hd-menu-btn opens it. A real click
+# on ☰, wait for hd-menu-abierto and the link to show, a real click on the
+# link; it fails if the menu did not open or the tab did not change (T98).
 pestana <- function(v) {
-  ev(sprintf("document.querySelector(\".navbar .nav-link[data-value='%s']\").click(); 0", v))
-  poll_until(function() isTRUE(ev(sprintf("(document.querySelector('.navbar .nav-link.active')||{}).dataset.value === '%s'", v))), timeout_s = 10)
+  enlace <- sprintf("document.querySelector(\".navbar .nav-link[data-value='%s']\")", v)
+  visible <- function() isTRUE(ev(sprintf("(function(){ var a = %s; if (!a) return false;
+    var s = getComputedStyle(a.closest('.navbar-collapse') || a); return s.visibility === 'visible' && a.offsetParent !== null; })()", enlace)))
+  if (!visible()) {
+    clic("document.getElementById('hd-menu-btn')")
+    if (!poll_until(function() isTRUE(ev("document.querySelector('nav.navbar').classList.contains('hd-menu-abierto')")),
+                    timeout_s = 10)) stop("pestana(): the ☰ menu did not open")
+    # Right after loading, the tier rules may still hide the link (seen in
+    # the real app: ~10 s in a first session); wait for it, apart.
+    if (!poll_until(visible, timeout_s = 30)) stop("pestana(): the ☰ menu opened but the link ", v, " is not shown")
+  }
+  clic(enlace)
+  if (!poll_until(function() isTRUE(ev(sprintf("(document.querySelector('.navbar .nav-link.active')||{}).dataset.value === '%s'", v))), timeout_s = 10))
+    stop("pestana(): the tab did not change to ", v)
   Sys.sleep(0.8)
+  TRUE
 }
 registro <- function() strsplit(ev("document.getElementById('registro').textContent") %||% "", "\n")[[1]]
 foto <- function(n) { s <- b$Page$captureScreenshot(); writeBin(jsonlite::base64_dec(s$data), file.path(capturas, n)) }
@@ -80,7 +93,7 @@ writeLines(c("EMPRESA SA,1234567,24112026,152859,pagos_NCS_24112026_001.txt,2411
 invisible(b$Page$navigate(base, wait_ = TRUE))
 ok("the app loads", poll_until(function() isTRUE(ev("!!window.Shiny && !!document.querySelector('.navbar')")), timeout_s = 60))
 Sys.sleep(1.5)
-pestana("PAG")
+ok("the tab Archivos de pago opens through the ☰ menu, with real clicks", isTRUE(pestana("PAG")))
 
 # ── R1 · Upload ─────────────────────────────────────────────────────────────
 ok("R1: the button \"Subir reporte de BajíoNet\" is in Archivos de pago",
