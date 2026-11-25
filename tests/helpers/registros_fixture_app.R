@@ -28,7 +28,10 @@ cargar <- function(archivo, nombres) {
       eval(e, envir = globalenv())
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs) })
-cargar("R/ui_components.R", "app_styles")
+# app_scripts() + barra_menu_ui(): the ☰ menu that, since T51, holds the
+# tabs' links (app_styles() hides them until it opens). Without it the
+# fixture had hidden links and no way to open them (T98).
+cargar("R/ui_components.R", c("app_styles", "app_scripts", "barra_menu_ui"))
 cargar("R/app_audit.R", c(".APP_AUDIT_SCHEMA", "read_audit_log_scoped",
                           # T87: the client's view of its log reads the catalog and the staff directory
                           "ACCIONES_STAFF", "t87_clase_accion", ".T87_CASA_STAFF", ".T87_DIRECTORIO",
@@ -40,7 +43,8 @@ local({
   owd <- setwd(raiz); on.exit(setwd(owd))
   # R/ppl_generator.R and R/bancos_respuesta.R: Archivos de pago calls
   # .btr_servidor() (T93, BajíoNet's report) since feat/f-t93.
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
+  # R/tema_registro.R: the audit PDFs take tema_de_sesion() since TEMA 6-3 (T98).
+  for (f in c("R/i18n.R", "R/tema_registro.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
               "R/audit_sticky_ui.R", "R/audit_log_viewer_module.R", "R/ppl_generator.R", "R/bancos_respuesta.R",
               "R/pagos_audit_viewer_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
@@ -174,7 +178,7 @@ ui <- bslib::page_navbar(
   # in app.R's static UI). Both modules paint their table inside a
   # renderUI: with the engine arriving only with it, the first data message
   # can come before hdtable.js has a handler, and Shiny drops it.
-  header = tagList(shinyjs::useShinyjs(), app_styles(), hd_table_deps()),
+  header = tagList(shinyjs::useShinyjs(), app_styles(), app_scripts(), hd_table_deps()),
   bslib::nav_panel("Actividad", value = "ACT",
     actionButton("otra_sesion_log", "Otra sesión: registra una actividad"),
     auditLogViewerUI("act")),
