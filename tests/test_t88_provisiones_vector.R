@@ -15,6 +15,8 @@
 #   - real data, when T88_DATOS points to an .rds list of
 #     list(nombre, provisions, liabilities) (never committed: client data);
 # plus the benchmark, row by row against vectorized.
+# T99: one rule changed on purpose -- a liability whose id is NA is nobody's
+# liability (the oracle is fed the liabilities without those rows; see igual()).
 # Run from project root:  Rscript --vanilla tests/test_t88_provisiones_vector.R
 # =============================================================================
 cat("=== test_t88_provisiones_vector ===\n\n")
@@ -132,8 +134,12 @@ ok <- function(label, expr) {
 
 # ── The cases ────────────────────────────────────────────────────────────────
 nueva <- pasivos_provisions_as_ledger_rows
+# T99: a liability whose id is NA is nobody's liability. The oracle's subset
+# let that row win (an all-NA row); the rule now is the oracle's result on the
+# liabilities WITHOUT those rows -- the same thing for every other case.
+sin_id_na <- function(liabs) if (is.null(liabs)) NULL else liabs[!is.na(liabs$id), , drop = FALSE]
 igual <- function(prov, liabs, fx = NULL) {
-  a <- tryCatch(.provisiones_fila_por_fila(prov, liabs, fx = fx), error = function(e) paste("ERROR", conditionMessage(e)))
+  a <- tryCatch(.provisiones_fila_por_fila(prov, sin_id_na(liabs), fx = fx), error = function(e) paste("ERROR", conditionMessage(e)))
   b <- tryCatch(nueva(prov, liabs, fx = fx), error = function(e) paste("ERROR", conditionMessage(e)))
   # Both failing the same way would compare equal and prove nothing: the
   # oracle must give a result, never an error.
@@ -170,8 +176,21 @@ ok("no liabilities (NULL and 0 rows)", igual(prov("a", "L1"), NULL) && igual(pro
 ok("liability found / not found / NA / empty string",
    igual(dplyr::bind_rows(prov("a", "L1"), prov("b", "L9"), prov("c", NA), prov("d", "")), L))
 ok("a liability whose empresa is NA (L4) and a tarjeta (L2)", igual(dplyr::bind_rows(prov("a", "L4"), prov("b", "L2")), L))
-ok("an NA liability id BEFORE the match: the all-NA row wins (as the subset did)",
+ok("an NA liability id BEFORE the match: the match still wins (T99)",
    igual(dplyr::bind_rows(prov("a", "L1"), prov("b", "L9")), dplyr::bind_rows(liab(NA, "X"), L)))
+# T99, the values themselves (the oracle comparison alone would not show which rule):
+# a provision after the NA row keeps its liability; an orphan keeps its own empresa.
+t99 <- nueva(dplyr::bind_rows(prov("a", "L1"), prov("b", "L9", empresa = "NCS"), prov("c", "L2")),
+             dplyr::bind_rows(liab(NA, "X"), L, liab(NA, NA_character_)), fx = NULL)
+ok("T99: with NA-id rows before and after, the provision of L1 gets Empresa Uno / financiero / credito",
+   identical(c(t99$Empresa[1], t99$pasivos_categoria[1], t99$pasivos_subcategoria[1]),
+             c("Empresa Uno", "financiero", "credito")))
+ok("T99: ...the orphan (L9) keeps its own empresa, NCS, with no categoria",
+   identical(t99$Empresa[2], "NCS") && is.na(t99$pasivos_categoria[2]))
+ok("T99: ...the provision of L2 gets Empresa Dos / tarjeta", identical(c(t99$Empresa[3], t99$pasivos_categoria[3]), c("Empresa Dos", "tarjeta")))
+ok("T99: ...no row comes out with Empresa NA", !anyNA(t99$Empresa))
+t99b <- nueva(prov("a", "L1"), dplyr::bind_rows(liab("", "Vacio"), liab(NA, "X"), L), fx = NULL)
+ok("T99: a liability whose id is \"\" is not matched either", identical(t99b$Empresa, "Empresa Uno"))
 ok("an NA liability id AFTER the match: the match wins",
    igual(dplyr::bind_rows(prov("a", "L1"), prov("b", "L9")), dplyr::bind_rows(L, liab(NA, "X"))))
 ok("liabilities without categoria/subcategoria columns", igual(prov("a", "L1"), L[, c("id", "empresa", "estado")]))

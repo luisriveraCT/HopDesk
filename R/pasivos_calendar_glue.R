@@ -84,28 +84,24 @@ pasivos_provisions_as_ledger_rows <- function(provisions, liabilities, ledger = 
   # p$x[1] %||% NA, as character: a missing column or NA gives NA.
   texto <- function(x) if (is.null(x)) rep(NA_character_, n) else as.character(x)
 
-  # The liability: liabs[liabs$id == lid, ][1, ]. A comparison against an NA
-  # id is NA, and that subset puts an all-NA row there: the first row taken
-  # is the first exact match OR the first NA id, whichever comes first, and
-  # an NA id's row gives NA for every field (not the provision's empresa).
+  # The liability (T99): only an exact id match, the first one. A liability
+  # whose id is NA or "" is nobody's liability: it used to win over every
+  # provision whose liability came after it (and over every orphan), and
+  # gave them NA for empresa/categoria/subcategoria. Without a liability,
+  # the provision's own empresa, as before.
   lid    <- prov$liability_id
   busca  <- !is.na(lid) & nzchar(ifelse(is.na(lid), "", lid)) & !is.null(liabs)
   pos    <- rep(NA_integer_, n)
-  es_na  <- rep(FALSE, n)
   if (!is.null(liabs) && any(busca)) {
-    ids      <- as.character(liabs$id)
-    exacta   <- match(lid[busca], ids)
-    primer_na <- if (anyNA(ids)) which(is.na(ids))[1] else NA_integer_
-    elegida  <- if (is.na(primer_na)) exacta else pmin(exacta, primer_na, na.rm = TRUE)
-    pos[busca]   <- elegida
-    es_na[busca] <- !is.na(elegida) & !is.na(primer_na) & elegida == primer_na
+    ids <- as.character(liabs$id)
+    ids[is.na(ids) | !nzchar(ifelse(is.na(ids), "", ids))] <- NA_character_
+    pos[busca] <- match(lid[busca], ids, incomparables = NA_character_)
   }
   hay_liab <- !is.na(pos)
   de_liab <- function(nm) {
     v <- col(liabs, nm)
     out <- rep(NA_character_, n)
     if (!is.null(v)) out[hay_liab] <- as.character(v[pos[hay_liab]])
-    out[es_na] <- NA_character_
     out
   }
   empresa <- ifelse(hay_liab, de_liab("empresa"), texto(col(prov, "empresa")))
