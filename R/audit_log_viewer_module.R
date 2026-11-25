@@ -128,6 +128,40 @@
   df[, names(empty), drop = FALSE]
 }
 
+# T104: each payment/collection confirmation's account as shown
+# (cuenta_confirmacion_texto(), masked), in a column `cuenta_texto` (NA for
+# any other row). The snapshot the log keeps since T104; for an older row, its
+# cuenta_id in the catalog of the row's client as it is now -- read once per
+# client: catalogo(cid) gives list(ctas, bancos), or NULL if it can't be read
+# (then "No registrada" -- never a guess). Nothing is written.
+.audit_con_cuentas <- function(df, catalogo) {
+  if (!is.data.frame(df) || !nrow(df)) return(df)
+  df$cuenta_texto <- NA_character_
+  kind <- vapply(seq_len(nrow(df)), function(i) .audit_detail_kind(df$module[i], df$action[i]), character(1))
+  pago <- which(kind %in% c("payment_pago", "payment_cobro"))
+  if (!length(pago)) return(df)
+  cache <- list()
+  cid <- if ("client_id" %in% names(df)) as.character(df$client_id) else rep(NA_character_, nrow(df))
+  cid[is.na(cid)] <- ""
+  for (i in pago) {
+    meta <- .audit_parse_metadata(df$metadata[i])
+    cat_i <- NULL
+    if (!is.list(meta$cuenta_origen) || !length(meta$cuenta_origen)) {
+      if (is.null(cache[[paste0("c_", cid[i])]]))
+        cache[[paste0("c_", cid[i])]] <- list(v = tryCatch(catalogo(cid[i]), error = function(e) NULL))
+      cat_i <- cache[[paste0("c_", cid[i])]]$v
+    }
+    df$cuenta_texto[i] <- cuenta_confirmacion_texto(meta$cuenta_origen, meta$cuenta_id %||% NA_character_,
+                                                    cat_i$ctas, cat_i$bancos)
+    # A payment's row says its origin account in the description too (the
+    # table and the PDF's table), as shown -- the stored text is untouched.
+    if (identical(kind[i], "payment_pago"))
+      df$description[i] <- tr("tablas.actividad.con_cuenta", descripcion = as.character(df$description[i] %||% ""),
+                              cuenta = df$cuenta_texto[i])
+  }
+  df
+}
+
 # ── Per-kind detail bodies (tagList builders) ────────────────────────────────
 .audit_detail_payment <- function(meta, key, label) {
   det    <- .audit_normalize_pagos(meta[[key]])
@@ -135,7 +169,10 @@
   header <- div(class = "mb-2 small",
     tags$div(tags$strong("Empresa: "),  meta$empresa   %||% ""),
     tags$div(tags$strong("Moneda: "),   meta$moneda    %||% ""),
-    tags$div(tags$strong("Cuenta: "),   meta$cuenta_id %||% ""),
+    # T104: the account masked, never its id: the snapshot the log keeps, or
+    # the id looked up by the viewer (.cuenta_texto), or "No registrada".
+    tags$div(tags$strong(tr(if (identical(key, "cobros")) "tablas.actividad.cuenta_cobro" else "tablas.actividad.cuenta_origen"), " "),
+             meta$.cuenta_texto %||% cuenta_confirmacion_texto(meta$cuenta_origen, meta$cuenta_id)),
     tags$div(tags$strong("Fecha: "),    if (!is.na(fecha)) fecha else "")
   )
   if (!nrow(det)) {
@@ -557,6 +594,7 @@
 # the row belongs to, since Bitácora Global spans several.
 .audit_detail_modal_body <- function(row, mode = "own_client") {
   meta <- .audit_parse_metadata(row$metadata[1])
+  if ("cuenta_texto" %in% names(row) && !is.na(row$cuenta_texto[1])) meta$.cuenta_texto <- row$cuenta_texto[1]   # T104
   kind <- .audit_detail_kind(row$module[1], row$action[1])
   target_id <- row$target_id[1]
   common <- div(class = "mb-3 small",
@@ -672,6 +710,7 @@
 # here since it's already this section's own header.
 .audit_pdf_entry_card <- function(row) {
   meta <- .audit_parse_metadata(row$metadata[1])
+  if ("cuenta_texto" %in% names(row) && !is.na(row$cuenta_texto[1])) meta$.cuenta_texto <- row$cuenta_texto[1]   # T104
   kind <- .audit_detail_kind(row$module[1], row$action[1])
   target_id <- row$target_id[1]
   tags$div(class = "entry-card",
@@ -1241,6 +1280,21 @@ auditLogViewerServer <- function(id, shared, mode,
         df <- df[!is.na(df$user) & df$user == usuario_sel(), , drop = FALSE]
       df
     })
+    # T104: each confirmation's account (masked) for the table, the detail
+    # and the PDF -- the catalog of the row's client, read only for rows
+    # that need it (from before T104). Nothing is written.
+    .catalogo_cuentas <- function(cid) {
+      propio <- tryCatch(shared$effective_client_id(), error = function(e) NULL)
+      if (!nzchar(cid %||% "")) cid <- propio
+      ctas <- if (identical(cid, propio) && is.function(shared$ctas_cuentas)) shared$ctas_cuentas()
+              else load_ctas_cuentas(client_id = cid)
+      list(ctas = ctas, bancos = load_ctas_bancos(client_id = cid))
+    }
+    filtered_c <- reactive({
+      df <- filtered()
+      if (inherits(df, "error") || is.null(df) || !is.data.frame(df)) return(df)
+      .audit_con_cuentas(df, .catalogo_cuentas)
+    })
 
     # ── UI ──────────────────────────────────────────────────────────────────
     output$panel <- renderUI({
@@ -1344,7 +1398,7 @@ auditLogViewerServer <- function(id, shared, mode,
     # Descripción cell, read by position).
     .audit_clave <- function(df) paste(format(as.POSIXct(df$ts), "%Y%m%d%H%M%OS3"), df$user, df$action)
     .audit_tabla <- reactive({
-      df <- filtered()
+      df <- filtered_c()
       if (inherits(df, "error") || is.null(df)) df <- .APP_AUDIT_SCHEMA()
       df <- df[order(df$ts, decreasing = TRUE), , drop = FALSE]
       texto <- function(x) { x <- as.character(x); x[is.na(x)] <- ""; x }
@@ -1383,7 +1437,7 @@ auditLogViewerServer <- function(id, shared, mode,
     observeEvent(audit_t$accion(), {
       a <- audit_t$accion()
       if (!identical(a$accion, "detalle") || !length(a$ids)) return()
-      raw <- filtered()
+      raw <- filtered_c()
       if (inherits(raw, "error") || is.null(raw) || !nrow(raw)) return()
       raw_sorted <- raw[order(raw$ts, decreasing = TRUE), , drop = FALSE]
       k <- match(a$ids[1], .audit_ids(raw_sorted$id, .audit_clave(raw_sorted)))
@@ -1421,7 +1475,7 @@ auditLogViewerServer <- function(id, shared, mode,
           id = "audit_export_notif", type = "message", duration = NULL)
         on.exit(removeNotification("audit_export_notif"), add = TRUE)
 
-        export_df <- filtered()
+        export_df <- filtered_c()
         if (inherits(export_df, "error") || is.null(export_df)) export_df <- export_df[0, ]
 
         rng <- rango$rango()

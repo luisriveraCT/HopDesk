@@ -123,7 +123,16 @@ meta_pago <- list(empresa = "Networks Realtors", moneda = "USD", cuenta_id = "CT
 html_pago <- .html(.audit_detail_payment(meta_pago, "pagos", "Pago(s)"))
 .chk_true(grepl("Networks Realtors", html_pago, fixed = TRUE), "payment detail: empresa shown")
 .chk_true(grepl("USD", html_pago, fixed = TRUE), "payment detail: moneda shown")
-.chk_true(grepl("CTA-02", html_pago, fixed = TRUE), "payment detail: cuenta_id shown")
+# T104: the account is shown masked (its snapshot, or the id the viewer
+# looked up), never its cuenta_id; here neither: "No registrada".
+.chk_true(!grepl("CTA-02", html_pago, fixed = TRUE) &&
+            grepl(tr("tablas.archivos_pago.cuenta_no_registrada"), html_pago, fixed = TRUE),
+          "payment detail: never the cuenta_id; without its snapshot nor a lookup, 'No registrada' (T104)")
+html_foto <- .html(.audit_detail_payment(c(meta_pago, list(cuenta_origen = list(ultimos4 = "0201", alias = "NRBB", banco = "BanBajío"))),
+                                         "pagos", "Pago(s)"))
+.chk_true(grepl("••••0201 · NRBB — BanBajío", html_foto, fixed = TRUE) &&
+            !grepl("CTA-02", html_foto, fixed = TRUE),
+          "payment detail: with its snapshot, the account masked with alias and bank (T104)")
 .chk_true(grepl("ACME SA", html_pago, fixed = TRUE), "payment detail: partner name shown in the row table")
 .chk_true(grepl("FAC-1", html_pago, fixed = TRUE), "payment detail: documento shown")
 .chk_true(grepl("1,500.75", html_pago, fixed = TRUE), "payment detail: importe formatted with thousands separator")
