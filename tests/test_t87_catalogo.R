@@ -148,15 +148,15 @@ C_CONOCIDAS <- c(
   "enviar_a_agenda_dia_incompleto", "enviar_a_agenda_ic_incompleto", "enviar_abonos_a_agenda",
   "enviar_invitacion", "enviar_ruta_a_agenda", "escritura_no_permitida", "etiqueta_a", "etiqueta_b",
   "etiqueta_c", "exportar_actividad_pdf", "exportar_cashflow_excel", "exportar_cashflow_pdf",
-  "exportar_cashflow_word", "exportar_pagos_pdf", "fx_fix", "generar_archivo_pago", "generar_archivo_pago_zip",
+  "exportar_cashflow_word", "exportar_pagos_pdf", "fx_fix", "generar_archivo_pago", "generar_archivo_pago_sin_cuenta", "generar_archivo_pago_zip",
   "guardar_config_grupo", "guardar_preferencias", "guardar_tier_config", "importar_proveedores",
   "importar_proveedores_fallido", "inactivar_proveedores_fallido", "inactivar_sel", "incluir_sin_cuenta",
   "invitacion_vencida_eliminada", "login", "logout", "mover", "papelera", "provisiones_refrescadas",
   "quitar_agenda_manual_fallo_guardado", "quitar_cobros", "quitar_cobros_incompleto", "quitar_de_agenda_dia",
   "quitar_de_agenda_dia_incompleto", "quitar_etiqueta", "quitar_pagos", "quitar_pagos_incompleto",
   "recuperar_papelera_fallo_guardado", "refrescar_metrica", "refrescar_todas_metricas", "reintentar_todo",
-  "renombrar_iniciales", "reservar_renombre", "reset_contrasena_cambiada", "restaurar", "revertir_confirmacion", "revocar_invitacion",
-  "sembrar_catalogo", "solicitar_usuarios", "vaciar_agenda", "vincular_proveedor")
+  "renombrar_iniciales", "reservar_renombre", "reset_contrasena_cambiada", "restaurar", "restaurar_aviso", "revertir_confirmacion", "revocar_invitacion",
+  "sembrar_catalogo", "solicitar_usuarios", "subir_reporte_banco", "vaciar_agenda", "vincular_proveedor")
 todas <- acciones_en_codigo(".")
 ok("4.0 el escáner ve las acciones de todas las fuentes (log_action, eventos, /parte, sin_evento)",
    all(c("eliminar_nota", "provisiones_refrescadas", "confirmar_pago/parte", "sin_evento", "ver_como") %in% todas))
