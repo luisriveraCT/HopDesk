@@ -14,7 +14,9 @@
 #   G2  every test that runs testServer(tiersServer, ...) or
 #       testServer(pagosAuditViewerServer, ...) loads the helper -- no test
 #       keeps its own copy of the list -- except a test that only runs inside
-#       a runner, named in EN_RUNNER with its reason.
+#       a runner, named in EN_RUNNER with that runner.
+#   G4  (T100b) such a runner loads the helper itself, before its stand-ins,
+#       and the test sources none of the list's files on its own.
 #   G3  the lists themselves: every file exists, none is in both, every
 #       exclusion has a reason, every EN_RUNNER test exists and its runner
 #       really runs it.
@@ -30,9 +32,9 @@ HELPER <- "tests/helpers/server_usuarios_archivos.R"
 sys.source(HELPER, envir = (h <- new.env()))   # only the lists and the loader; nothing is loaded
 LISTA <- h$ARCHIVOS_SERVER_USUARIOS; FUERA <- h$NO_CARGADOS_A_PROPOSITO
 
-# A test that runs the server only inside a runner, which builds its own
-# environment (not the helper's): moving it to the helper would change what
-# the runner's other modules see.
+# A test that runs the server only inside a runner: the RUNNER loads the
+# helper (G4), not the test -- a module calling cargar_server_usuarios() would
+# redefine, for every module after it, the stand-ins the runner sets up.
 EN_RUNNER <- c(
   "tests/test_payment_audit_stage.R" = "tests/_run_saas.R"
 )
@@ -104,6 +106,29 @@ runner_ok <- vapply(names(EN_RUNNER), function(t) file.exists(t) && file.exists(
   grepl(basename(t), paste(readLines(EN_RUNNER[[t]], warn = FALSE, encoding = "UTF-8"), collapse = "\n"), fixed = TRUE), NA)
 ok(all(runner_ok), "G3.4: every EN_RUNNER test exists and its runner names it",
    sprintf("%s: not found, or %s does not run it", names(EN_RUNNER)[!runner_ok], EN_RUNNER[!runner_ok]))
+
+# T100b: a test that runs inside a runner is not exempt -- the runner loads
+# the helper (before its stand-ins, which a later load would undo for every
+# module after it), and the test keeps no copy of the list.
+cat("\n== G4: a runner's server test is covered by the runner ==\n")
+for (t in names(EN_RUNNER)) {
+  r  <- EN_RUNNER[[t]]
+  rl <- readLines(r, warn = FALSE, encoding = "UTF-8")
+  carga  <- grep("cargar_server_usuarios(", rl, fixed = TRUE)
+  fuente <- grep(HELPER, rl, fixed = TRUE)
+  stub   <- grep("^\\s*auth_load_usuarios\\s*<-\\s*function", rl)
+  ok(length(fuente) && length(carga) && length(stub) && max(fuente) < min(carga) && max(carga) < min(stub),
+     sprintf("G4.1: %s sources the helper and calls cargar_server_usuarios() before its stand-ins", r),
+     sprintf("%s must source(\"%s\") and call cargar_server_usuarios() before it redefines auth_load_usuarios() and the other stand-ins.", r, HELPER))
+  tl <- readLines(t, warn = FALSE, encoding = "UTF-8")
+  propias <- LISTA[vapply(LISTA, function(f) any(grepl(sprintf("^\\s*source\\(\\s*[\"']%s[\"']", f), tl)), NA)]
+  llama <- any(grepl("cargar_server_usuarios(", tl, fixed = TRUE))
+  ok(!length(propias) && !llama,
+     sprintf("G4.2: %s loads none of the list's files itself (its runner does)", t),
+     c(if (length(propias)) sprintf("%s sources %s itself: drop it, %s already loads it from %s (loading it again from a module would undo the runner's stand-ins).",
+                                    t, paste(propias, collapse = ", "), r, HELPER),
+       if (llama) sprintf("%s calls cargar_server_usuarios() itself: drop it, %s already does, before its stand-ins (a module calling it would undo them).", t, r)))
+}
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
