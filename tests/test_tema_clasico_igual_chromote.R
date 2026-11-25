@@ -61,7 +61,7 @@ source("tests/helpers/tema_comparar_estilos.R")
   if (file.exists(file.path(RAMA, "R/tema_registro.R"))) sys.source(file.path(RAMA, "R/tema_registro.R"), envir = t)
   if (!exists("nivel_fondo_hex", envir = t) || !exists("TIER_REGISTRY", envir = n)) list() else
     lapply(names(n$TIER_REGISTRY), function(x) {
-      c(antes = n$nivel_color(x), despues = t$nivel_fondo_hex(n$nivel_color(x), "clasico")) })
+      c(antes = n$nivel_color(x), despues = t$nivel_fondo_hex(n$nivel_color(x), "clasico", n$.NIVEL_MEZCLA)) })
 })
 # rgb(0-255) or, for a color-mix, color(srgb 0-1) as Chrome returns it.
 .rgb_de <- function(v) {

@@ -125,6 +125,11 @@ nivel_nombre <- function(tier) {
 }
 
 nivel_color <- function(tier) .nivel(tier)$color %||% "#6c757d"
+# TEMA 6-6: a badge paints the tier colour (data, above) mixed with the
+# theme's encabezado, so its white text reads at 4.5:1 in every theme
+# (R/tema_registro.R explains the 74 %; the theme guardian checks it).
+.NIVEL_MEZCLA <- 74L
+nivel_fondo <- function(color) sprintf("color-mix(in srgb, %s %d%%, var(--hd-encabezado))", color, .NIVEL_MEZCLA)
 
 # Tiers ordered highest rank first.
 .niveles_ordenados <- function(filtro = function(e) TRUE) {

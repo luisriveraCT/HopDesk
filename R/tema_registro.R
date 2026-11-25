@@ -790,11 +790,14 @@ tema_marca_color <- function(var, tema = HD_TEMA_OMISION) {
 # (barra-texto / texto-inverso), so the colour is mixed with the theme's
 # encabezado: the badge keeps its hue and reads. 74 % is the most of the tier
 # colour that leaves every tier at 4.5:1 or more in every theme (compras is
-# the tightest: 4.55 in Clásico); the guardian checks it.
-.NIVEL_MEZCLA <- 74L
-nivel_fondo <- function(color) sprintf("color-mix(in srgb, %s %d%%, var(--hd-encabezado))", color, .NIVEL_MEZCLA)
-# The same colour as a hex, for a theme (checks and mails).
-nivel_fondo_hex <- function(color, tema = HD_TEMA_OMISION) .tema_mezclar_hex(color, .NIVEL_MEZCLA, tema_color("encabezado", tema))
+# the tightest: 4.55 in Clásico); the guardian checks it. nivel_fondo() and
+# .NIVEL_MEZCLA live in R/tier_registry.R, next to nivel_color(): every
+# fixture that loads the tiers loads that file. Here, the same colour as a
+# hex for a theme (checks); `mezcla` is .NIVEL_MEZCLA.
+nivel_fondo_hex <- function(color, tema = HD_TEMA_OMISION, mezcla = get0(".NIVEL_MEZCLA", ifnotfound = NA_integer_)) {
+  if (is.na(mezcla)) stop("[tema] nivel_fondo_hex: load R/tier_registry.R or pass mezcla", call. = FALSE)
+  .tema_mezclar_hex(color, mezcla, tema_color("encabezado", tema))
+}
 
 # ── CSS ──────────────────────────────────────────────────────────────────────
 

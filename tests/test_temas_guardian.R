@@ -672,13 +672,13 @@ reg_niv <- new.env(); sys.source("R/tier_registry.R", envir = reg_niv)
 for (tt in names(tema$HD_TEMAS)) {
   textos <- unique(c(tema$tema_color("barra-texto", tt), tema$tema_color("texto-inverso", tt)))
   r <- vapply(names(reg_niv$TIER_REGISTRY), function(n) {
-    f <- tema$nivel_fondo_hex(reg_niv$nivel_color(n), tt)
+    f <- tema$nivel_fondo_hex(reg_niv$nivel_color(n), tt, reg_niv$.NIVEL_MEZCLA)
     min(vapply(textos, function(x) tema$tema_contraste(x, f), numeric(1))) }, numeric(1))
   ok(sprintf("%s: every tier badge reads at 4.5:1 with its colour at %d%% (lowest %s %.2f)",
-             tt, tema$.NIVEL_MEZCLA, names(which.min(r)), min(r)), min(r) >= 4.5)
+             tt, reg_niv$.NIVEL_MEZCLA, names(which.min(r)), min(r)), min(r) >= 4.5)
 }
 ok("nivel_fondo() is a color-mix of the tier colour with the theme's encabezado",
-   identical(tema$nivel_fondo("#6610f2"), sprintf("color-mix(in srgb, #6610f2 %d%%, var(--hd-encabezado))", tema$.NIVEL_MEZCLA)))
+   identical(reg_niv$nivel_fondo("#6610f2"), sprintf("color-mix(in srgb, #6610f2 %d%%, var(--hd-encabezado))", reg_niv$.NIVEL_MEZCLA)))
 insignias <- c(grep("tier_color", leer("app.R"), value = TRUE, fixed = TRUE),
                grep(".tier_color(", leer("R/tiers_module.R"), value = TRUE, fixed = TRUE))
 insignias <- insignias[!grepl("<-\\s*(nivel_color|function)", insignias)]
