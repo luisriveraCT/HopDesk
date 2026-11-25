@@ -27,8 +27,10 @@ ok(sprintf("ningún aviso de app.R con texto fijo (quedan %d)", length(fijos)),
 
 claves <- c(avisos_claves(F, "tablas.datos_sap.aviso."), avisos_claves(F, "tablas.manual.aviso."),
             "niveles.usuarios.aviso.contrasena_actualizada", "comun.aviso.error_leer_s3")
+# 13 since T103: the ERP snapshot that could not be saved (C6) and the one
+# another session saved (F2) -- new texts, kept here exactly as approved.
 ok(sprintf("las %d claves de estos avisos existen en es y en", length(claves)),
-   length(claves) == 11L && all(vapply(claves, clave_en_es_y_en, logical(1))))
+   length(claves) == 13L && all(vapply(claves, clave_en_es_y_en, logical(1))))
 codigo <- paste(readLines(F, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 ok("app.R usa las dos claves sueltas (contraseña y lectura de S3)",
    grepl('tr("niveles.usuarios.aviso.contrasena_actualizada")', codigo, fixed = TRUE) &&
@@ -49,7 +51,11 @@ iguales <- list(
   list(es("tablas.manual.aviso.actualizada"), "Entrada actualizada."),
   list(es("tablas.manual.aviso.error_agenda", error = err), paste("No se pudo guardar en Agenda:", err)),
   list(es("tablas.manual.aviso.agregada_agenda"), "Entrada agregada y enviada a Agenda de hoy."),
-  list(es("tablas.manual.aviso.agregada"), "Entrada agregada."))
+  list(es("tablas.manual.aviso.agregada"), "Entrada agregada."),
+  # T103 (new, no "before"): their approved Spanish, so a change to them is seen too.
+  list(es("tablas.datos_sap.aviso.no_guardado", ledger = ledger_name),
+       paste0("Los datos del ERP (", ledger_name, ") se ven en pantalla, pero no se pudieron guardar: vuelve a refrescar en unos minutos.")),
+  list(es("tablas.datos_sap.aviso.foto_nueva", hora = "09:30"), "Datos del ERP actualizados (09:30)."))
 dif <- avisos_distintos(iguales)
 ok(sprintf("el español de los %d textos es idéntico al de antes", length(iguales)),
    { for (p in dif) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(dif) && length(iguales) == length(claves) })
