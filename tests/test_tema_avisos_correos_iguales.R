@@ -90,7 +90,7 @@ ok("loaded in shiny's alphabetical order (avisos_correos.R, then tema_registro.R
    }, args = list(raiz = RAMA))))
 ok("every field keeps its value but the two unified ones (Marca's roles and palette = the old hex)", {
   esperado <- c(fondo = "#EDEBE4", papel = "#FFFFFF", tinta = "#1A2233", gris = "#5A6474", marino = "#13213A",
-    dorado = "#C9AE6E", dorado_osc = "#B0924F", linea = "#E4E1D8", pie = "#F7F6F2", arena = "#EFE6D2",
+    dorado = "#C9AE6E", dorado_osc = "#8A6D2C", linea = "#E4E1D8", pie = "#F7F6F2", arena = "#EFE6D2",
     arena_tinta = "#6B5320", gris_claro = "#9AA6BA", cobre = "#9A4524", revision = "#F7E9E1",
     revision_tinta = "#7C3519", verde = "#2F6B4F", logro_tinta = "#8A6D2C", riel = "#ECE9E1", reprog = "#5F6D87",
     por_vencer = "#D7DCE5", liquidado_ar = "#E6D6AC", liquidado_ap = "#5B6A86", linea_oscura = "#2A3A58",

@@ -145,7 +145,14 @@ for (p in pares) {
 for (tt in c("marca", "clasico")) {
   cc <- unlist(.correo_colores(tt)); r <- contraste(cc[["reprog"]], cc[["papel"]])
   ok(sprintf("5: %s reprogramado (%s) on papel: %.2f:1 >= 4.5", tt, cc[["reprog"]], r), r >= 4.5)
+  # TEMA 6-10 (the Coordinador): gold as text is acento-texto; the bullets
+  # of "También" (.cr_vinetas) are dorado_osc on the mail's paper.
+  r <- contraste(cc[["dorado_osc"]], cc[["papel"]])
+  ok(sprintf("5: %s bullets (dorado_osc %s) on papel: %.2f:1 >= 4.5", tt, cc[["dorado_osc"]], r), r >= 4.5)
 }
+ok("5: gold as text is acento-texto in both themes (dorado_osc)",
+   all(vapply(c("marca", "clasico"), function(tt)
+     identical(toupper(unlist(.correo_colores(tt))[["dorado_osc"]]), toupper(tema_color("acento-texto", tt))), logical(1))))
 ok("5: Clásico's roles are its own: collections gold (acento), payments navy (primario)",
    identical(toupper(CLASICO[["dorado"]]), toupper(tema_color("acento", "clasico"))) &&
    identical(toupper(CLASICO[["marino"]]), toupper(tema_color("primario", "clasico"))))

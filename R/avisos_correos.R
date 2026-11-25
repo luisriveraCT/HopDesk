@@ -36,7 +36,7 @@ CORREO_TEMA <- "marca"
 .CORREO_ROLES <- list(
   marca = c(
     fondo = "lino", papel = "superficie", tinta = "texto", gris = "texto-2",
-    marino = "primario", dorado = "acento", dorado_osc = "oro-osc", linea = "lino-bd",
+    marino = "primario", dorado = "acento", dorado_osc = "acento-texto", linea = "lino-bd",   # dorado_osc is text (the bullets): acento-texto (the Coordinador, 2026-11-24)
     linea_tabla = "superficie-2", pie = "fondo", arena = "arena", arena_tinta = "arena-fg",
     gris_claro = "niebla-osc", cobre = "aviso-texto", revision = "aviso-suave", revision_tinta = "ambar-osc",
     verde = "exito", logro_tinta = "acento-texto", riel = "lino-riel", reprog = "texto-tenue",   # TEMA 6-9: readable (the Coordinador)
