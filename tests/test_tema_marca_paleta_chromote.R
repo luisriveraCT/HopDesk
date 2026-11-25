@@ -188,7 +188,12 @@ MEDIR_JS <- "(function(){
   function nota(prop, val, e){
     if (!val || val === 'none' || val === 'transparent' || /^rgba\\(0, 0, 0, 0\\)$/.test(val)) return;
     var k = prop + '|' + val; if (!out[k]) out[k] = {prop: prop, val: val, n: 0, ej: []};
-    out[k].n++; if (out[k].ej.length < 3) out[k].ej.push(sel(e)); }
+    out[k].n++; if (out[k].ej.length < 3) out[k].ej.push(e instanceof SVGElement ? svg_ej(e) : sel(e)); }
+  // TEMA 6-10: an SVG says where it hangs, its size and how it starts (the
+  // bare black-filled <svg> of every tab, not identified from the code).
+  function svg_ej(e){ var r = e.getBoundingClientRect(), p = e.parentElement, a = p && p.parentElement;
+    return (a ? sel(a) + '>' : '') + (p ? sel(p) + '>' : '') + sel(e) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) +
+      ' ' + e.outerHTML.slice(0, 90).replace(/\\s+/g, ' '); }
   var todos = document.body.querySelectorAll('*');
   for (var i = 0; i < todos.length; i++) {
     var e = todos[i];
