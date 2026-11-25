@@ -14,13 +14,6 @@ pasivos_convert_modal_ui <- function(provision, liabilities, empresa_choices = c
                                      base = MONEDA_BASE_OMISION, primero = base) {
   p <- provision[1, , drop = FALSE]
 
-  liability <- if (!is.na(p$liability_id[1]) && nzchar(p$liability_id[1] %||% "") &&
-                   !is.null(liabilities) && nrow(liabilities)) {
-    liabilities[liabilities$id == p$liability_id[1], , drop = FALSE]
-  } else {
-    NULL
-  }
-
   pago_amount <- tryCatch(pasivos_pago_amount(p),   error = function(e) NA_real_)
   pago_cur    <- tryCatch(pasivos_pago_currency(p), error = function(e) base)
 
