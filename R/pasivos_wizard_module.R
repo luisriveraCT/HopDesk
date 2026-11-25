@@ -19,6 +19,7 @@ pasivos_liability_to_draft <- function(row) {
     categoria              = r$categoria[1] %||% "",
     flavor                 = r$flavor[1] %||% "",
     nombre                 = r$nombre[1] %||% "",
+    objeto                 = .pasivos_objeto_texto(if ("objeto" %in% names(r)) r$objeto[1] else NA),   # T105
     empresa                = r$empresa[1] %||% "",
     parte                  = r$parte[1] %||% "",
     codigo_parte           = r$codigo_parte[1] %||% "",
@@ -155,6 +156,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
     subcategoria             = draft$subcategoria %||% NA_character_,
     flavor                   = if (identical(cat, "financiero")) (draft$flavor %||% "credito_simple") else NA_character_,
     nombre                   = draft$nombre %||% "",
+    objeto                   = pasivos_objeto_limpio(draft$objeto),   # T105
     empresa                  = draft$empresa %||% "",
     parte                    = draft$parte %||% "",
     codigo_parte             = draft$codigo_parte %||% NA_character_,
@@ -633,6 +635,7 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
 
     detalles = {
       d$nombre              <- input$pwiz_nombre              %||% ""
+      d$objeto              <- .pasivos_objeto_texto(input$pwiz_objeto)   # T105
       d$empresa             <- input$pwiz_empresa             %||% ""
       d$parte               <- input$pwiz_parte               %||% ""
       d$codigo_parte        <- input$pwiz_codigo_parte        %||% ""
@@ -871,6 +874,9 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
     rows <- c(rows, list(c(tr("tablas.pasivos.fin.resumen"),
                            if (is.na(fin)) tr("tablas.pasivos.fin.sin_fin_corto") else format(fin, "%d/%m/%Y"))))
   }
+  # T105: what the liability finances or pays
+  obj <- pasivos_objeto_limpio(draft$objeto)
+  if (!is.na(obj)) rows <- c(rows, list(c(tr("tablas.pasivos.objeto.resumen"), obj)))
   # T71: the note every provision inherits
   if (nzchar(trimws(draft$notas %||% ""))) rows <- c(rows, list(c(tr("tablas.pasivos.nota.resumen"), trimws(draft$notas))))
   # T77: what it costs (pasivos_costeo(), from the engine; by currency,

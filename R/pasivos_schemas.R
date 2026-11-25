@@ -17,6 +17,22 @@ fecha_valida <- function(x) {
   length(d) == 1L && !is.na(d)
 }
 
+# T105: a liability's objeto -- what it finances or pays ("3 camiones",
+# "construcción"). Optional and short: one line, at most PASIVOS_OBJETO_MAX
+# characters (the field's maxlength in the wizard, and cut here too, so
+# nothing longer is ever saved). Empty = NA, like a liability saved before
+# the field existed (the loader fills a missing column with NA; no
+# migration writes anything).
+PASIVOS_OBJETO_MAX <- 60L
+pasivos_objeto_limpio <- function(x) {
+  x <- tryCatch(as.character(x)[1], error = function(e) NA_character_)
+  if (length(x) != 1L || is.na(x)) return(NA_character_)
+  x <- trimws(gsub("[[:cntrl:]]+", " ", x))
+  if (!nzchar(x)) NA_character_ else substr(x, 1L, PASIVOS_OBJETO_MAX)
+}
+# The same, for a form field: "" instead of NA.
+.pasivos_objeto_texto <- function(x) { o <- pasivos_objeto_limpio(x); if (is.na(o)) "" else o }
+
 .schema_pasivos_liability <- function() tibble::tibble(
   id                 = character(),
   categoria          = character(),   # "regular" | "financiero" | "tarjeta"
@@ -24,6 +40,7 @@ fecha_valida <- function(x) {
   flavor             = character(),   # financiero only: "credito_simple" | "arrendamiento" |
                                        # "linea_revolvente" | "otro"; NA otherwise
   nombre             = character(),
+  objeto             = character(),   # T105: what it finances or pays; NA = none
   empresa            = character(),
   parte              = character(),
   codigo_parte       = character(),

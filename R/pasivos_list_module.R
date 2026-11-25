@@ -46,7 +46,7 @@ pasivos_pedir_editar <- function(lid)
 # Next provision: the liability's earliest provisional one from today on.
 # `acciones(estado)` gives each row's .acciones (empty = no button).
 pasivos_lista_filas <- function(liabs, provs, allowed = NULL, estados, acciones) {
-  vacio <- data.frame(id = character(), nombre = character(), categoria = character(),
+  vacio <- data.frame(id = character(), nombre = character(), objeto = character(), categoria = character(),
                       tipo = character(), subcategoria = character(), empresa = character(),
                       parte = character(), moneda = character(), moneda_pago = character(),
                       estado = character(), proxima_fecha = as.Date(character()),
@@ -91,6 +91,7 @@ pasivos_lista_filas <- function(liabs, provs, allowed = NULL, estados, acciones)
   data.frame(
     id            = txt(liabs$id),
     nombre        = txt(liabs$nombre),
+    objeto        = if ("objeto" %in% names(liabs)) txt(liabs$objeto) else rep(NA_character_, n),   # T105
     categoria     = txt(liabs$categoria),
     tipo          = tipo,
     subcategoria  = txt(liabs$subcategoria),
@@ -158,6 +159,7 @@ pasivos_list_module_server <- function(id, shared) {
       piezas = "columnas_opc",
       columnas = list(
         col_texto("nombre", "tablas.pasivos.nombre"),
+        col_texto("objeto", "tablas.pasivos.objeto.columna", opcional = TRUE, ancho = 130),   # T105
         .pasivos_col_categoria(),
         col_texto("tipo", "tablas.pasivos.tipo"),
         col_texto("subcategoria", "tablas.pasivos.subcategoria", opcional = TRUE, visible = FALSE),
@@ -173,6 +175,7 @@ pasivos_list_module_server <- function(id, shared) {
       ),
       filtros = list(list(campo = "empresa"), list(campo = "categoria"),
                      list(campo = "subcategoria", titulo = "tablas.pasivos.subcategoria"),
+                     list(campo = "objeto", titulo = "tablas.pasivos.objeto.columna"),   # T105
                      list(campo = "moneda_pago", titulo = "tablas.pasivos.moneda"),
                      list(campo = "estado")),
       acciones_fila = c("editar", "inactivar", "reactivar", "eliminar"),
