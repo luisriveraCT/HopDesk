@@ -51,6 +51,31 @@ RECALCULANDO_JS <- "Array.prototype.filter.call(document.querySelectorAll('.reca
 # TEMA_DE_MAX (2 by default, Coordinador 2026-11-20; 0 = strict) and alpha
 # 0.01. Each colour that moved but passes is a warning, listed at the end.
 source("tests/helpers/tema_comparar_estilos.R")
+# TEMA 6-6 (the Coordinador, legibility): a tier badge's background goes from
+# the bare tier colour (master) to that colour mixed with Clásico's encabezado
+# (the branch, nivel_fondo()). That exact pair is an expected change; any
+# other difference on a badge still fails.
+.INSIGNIAS <- local({
+  t <- new.env(); n <- new.env()
+  if (file.exists(file.path(RAMA, "R/tier_registry.R"))) sys.source(file.path(RAMA, "R/tier_registry.R"), envir = n)
+  if (file.exists(file.path(RAMA, "R/tema_registro.R"))) sys.source(file.path(RAMA, "R/tema_registro.R"), envir = t)
+  if (!exists("nivel_fondo_hex", envir = t) || !exists("TIER_REGISTRY", envir = n)) list() else
+    lapply(names(n$TIER_REGISTRY), function(x) {
+      c(antes = n$nivel_color(x), despues = t$nivel_fondo_hex(n$nivel_color(x), "clasico")) })
+})
+# rgb(0-255) or, for a color-mix, color(srgb 0-1) as Chrome returns it.
+.rgb_de <- function(v) {
+  x <- suppressWarnings(as.numeric(regmatches(v, gregexpr("[0-9.]+", v))[[1]]))
+  if (length(x) < 3L) return(c(NA, NA, NA))
+  if (startsWith(trimws(v), "color(srgb")) round(x[1:3] * 255) else x[1:3]
+}
+es_insignia <- function(p, a, b) {
+  if (!identical(p, "background-color") || !length(.INSIGNIAS)) return(FALSE)
+  ra <- .rgb_de(a); rb <- .rgb_de(b)
+  any(vapply(.INSIGNIAS, function(i) {
+    ia <- as.numeric(grDevices::col2rgb(i[["antes"]])[, 1]); ib <- as.numeric(grDevices::col2rgb(i[["despues"]])[, 1])
+    isTRUE(all(abs(ra - ia) <= 1)) && isTRUE(all(abs(rb - ib) <= 1)) }, logical(1)))
+}
 DE_MAX <- as.numeric(Sys.getenv("TEMA_DE_MAX", "2"))
 if (is.na(DE_MAX) || DE_MAX < 0) stop("TEMA_DE_MAX must be a number >= 0")
 AVISOS <- list()
@@ -701,7 +726,7 @@ for (quien in quienes) {
     sin_busy <- function(x) { names(x) <- gsub("\\.shiny-busy", "", names(x)); x }
     eb <- sin_busy(eb); er <- sin_busy(er)
     comunes <- intersect(names(eb), names(er))
-    difs <- character(); difs_k <- character()
+    difs <- character(); difs_k <- character(); n_insignias <- 0L
     nombre <- switch(v, ENTRAR = "sign-in page", CARGA = "Pantalla de carga", FLUJO = "Flujo (vista previa)",
                      ACT_INVALIDA = "Activación (enlace inválido)", OLVIDE = "Olvidé mi contraseña",
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
@@ -712,7 +737,8 @@ for (quien in quienes) {
                      PESTANAS[[v]])
     for (k in comunes) for (p in names(eb[[k]])) {
       r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
-      if (r$estado == "falla") {
+      if (r$estado == "falla" && es_insignia(p, eb[[k]][[p]], er[[k]][[p]])) n_insignias <- n_insignias + 1L
+      else if (r$estado == "falla") {
         difs <- c(difs, sprintf("%s { %s: %s -> %s }", k, p, eb[[k]][[p]], er[[k]][[p]]))
         difs_k <- c(difs_k, k)
       }
@@ -743,6 +769,8 @@ for (quien in quienes) {
                        quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(en_mk)))
       difs <- difs[!en_mk]; difs_k <- difs_k[!en_mk]
     }
+    if (n_insignias > 0L)
+      cat(sprintf("      | [%s] %s: cambio esperado en insignias de nivel (color del nivel -> nivel_fondo): %d\n", quien, nombre, n_insignias))
     # The ☰ panel (nav .navbar-collapse.hd-marca, R/ui_components.R) is on
     # every signed-in view: its change is allowed in all of them (the MENU
     # view above is where it must change). Only that panel, nothing else.
