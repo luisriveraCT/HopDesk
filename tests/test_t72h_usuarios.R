@@ -40,7 +40,8 @@ suppressMessages({
   for (f in c("R/tier_registry.R", "R/permisos.R", "R/i18n.R", "R/auth.R", "R/tiers_tab_config.R",
               "R/audit_log_viewer_module.R", "R/pagos_audit_viewer_module.R", "R/hd_registro.R",
               "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R", "R/usuarios_cuentas.R",
-              "R/tiers_module.R", "R/tema_registro.R", "R/email_service.R", "R/auth_reset.R"))
+              "R/tiers_module.R", "R/tema_registro.R", "R/email_service.R", "R/auth_reset.R",
+              "R/bancos_respuesta.R"))   # T93: Archivos de pago's respuesta_banco table (BTR_ESTADOS)
     if (file.exists(f)) source(f, local = FALSE)
 })
 IS_ADMIN_DEPLOYMENT <- TRUE
