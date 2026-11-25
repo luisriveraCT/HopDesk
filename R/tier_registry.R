@@ -193,7 +193,8 @@ HD_PESTANA_ARCHIVOS <- list(
   CAL = c("ledger_module.R", "search_module.R", "search_module.R · ledger_module.R",
           "staging_browse_module.R"),
   VEN = "vencidos_module.R",
-  PH  = c("pagar_hoy_module.R", "pagos_audit_viewer_module.R"),
+  PH  = c("pagar_hoy_module.R", "pagos_audit_viewer_module.R",
+          "bancos_respuesta.R"),   # T93: the bank report preview, shown from Archivos de pago
   BNC = "bancos_module.R",
   IC  = c("interco_module.R", "treasury_map_module.R"),
   PSV = c("pasivos_list_module.R", "pasivos_table_module.R", "pasivos_wizard_module.R",
