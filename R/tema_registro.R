@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 24L
+HD_TEMAS_CSS_VERSION <- 25L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -784,6 +784,18 @@ tema_marca_color <- function(var, tema = HD_TEMA_OMISION) {
   .tema_mezclar_hex(tema_color(m[1], tema), as.integer(m[2]), tema_color(m[3], tema))
 }
 
+# ── Data colours on a theme (TEMA 6-6) ───────────────────────────────────────
+# A tier's colour (TIER_REGISTRY$color) is data: its identity, the same in
+# every theme, never replaced by a role. Its badge carries white text
+# (barra-texto / texto-inverso), so the colour is mixed with the theme's
+# encabezado: the badge keeps its hue and reads. 74 % is the most of the tier
+# colour that leaves every tier at 4.5:1 or more in every theme (compras is
+# the tightest: 4.55 in Clásico); the guardian checks it.
+.NIVEL_MEZCLA <- 74L
+nivel_fondo <- function(color) sprintf("color-mix(in srgb, %s %d%%, var(--hd-encabezado))", color, .NIVEL_MEZCLA)
+# The same colour as a hex, for a theme (checks and mails).
+nivel_fondo_hex <- function(color, tema = HD_TEMA_OMISION) .tema_mezclar_hex(color, .NIVEL_MEZCLA, tema_color("encabezado", tema))
+
 # ── CSS ──────────────────────────────────────────────────────────────────────
 
 .tema_bloque <- function(selector, valores, titulo = NULL) {
@@ -997,7 +1009,19 @@ tema_legado_css <- function() {
     `--bs-btn-focus-shadow-rgb` = "{rgb:foco-color}",
     `--bs-btn-active-color` = "{texto}", `--bs-btn-active-bg` = "{seleccion}", `--bs-btn-active-border-color` = "{texto-2}",
     `--bs-btn-disabled-color` = "{texto-2}", `--bs-btn-disabled-bg` = "transparent",
-    `--bs-btn-disabled-border-color` = "{borde-fuerte}"))
+    `--bs-btn-disabled-border-color` = "{borde-fuerte}")),
+  # TEMA 6-6: the light outline button is the bar's "Salir" (app.R,
+  # btn-outline-light). It sits on the bar: its text and border are the bar's
+  # text, never flatly's light grey #ECF0F1.
+  list(sel = c(".btn-outline-light"), decl = c(
+    `--bs-btn-color` = "{barra-texto}", `--bs-btn-border-color` = "color-mix(in srgb, {barra-texto} 60%, transparent)",
+    `--bs-btn-hover-color` = "{barra-texto}", `--bs-btn-hover-bg` = "color-mix(in srgb, {barra-texto} 12%, transparent)",
+    `--bs-btn-hover-border-color` = "{barra-texto}",
+    `--bs-btn-focus-shadow-rgb` = "{rgb:barra-texto}",
+    `--bs-btn-active-color` = "{barra-texto}", `--bs-btn-active-bg` = "color-mix(in srgb, {barra-texto} 20%, transparent)",
+    `--bs-btn-active-border-color` = "{barra-texto}",
+    `--bs-btn-disabled-color` = "{barra-texto}",
+    `--bs-btn-disabled-border-color` = "color-mix(in srgb, {barra-texto} 60%, transparent)"))
 )
 
 # Bootstrap's coloured buttons: fill, the text on it, hover fill (NA: the fill
