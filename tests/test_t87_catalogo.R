@@ -151,7 +151,7 @@ C_CONOCIDAS <- c(
   "exportar_cashflow_word", "exportar_pagos_pdf", "fx_fix", "generar_archivo_pago", "generar_archivo_pago_sin_cuenta", "generar_archivo_pago_zip",
   "guardar_config_grupo", "guardar_preferencias", "guardar_tier_config", "importar_proveedores",
   "importar_proveedores_fallido", "inactivar_proveedores_fallido", "inactivar_sel", "incluir_sin_cuenta",
-  "invitacion_vencida_eliminada", "login", "logout", "mover", "papelera", "provisiones_refrescadas",
+  "invitacion_vencida_eliminada", "login", "logout", "mover", "papelera", "ppl_banco_fuera_catalogo", "provisiones_refrescadas",
   "quitar_agenda_manual_fallo_guardado", "quitar_cobros", "quitar_cobros_incompleto", "quitar_de_agenda_dia",
   "quitar_de_agenda_dia_incompleto", "quitar_etiqueta", "quitar_pagos", "quitar_pagos_incompleto",
   "recuperar_papelera_fallo_guardado", "refrescar_metrica", "refrescar_todas_metricas", "reintentar_todo",
