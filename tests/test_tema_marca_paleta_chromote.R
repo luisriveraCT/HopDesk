@@ -223,6 +223,26 @@ pestanas <- unique(pestanas[nzchar(pestanas)])
 cat(sprintf("      | %d tabs (nested ones too): %s\n", length(pestanas), paste(pestanas, collapse = ", ")))
 filas <- list()
 SIN_CUBRIR <- character()
+# One view as it is on screen now: a capture, its colours, the ones outside Marca.
+medir_vista <- function(v) {
+  tryCatch({ s <- b$Page$captureScreenshot(format = "png")
+             writeBin(jsonlite::base64_dec(s$data), file.path(SALIDA, paste0("marca_", v, ".png"))) }, error = function(e) NULL)
+  m <- tryCatch(ev(MEDIR_JS), error = function(e) NULL)
+  if (is.null(m)) { ok(sprintf("%s: measured", v), FALSE); return(invisible(NULL)) }
+  fuera <- list()
+  for (c in m$colores) {
+    x <- rgba(c$val); if (is.null(x) || x$alfa == 0) next
+    if (identical(clasifica(x$hex, x$alfa), "fuera"))
+      fuera[[length(fuera) + 1L]] <- data.frame(pestana = v, propiedad = c$prop, color = x$hex, alfa = x$alfa,
+                                                n = c$n, ejemplos = paste(unlist(c$ej), collapse = " ; "))
+  }
+  f <- if (length(fuera)) do.call(rbind, fuera) else NULL
+  if (!is.null(f)) { f <- f[order(-f$n), ]; filas[[v]] <<- f }
+  ok(sprintf("%s: %d elements, 0 colours outside Marca (%d left)", v, m$n, if (is.null(f)) 0L else nrow(f)), is.null(f))
+  if (!is.null(f)) for (i in seq_len(min(nrow(f), 8L)))
+    cat(sprintf("      | %-16s %s%s x%d  %s\n", f$propiedad[i], f$color[i],
+                if (f$alfa[i] < 1) sprintf(" @%.2f", f$alfa[i]) else "", f$n[i], substr(f$ejemplos[i], 1, 110)))
+}
 for (v in pestanas) {
   if (!isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS, jsonlite::toJSON(v, auto_unbox = TRUE))), error = function(e) FALSE))) next
   Sys.sleep(3)
@@ -236,24 +256,32 @@ for (v in pestanas) {
     if (!ok(sprintf("a new session after %s signs in again in Marca", v), sesion())) fin()
     next
   }
-  tryCatch({ s <- b$Page$captureScreenshot(format = "png")
-             writeBin(jsonlite::base64_dec(s$data), file.path(SALIDA, paste0("marca_", v, ".png"))) }, error = function(e) NULL)
-  m <- tryCatch(ev(MEDIR_JS), error = function(e) NULL)
-  if (is.null(m)) { ok(sprintf("%s: measured", v), FALSE); next }
-  fuera <- list()
-  for (c in m$colores) {
-    x <- rgba(c$val); if (is.null(x) || x$alfa == 0) next
-    if (identical(clasifica(x$hex, x$alfa), "fuera"))
-      fuera[[length(fuera) + 1L]] <- data.frame(pestana = v, propiedad = c$prop, color = x$hex, alfa = x$alfa,
-                                                n = c$n, ejemplos = paste(unlist(c$ej), collapse = " ; "))
-  }
-  f <- if (length(fuera)) do.call(rbind, fuera) else NULL
-  if (!is.null(f)) { f <- f[order(-f$n), ]; filas[[v]] <- f }
-  ok(sprintf("%s: %d elements, 0 colours outside Marca (%d left)", v, m$n, if (is.null(f)) 0L else nrow(f)), is.null(f))
-  if (!is.null(f)) for (i in seq_len(min(nrow(f), 8L)))
-    cat(sprintf("      | %-16s %s%s x%d  %s\n", f$propiedad[i], f$color[i],
-                if (f$alfa[i] < 1) sprintf(" @%.2f", f$alfa[i]) else "", f$n[i], substr(f$ejemplos[i], 1, 110)))
+  medir_vista(v)
 }
+# TEMA 6-10: the other .hd-marca views. The ☰ menu panel open
+# (R/ui_components.R) and the new-request form of Requisiciones
+# (.hdreq-form.hd-marca; the folders panel is in the REQ tab above).
+# Each one that does not open is NOT COVERED, never "0 outside".
+abre <- function(js, espera) isTRUE(tryCatch(ev(js), error = function(e) FALSE)) &&
+  poll_until(function() isTRUE(tryCatch(ev(espera), error = function(e) FALSE)), timeout_s = 30, interval_s = 1)
+if (abre("(function(){ var b = document.getElementById('hd-menu-btn'); if (b && b.offsetParent !== null) { b.click(); return true; }
+           var t = document.querySelector('.navbar-toggler'); if (t && t.offsetParent !== null) { t.click(); return true; } return false; })()",
+         "(function(){ var p = document.querySelector('nav.navbar .navbar-collapse.hd-marca');
+           return !!p && p.getClientRects().length > 0 && getComputedStyle(p).display !== 'none'; })()")) {
+  Sys.sleep(1.5); medir_vista("MENU")
+  tryCatch(ev("(function(){ var b = document.getElementById('hd-menu-btn'); var t = document.querySelector('.navbar-toggler');
+    (b && b.offsetParent !== null ? b : t).click(); return true; })()"), error = function(e) FALSE)
+  Sys.sleep(1)
+} else { cat("      | NOT COVERED MENU: the .hd-marca menu panel did not open\n"); SIN_CUBRIR <- c(SIN_CUBRIR, "MENU") }
+if ("REQ" %in% pestanas &&
+    isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS, jsonlite::toJSON("REQ", auto_unbox = TRUE))), error = function(e) FALSE)) &&
+    { Sys.sleep(4); abre("(function(){ var b = document.getElementById('req-nueva'); if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()",
+                         "(function(){ var f = document.querySelector('.modal.show .hdreq-form.hd-marca'); return !!f && f.getClientRects().length > 0; })()") }) {
+  Sys.sleep(2); medir_vista("REQ_NUEVA")
+  tryCatch(ev("(function(){ var b = document.querySelector('.modal.show .hd-modal-cerrar, .modal.show .btn-close'); if (b) b.click(); return true; })()"),
+           error = function(e) FALSE)
+  Sys.sleep(1)
+} else { cat("      | NOT COVERED REQ_NUEVA: the new-request form did not open\n"); SIN_CUBRIR <- c(SIN_CUBRIR, "REQ_NUEVA") }
 todo <- if (length(filas)) do.call(rbind, filas) else
   data.frame(pestana = character(), propiedad = character(), color = character(), alfa = numeric(), n = integer(), ejemplos = character())
 write.table(todo, file.path(SALIDA, "fuera_de_marca.tsv"), sep = "\t", row.names = FALSE, quote = FALSE, fileEncoding = "UTF-8")
