@@ -95,7 +95,7 @@ PALETA <- unique(c(colores_de(css[i0:i1]), colores_de(unlist(tema$.HD_COMUNES[!s
                    # paint. The bare tier colours stay NOT excused.
                    if (exists("nivel_fondo_hex", envir = tema, inherits = FALSE)) {
                      niv <- new.env(); sys.source("R/tier_registry.R", envir = niv)
-                     toupper(vapply(names(niv$TIER_REGISTRY), function(n) tema$nivel_fondo_hex(niv$nivel_color(n), "marca"), ""))
+                     toupper(vapply(names(niv$TIER_REGISTRY), function(n) tema$nivel_fondo_hex(niv$nivel_color(n), "marca", niv$.NIVEL_MEZCLA), ""))
                    }))
 DATOS <- unique(c(
   colores_de(lineas("R/bancos_module.R", "^\\s*[A-Z]{3}\\s*=\\s*\"#|#5F5E5A")),
