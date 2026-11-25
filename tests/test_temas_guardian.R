@@ -277,14 +277,23 @@ ok("tema_marca_color(): Marca's value under Marca, the role (or its mix) elsewhe
 .PARES_MARCA <- list(
   c("blanco", "marino"), c("marino", "blanco"), c("marino", "papel"), c("tinta", "papel"),
   c("gris", "blanco"), c("gris", "papel"), c("pizarra", "crema"),
-  c("oro-osc", "papel"), c("oro-osc", "blanco"),
+  c("acento-texto", "papel"), c("acento-texto", "blanco"),
   c("oro-claro", "marino"), c("oro", "marino"), c("marino", "oro"),
   c("sube-tinta", "sube"), c("sube", "marino"), c("baja", "marino"),
   c("ambar-fg", "ambar-bg"), c("salvia-fg", "salvia-bg"), c("olivo-fg", "olivo-bg"), c("lila-fg", "lila-bg")
 )
-# Marca's pairs below AA today: Marca does not change in the TEMA 6-10 (its
-# gold "new" mark and the date line, #B0924F, 2.75-2.97). Can only shrink.
-.MARCA_BAJO_AA <- c("oro-osc/papel", "oro-osc/blanco")
+# Marca's pairs below AA: none. Gold as TEXT is acento-texto (the Coordinador,
+# 2026-11-24: oro-osc #B0924F read 2.75-2.97 as the date line and the
+# request icon); oro-osc stays for fills and ornaments only. Can only shrink.
+.MARCA_BAJO_AA <- character(0)
+# Gold as text is never oro-osc (nor oro / oro-claro on a light surface):
+# a `color:` with oro-osc in any .hd-marca sheet fails.
+oro_texto <- unlist(lapply(c("www/panorama.css", "www/requisiciones.css", "R/ui_components.R"), function(f) {
+  x <- leer(f); i <- grep("(^|[;{\\s])color\\s*:\\s*var\\(--hd-oro-osc\\)", x, perl = TRUE)
+  if (length(i)) paste0(f, ":", i) else character(0)
+}))
+ok("gold as text uses acento-texto: no color: var(--hd-oro-osc) in panorama.css, requisiciones.css, ui_components.R",
+   length(oro_texto) == 0L || { message("  oro-osc as text: ", paste(oro_texto, collapse = ", ")); FALSE })
 ok("every listed Marca exception is a pair this test checks",
    all(.MARCA_BAJO_AA %in% vapply(.PARES_MARCA, paste, character(1), collapse = "/")))
 for (t in names(tema$HD_TEMAS)) for (p in .PARES_MARCA) {

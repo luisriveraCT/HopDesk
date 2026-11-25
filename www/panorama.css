@@ -90,7 +90,7 @@
   font-weight: 900;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--hd-oro-osc);
+  color: var(--hd-acento-texto);
 }
 .hd-panorama .pan-saludo {
   font-family: var(--hd-serif);
@@ -257,7 +257,7 @@
 .hd-panorama .pan-icono-act { background: var(--hd-olivo-bg);  color: var(--hd-olivo-fg); }
 .hd-panorama .pan-icono-com { background: var(--hd-salvia-bg); color: var(--hd-salvia-fg); }
 .hd-panorama .pan-icono-sol { background: var(--hd-lila-bg);   color: var(--hd-lila-fg); }
-.hd-panorama .pan-icono-req { background: var(--hd-oro-velo);  color: var(--hd-oro-osc); }   /* T62 */
+.hd-panorama .pan-icono-req { background: var(--hd-oro-velo);  color: var(--hd-acento-texto); }   /* T62 */
 /* T62: "Mis avisos", the feed's own setting, quiet next to its title. */
 .hd-panorama .pan-feed-ajustes {
   margin-left: auto; border: 1px solid var(--hd-borde); border-radius: var(--hd-pildora);
