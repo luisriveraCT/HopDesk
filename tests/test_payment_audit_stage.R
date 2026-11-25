@@ -29,6 +29,7 @@ cat("── Payment-file audit trail (structured log + permission + viewer) ─�
 
 source("R/pagos_generados_persistence.R", local = FALSE)
 source("R/audit_log_viewer_module.R",     local = FALSE)  # .audit_viewer_resolve_perms()
+source("R/bancos_respuesta.R",           local = FALSE)  # T93: the viewer calls .btr_servidor()
 source("R/pagos_audit_viewer_module.R",   local = FALSE)
 source("R/tiers_module.R",                local = FALSE)
 

@@ -34,8 +34,11 @@ cargar("R/pagos_generados_persistence.R", c(".schema_pagos_generados", "mask_cla
                                              "parse_pago_beneficiarios", "parse_pago_detalle"))
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
+  # R/ppl_generator.R and R/bancos_respuesta.R: Archivos de pago calls
+  # .btr_servidor() (T93, BajíoNet's report) since feat/f-t93.
   for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
-              "R/audit_sticky_ui.R", "R/audit_log_viewer_module.R", "R/pagos_audit_viewer_module.R"))
+              "R/audit_sticky_ui.R", "R/audit_log_viewer_module.R", "R/ppl_generator.R", "R/bancos_respuesta.R",
+              "R/pagos_audit_viewer_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
@@ -122,6 +125,40 @@ assign("log_action", function(user, module, action, description = "", target_id 
   anotar(sprintf("log %s %s %s", action, target_id %||% "", m))
 }, envir = globalenv())
 
+# REG_T93 = 1: BajíoNet's report (T93). A file HopDesk generated whose
+# payments carry their Agenda rows, a pending Agenda, and what the upload
+# would write -- the confirmations (.ph_confirmar_ap) and the report's
+# record (modificar_respuestas_banco) -- recorded in #registro, no S3.
+t93 <- identical(Sys.getenv("REG_T93"), "1")
+if (t93) {
+  almacen$pagos <- dplyr::bind_rows(tibble::tibble(
+    id = "p-t93", ts = hace(0, 1), user = "luis", client_id = "fixture", empresa = "NETWORKS CARGO", moneda = "MXN",
+    cuenta_origen = "073543010201", banco_origen = "BANBAJIO", n_pagos = 2L, total = 300,
+    beneficiarios = as.character(jsonlite::toJSON(list(
+      list(alias = "UNO", clabe = "012180000000000001", banco = "012", importe = 100, concepto = "F-1",
+           agenda_item_id = "A1", documento = "D1", fecha_factura = "2026-11-01"),
+      list(alias = "DOS", clabe = "012180000000000002", banco = "012", importe = 200, concepto = "F-2",
+           agenda_item_id = "A2", documento = "D2", fecha_factura = "2026-11-01")), auto_unbox = TRUE)),
+    source = "individual", archivo = "pagos_NCS_24112026_001.txt", tipo = "pago_ppl", detalle = NA_character_),
+    almacen$pagos)
+  assign("safe_load_pagar_hoy", function(...) data.frame(
+    id = c("A1", "A2"), ledger = "AP", Empresa = "NETWORKS CARGO", Moneda = "MXN", Documento = c("D1", "D2"),
+    Parte = c("UNO SA", "DOS SA"), Codigo = "", Importe = c(100, 200), stringsAsFactors = FALSE), envir = globalenv())
+  assign("leer_respuestas_banco", function(client_id) data.frame(llave = character()), envir = globalenv())
+  assign("modificar_respuestas_banco", function(client_id, filas, evento = NULL) {
+    anotar(sprintf("respuestas %s %d %s", evento$accion %||% "", nrow(filas), paste(filas$estado, collapse = ",")))
+    list(nuevas = filas)
+  }, envir = globalenv())
+  assign(".ph_confirmar_ap", function(shared, emp, cur, rows, cuenta_sel, fecha_pago, .parte_ap, .ph_fallido, .link_counter, extra = NULL) {
+    anotar(sprintf("confirmar %s %s %s", paste(rows$id, collapse = ","), paste(extra$clave_rastreo, collapse = ","),
+                   .parte_ap$.parte_de %||% ""))
+    invisible(NULL)
+  }, envir = globalenv())
+  assign("puede_o_avisa", function(shared, permiso, ...) TRUE, envir = globalenv())
+  assign("evento_parte_de", function(accion, modulo = NULL, usuario = NULL, home = NULL)
+    list(.parte_de = accion, modulo = modulo, usuario = usuario, home = home), envir = globalenv())
+}
+
 # HD_ARRANQUE_NULL = 1: the sources start NULL, as before S3 loads at
 # startup (tests/test_hd_table_arranque_null.R; incident 2026-11-03).
 if (identical(Sys.getenv("HD_ARRANQUE_NULL"), "1")) { almacen$logs <- NULL; almacen$pagos <- NULL }
@@ -155,7 +192,11 @@ server <- function(input, output, session) {
     usuario             = function() NULL,
     home_client_id      = function() "fixture",
     effective_client_id = function() "fixture",
-    refresh_signal      = function() NULL
+    refresh_signal      = function() NULL,
+    # T93: what the upload reads besides pagos_generados
+    bancos_confirmados  = reactiveVal(data.frame(confirmacion_id = character(), respuesta_id = character())),
+    proveedores_db      = reactiveVal(NULL),
+    parte_alias_map_db  = reactiveVal(NULL)
   )
   auditLogViewerServer("act", shared, mode = "own_client")
   auditLogViewerServer("glo", shared, mode = "multi_client",

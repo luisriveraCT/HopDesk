@@ -105,9 +105,18 @@ cat("── manual_inv cross-session sync + stale-read hardening ─────
          label = "handle_invoice_action delete/archive branch"),
     list(file = "R/pasivos_module.R", anchor = "manual_df <- ",
          label = ".pasivos_perform_conversion"),
-    list(file = "R/pagar_hoy_module.R", anchor = "if \\(length\\(manual_ids\\)\\) \\{",
+    # T93: anchored on the Quitar block's own comment -- "if (length(
+    # manual_ids)) {" alone now first matches .ph_confirmar_ap() (Confirmar's
+    # body, moved up the file). The check below keeps it the same block.
+    list(file = "R/pagar_hoy_module.R", anchor = "Read fresh from S3, not just this session's in-memory copy",
          label = "Quitar-cascade (remove_ap/ar)")
   )
+  {
+    ph <- readLines("R/pagar_hoy_module.R", warn = FALSE)
+    k <- grep("Read fresh from S3, not just this session's in-memory copy", ph)
+    .chk(length(k) == 1L && grepl("^\\s*if \\(length\\(manual_ids\\)\\) \\{\\s*$", ph[k[1] - 1L]), TRUE,
+         "the Quitar-cascade anchor is the line right after its own if (length(manual_ids)) {")
+  }
   for (s in sites) {
     res <- .block_contains_load_manual(s$file, s$anchor)
     .chk(is.na(res), FALSE, sprintf("found anchor for %s in %s", s$label, s$file))
