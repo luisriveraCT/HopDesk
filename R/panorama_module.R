@@ -45,6 +45,41 @@ panoramaUI <- function(id) {
     shiny::uiOutput(ns("cinta")))
 }
 
+# ── .pan_estable() (T101) ─────────────────────────────────────────────────────
+# A copy of a reactive that moves ONLY when its value really changes.
+#
+# Why: Shiny invalidates everything downstream of a reactive that re-runs,
+# even when it returns exactly the same value. Measured on sign-in (T101 paso
+# 0, hopdesk_coord/tablas/reportes/T101_paso0.md): after the 100 % half of
+# Panorama's redraw waves came from sources re-run with an identical value --
+# the browser's time zone arriving late (client_tz, sent once on
+# shiny:connected, the same zone as the fallback), and df_combined_AR/AP
+# re-run with the same rows. Each wave redrew the cards for nothing.
+#
+# How: a reactiveVal ignores a value identical() to the one it holds, so an
+# observer that copies r() into it is a boundary that only a real change
+# crosses. The cards compute with exactly the value they would have had: only
+# the repeats are gone (tests/test_t101_panorama_estable.R checks the drawn
+# HTML is the same).
+#
+# Rules for whoever adds a source:
+#   - wrap a source that can re-run with the same value (a timer, a late
+#     input, a table rebuilt from the same rows); not one that is cheap to
+#     recompute AND only moves when it changes (it gains nothing);
+#   - the observer runs it eagerly, even with Panorama hidden: do not wrap
+#     anything that reads S3 or is heavy (visibles() reads S3: not wrapped);
+#   - an error in r() (also req()) travels as it did: the copy holds the
+#     condition and the reactive re-raises it in whoever reads it.
+.pan_estable <- function(r) {
+  v <- shiny::reactiveVal(NULL)
+  shiny::observe(v(tryCatch(r(), error = function(e) e)), priority = 100)   # before the cards (priority 0)
+  shiny::reactive({
+    x <- v()
+    if (inherits(x, "error")) stop(x)
+    x
+  })
+}
+
 panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = function(tab) NULL,
                            tz = shiny::reactive("America/Mexico_City")) {
   shiny::moduleServer(id, function(input, output, session) {
@@ -55,8 +90,10 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
                                   MONEDA_BASE_OMISION)
     cid <- shiny::reactive(tryCatch(shared$effective_client_id(), error = function(e) NULL))
     usr <- shiny::reactive(tryCatch(shared$usuario(), error = function(e) NULL))
-    zona <- shiny::reactive(tz() %||% "America/Mexico_City")
-    hoy  <- shiny::reactive({ reloj(); as.Date(Sys.time(), tz = zona()) })
+    # T101: zona and hoy are .pan_estable(): the browser's zone arrives late
+    # with the same value, and the 60 s clock re-runs hoy() with the same day.
+    zona <- .pan_estable(shiny::reactive(tz() %||% "America/Mexico_City"))
+    hoy  <- .pan_estable(shiny::reactive({ reloj(); as.Date(Sys.time(), tz = zona()) }))
     reloj <- shiny::reactiveTimer(PANORAMA_REFRESCO_MS)
     version <- shiny::reactiveVal(0L)
 
@@ -118,8 +155,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     pedidas <- shiny::reactive(panorama_solicitudes_pedidas(visibles()))   # T91a "Que pedí"
 
     # ── Data already in the session ───────────────────────────────────────────
-    pagos  <- shiny::reactive(panorama_pagos_hoy(tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(),
-                                                 base = base_cli()))
+    pagos  <- .pan_estable(shiny::reactive(panorama_pagos_hoy(tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(),
+                                                 base = base_cli())))   # T101
     tier_ef <- shiny::reactive(tryCatch(shared$tier_efectivo(), error = function(e) NULL))
     ver_cxc <- shiny::reactive(nivel_ve_libro(tier_ef(), "AR"))
     ver_cxp <- shiny::reactive(nivel_ve_libro(tier_ef(), "AP"))   # T89
@@ -130,8 +167,9 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       tryCatch(panorama_filas_vigentes(if (is.function(f)) f() else NULL, ledger, shared),
                error = function(e) { message("[panorama] filas ", ledger, ": ", conditionMessage(e)); NULL })
     }
-    filas_ar <- shiny::reactive(if (ver_cxc()) vigentes("AR") else NULL)
-    filas_ap <- shiny::reactive(if (ver_cxp()) vigentes("AP") else NULL)
+    # T101: df_combined_AR/AP re-run with the same rows after the 100 %.
+    filas_ar <- .pan_estable(shiny::reactive(if (ver_cxc()) vigentes("AR") else NULL))
+    filas_ap <- .pan_estable(shiny::reactive(if (ver_cxp()) vigentes("AP") else NULL))
     cobros <- shiny::reactive({
       if (!ver_cxc()) return(NULL)
       panorama_cobros_hoy(filas_ar(), hoy(), base = base_cli())
@@ -150,10 +188,10 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       if (!ver_cxp()) return(NULL)
       panorama_cobros_atrasados(filas_ap(), hoy(), base = base_cli())
     })
-    pasivos <- shiny::reactive(panorama_pasivos_pronto(
-      tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL), hoy(), base = base_cli()))
-    sap <- shiny::reactive({ reloj(); panorama_sap_estado(tryCatch(shared$sap_snapshot_info(), error = function(e) NULL),
-                                                          tz = zona()) })
+    pasivos <- .pan_estable(shiny::reactive(panorama_pasivos_pronto(
+      tryCatch(shared$pasivos_provisions_db(), error = function(e) NULL), hoy(), base = base_cli())))   # T101
+    sap <- .pan_estable(shiny::reactive({ reloj(); panorama_sap_estado(tryCatch(shared$sap_snapshot_info(), error = function(e) NULL),
+                                                          tz = zona()) }))   # T101
 
     # ── Encabezado ────────────────────────────────────────────────────────────
     output$encabezado <- shiny::renderUI({
