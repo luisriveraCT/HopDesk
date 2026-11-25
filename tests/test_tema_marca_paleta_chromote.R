@@ -37,7 +37,11 @@ cat("=== test_tema_marca_paleta_chromote ===\n\n")
 if (file.exists(".Renviron.local")) readRenviron(".Renviron.local")
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 
-usuario <- c(user = Sys.getenv("HOPDESK_TEST_CLIENTE_USER"), pass = Sys.getenv("HOPDESK_TEST_CLIENTE_PASS"))
+# TEMA_MEDIR_COMO=prueba signs in the staff test user instead (TEMA 6-6: the
+# new-request form, which the client test user cannot open in dev).
+usuario <- if (identical(Sys.getenv("TEMA_MEDIR_COMO"), "prueba"))
+  c(user = Sys.getenv("HOPDESK_TEST_USER"), pass = Sys.getenv("HOPDESK_TEST_PASS")) else
+  c(user = Sys.getenv("HOPDESK_TEST_CLIENTE_USER"), pass = Sys.getenv("HOPDESK_TEST_CLIENTE_PASS"))
 if (!all(nzchar(usuario))) { cat("SKIP: faltan las credenciales de prueba.\n"); quit(status = 2L) }
 SALIDA <- Sys.getenv("TEMA_SALIDA", file.path(tempdir(), "tema_marca_paleta"))
 dir.create(SALIDA, showWarnings = FALSE, recursive = TRUE)
@@ -85,7 +89,14 @@ mezclas <- vapply(mx, function(s) tryCatch({
 }, error = function(e) NA_character_), "")
 PALETA <- unique(c(colores_de(css[i0:i1]), colores_de(unlist(tema$.HD_COMUNES[!startsWith(names(tema$.HD_COMUNES), "acceso-")])), colores_de(leer("www/hd_tema_bootstrap.css")),
                    colores_de(leer("www/hd_marca.css")), colores_de(leer("www/panorama.css")),
-                   na.omit(mezclas), "#FFFFFF"))
+                   na.omit(mezclas), "#FFFFFF",
+                   # TEMA 6-6: a tier badge is its colour (data) mixed with
+                   # Marca's encabezado (nivel_fondo()): that mix is Marca's
+                   # paint. The bare tier colours stay NOT excused.
+                   if (exists("nivel_fondo_hex", envir = tema, inherits = FALSE)) {
+                     niv <- new.env(); sys.source("R/tier_registry.R", envir = niv)
+                     toupper(vapply(names(niv$TIER_REGISTRY), function(n) tema$nivel_fondo_hex(niv$nivel_color(n), "marca"), ""))
+                   }))
 DATOS <- unique(c(
   colores_de(lineas("R/bancos_module.R", "^\\s*[A-Z]{3}\\s*=\\s*\"#|#5F5E5A")),
   colores_de(lineas("R/pasivos_table_styles.R", "^\\.PASIVOS_CUR_")),
