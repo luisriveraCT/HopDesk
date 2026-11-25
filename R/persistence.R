@@ -2493,8 +2493,19 @@ save_sap_snapshot <- function(df, ledger, client_id = NULL) {
 
   # ── Step 3: write new snapshot as current ───────────────────────────────────
   obj <- list(data = df, saved_at = Sys.time())
-  tryCatch(.s3_write(obj, cur_key, client_id = client_id), error = function(e)
-    warning("Could not save SAP snapshot: ", e$message, call. = FALSE))
+  # T103 C6: a failed write used to be only a warning, followed by the cache
+  # assign and "snapshot saved" below -- a failure that read as a success.
+  # Now it stops with a classed error (foto_no_guardada), and the cache keeps
+  # nothing that S3 does not hold. fetch_all_companies() turns it into the
+  # app's visible notice, or the script's exit != 0.
+  error_guardar <- tryCatch({ .s3_write(obj, cur_key, client_id = client_id); NULL },
+                            error = function(e) e)
+  if (!is.null(error_guardar)) {
+    message("[SNAP] ", ledger, " snapshot NOT saved: ", conditionMessage(error_guardar))
+    stop(structure(class = c("foto_no_guardada", "error", "condition"),
+                   list(message = sprintf("%s snapshot not saved: %s", ledger, conditionMessage(error_guardar)),
+                        call = NULL, ledger = ledger)))
+  }
   # Restore preload cache after .s3_write() cleared it (see comment above).
   assign(cur_full, obj, envir = .s3_preload_cache)
   message(sprintf("[SNAP] %s snapshot saved (%d rows, saved_at=%s) — prev1/prev2 rotated",

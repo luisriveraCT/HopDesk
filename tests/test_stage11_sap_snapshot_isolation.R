@@ -174,7 +174,9 @@ sap_api_txt <- readLines("R/sap_api.R", warn = FALSE)
 .chk_true({p <- tryCatch({parse("R/sap_api.R"); TRUE}, error = function(e) FALSE); p},
           "R/sap_api.R still parses without syntax errors")
 
-.chk(length(grep("^fetch_all_companies <- function\\(ledger = c\\(\"AR\",\"AP\"\\), cmap, client_id = NULL\\)", sap_api_txt)), 1L,
+# T103: the signature gained the script's safeguards after client_id
+# (exigir_todas, piso, guardar, exigir_guardado) -- client_id stays third.
+.chk(length(grep("^fetch_all_companies <- function\\(ledger = c\\(\"AR\",\"AP\"\\), cmap, client_id = NULL[,)]", sap_api_txt)), 1L,
      "fetch_all_companies() still receives client_id as its own parameter (sanity -- if this signature ever changes, the fix below needs re-checking)")
 
 save_snap_call_hits <- grep("save_sap_snapshot\\(", sap_api_txt, value = TRUE)

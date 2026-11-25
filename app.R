@@ -2253,6 +2253,12 @@ server <- function(input, output, session) {
         }
       )
       if (!is.null(result)) {
+        # T103 C6: the live rows are shown, but if the snapshot could not be
+        # saved the user is told so -- it used to be a warning in the log and
+        # "snapshot saved". Same notice as every other failed save (T74).
+        if (identical(sap_ultimo_resumen(ledger_name)$motivo, "no_guardado"))
+          showNotification(tr("tablas.datos_sap.aviso.no_guardado", ledger = ledger_name),
+                           type = "error", duration = NULL)
         info <- sap_snapshot_info()
         info[[ledger_name]] <- list(ts = Sys.time(), is_live = TRUE)
         sap_snapshot_info(info)

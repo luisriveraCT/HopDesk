@@ -270,6 +270,14 @@
     message("[offline_queue] disabled on this host (HOPDESK_HOST=connect_cloud): write not queued")
     return(FALSE)
   }
+  # T103: a process that is not the app (scripts/actualizar_erp.R) sets
+  # options(hopdesk.sin_cola = TRUE). Its failed write must fail there and
+  # then: a staged copy would wait on this machine for the next local app,
+  # which could replay an old ERP snapshot over a newer one.
+  if (isTRUE(getOption("hopdesk.sin_cola", FALSE))) {
+    message("[offline_queue] disabled in this process (hopdesk.sin_cola): write not queued")
+    return(FALSE)
+  }
   tryCatch({
     if (!.queue_valid_client_id(client_id)) return(FALSE)
     slug <- .queue_slug(client_id)

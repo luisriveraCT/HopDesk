@@ -146,7 +146,7 @@ C_CONOCIDAS <- c(
   "editar_factura_sap_fallido", "editar_item_fallido", "editar_saldo_apertura", "editar_suscripcion",
   "editar_usuario", "eliminar", "eliminar_nota", "eliminar_usuario", "enviar_a_agenda_dia",
   "enviar_a_agenda_dia_incompleto", "enviar_a_agenda_ic_incompleto", "enviar_abonos_a_agenda",
-  "enviar_invitacion", "enviar_ruta_a_agenda", "escritura_no_permitida", "etiqueta_a", "etiqueta_b",
+  "enviar_invitacion", "enviar_ruta_a_agenda", "erp_actualizado", "escritura_no_permitida", "etiqueta_a", "etiqueta_b",
   "etiqueta_c", "exportar_actividad_pdf", "exportar_cashflow_excel", "exportar_cashflow_pdf",
   "exportar_cashflow_word", "exportar_pagos_pdf", "fx_fix", "generar_archivo_pago", "generar_archivo_pago_sin_cuenta", "generar_archivo_pago_zip",
   "guardar_config_grupo", "guardar_preferencias", "guardar_tier_config", "importar_proveedores",

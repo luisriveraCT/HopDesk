@@ -154,7 +154,10 @@ sap_creds_source <- function(initials) {
     httr::POST(
       url    = paste0(url, "/Login"),
       httr::content_type_json(),
-      httr::timeout(2),   # total timeout 2s (kept for when SAP is reachable)
+      # Total timeout 2s in the app (kept for when SAP is reachable). T103:
+      # scripts/actualizar_erp.R raises it -- over a slow VPN 2s reads as "no
+      # connection" when SAP is there.
+      httr::timeout(getOption("hopdesk.sap_timeout_login", 2)),
       httr::config(
         ssl_verifypeer   = ssl_verify,
         connecttimeout   = 0.8   # TCP connect: fail fast when host is unreachable
@@ -253,13 +256,25 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
 
   # Single GET attempt — returns parsed body or stops.
   # Transport failures (timeout, DNS, refused) are re-thrown as sap_connection_error.
+  # T103 C1: without `Prefer: odata.maxpagesize` the Service Layer answers
+  # with its own PageSize (20 by default) whatever $top says -- N/20 round
+  # trips per company and ledger, each with a deeper $skip. The header asks
+  # for pages of `top`; a server that caps lower still works (page_size is
+  # learned from the first answer, below).
+  # T103 C2: the page timeout (8s in the app) and the retries after a
+  # timeout (none in the app) come from options; scripts/actualizar_erp.R
+  # raises both, so one slow late page no longer throws the whole ledger away.
+  timeout_pagina <- getOption("hopdesk.sap_timeout_pagina", 8)
+  reintentos     <- as.integer(getOption("hopdesk.sap_reintentos", 0L))
+  progreso       <- getOption("hopdesk.sap_progreso")   # function(info) or NULL
   .do_get <- function(session, query) {
     r <- tryCatch(
       httr::GET(
         url   = paste0(session$base_url, "/", endpoint),
         query = query,
-        httr::timeout(8),   # 8s total per page
-        httr::add_headers(Cookie = session$cookie, `B1S-CaseInsensitive` = "true"),
+        httr::timeout(timeout_pagina),
+        httr::add_headers(Cookie = session$cookie, `B1S-CaseInsensitive` = "true",
+                          Prefer = paste0("odata.maxpagesize=", top)),
         httr::config(ssl_verifypeer = session$ssl_verify,
                      connecttimeout = 3L)   # TCP connect within 3s
       ),
@@ -290,9 +305,23 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
     if (!is.null(select)) query[["$select"]] <- paste(select, collapse = ",")
 
     t0_page <- proc.time()
+    # T103 C2: a transport failure (timeout) is retried `reintentos` times,
+    # waiting 2, 4, 8... s; with 0 (the app) it propagates at once, as before.
+    .get_con_reintentos <- function() {
+      intento <- 0L
+      repeat {
+        res <- tryCatch(.do_get(s, query), sap_connection_error = function(e) e)
+        if (!inherits(res, "sap_connection_error")) return(res)
+        if (intento >= reintentos) stop(res)
+        intento <- intento + 1L
+        message(sprintf("[SAP] %s  p%d  transport failure, retry %d/%d: %s",
+                        initials, page_num, intento, reintentos, conditionMessage(res)))
+        Sys.sleep(2^intento)
+      }
+    }
     body <- tryCatch(
-      .do_get(s, query),
-      sap_connection_error = function(e) stop(e),   # propagate immediately, no retry
+      .get_con_reintentos(),
+      sap_connection_error = function(e) stop(e),   # propagate, no re-auth retry
       error = function(e) {
         # One re-auth retry — no sleep, dead hosts should already be timing out fast
         sap_login(initials, client_id = client_id)
@@ -312,9 +341,14 @@ test_sap_b1_service_layer_connection <- function(config, secrets) {
     # SAP B1 Service Layer may enforce MaxPageSize (often 20) regardless of $top.
     if (is.null(page_size)) page_size <- n
 
+    seg_pagina <- (proc.time() - t0_page)[["elapsed"]]
     message(sprintf("[SAP] %s  p%d  +%d rows  cumulative=%d  (%.1fs)",
-                    initials, page_num, n, skip,
-                    (proc.time() - t0_page)[["elapsed"]]))
+                    initials, page_num, n, skip, seg_pagina))
+    if (is.function(progreso))
+      tryCatch(progreso(list(empresa = initials, endpoint = endpoint, pagina = page_num,
+                             filas = n, acumulado = skip, segundos = seg_pagina,
+                             segundos_total = (proc.time() - t0_fetch)[["elapsed"]])),
+               error = function(e) NULL)
 
     # Continue if: OData nextLink present, OR batch filled a full page
     has_more <- !is.null(body[["@odata.nextLink"]]) || (n >= page_size && n > 0)
@@ -475,21 +509,94 @@ fetch_ap <- function(initials, client_id = NULL) {
 
 # ── Multi-company fetcher ──────────────────────────────────────────────────────
 # Queries all configured companies and returns a single combined data frame.
-# Runs sequentially to avoid hammering SAP; each company takes ~1-3 seconds.
+# Runs sequentially to avoid hammering SAP.
 # Returns NULL if ALL companies fail (caller shows an error); partial failures
-# are logged and skipped.
+# are logged and skipped -- unless `exigir_todas` (below).
+#
+# T103 -- the same path for the app's Refrescar and for scripts/actualizar_erp.R.
+# The app calls it with the defaults (its behaviour is unchanged but for C5
+# and C6); the script turns the safeguards on:
+#   exigir_todas  C3: one company that FAILED (HTTP or parse error) means
+#                 nothing is saved and an `erp_incompleto` error is raised.
+#                 Today's default keeps the others and saves without it.
+#   piso          C4: before saving, the new rows are checked against the
+#                 current snapshot, company by company (Empresa): one that had
+#                 rows and now has none, or that falls below half of 4+ rows,
+#                 stops the save with an `erp_piso` error. The snapshot sits
+#                 outside .s3_write's net (.S3_SIN_RED: it is replaced whole),
+#                 so this is its own net. The current snapshot is read strictly:
+#                 if S3 cannot answer, nothing is saved either.
+#   guardar       FALSE = read and check only (the script's --prueba).
+#   exigir_guardado  C6: a snapshot that could not be saved raises
+#                 `foto_no_guardada`. Without it (the app) the live rows are
+#                 still returned and the failure is in sap_ultimo_resumen()
+#                 for the caller to show.
+# C5: a company is fetched when its credentials resolve (erp_connections
+# store or SAP_<INI>_* in .Renviron, .sap_creds()) -- it used to need
+# SAP_<INI>_URL in the environment even when the store had everything.
+# sap_ultimo_resumen(ledger): what the last call for that ledger did (one R
+# process runs one call at a time, so the caller reads its own).
 
-fetch_all_companies <- function(ledger = c("AR","AP"), cmap, client_id = NULL) {
+.sap_resumen <- new.env(parent = emptyenv())
+
+sap_ultimo_resumen <- function(ledger) .sap_resumen[[toupper(ledger)]]
+
+# The URL a company would use, "" when it has no credentials at all.
+# Partial credentials (some SAP_<INI>_* missing) are an error, not "".
+.sap_url_configurada <- function(initials, client_id = NULL) {
+  creds <- tryCatch(.sap_creds(initials, client_id = client_id), error = function(e) e)
+  if (inherits(creds, "error")) {
+    faltan <- regmatches(conditionMessage(creds),
+                         regexpr("SAP_[A-Z0-9]+_[A-Z]+(, SAP_[A-Z0-9]+_[A-Z]+)*$", conditionMessage(creds)))
+    if (length(faltan) && length(strsplit(faltan, ", ")[[1]]) == 4L) return("")
+    stop(creds)
+  }
+  creds$url %||% ""
+}
+
+# C4: companies whose rows would shrink too much, as text, or character(0).
+.sap_piso_violaciones <- function(nuevo, anterior) {
+  if (is.null(anterior) || !is.data.frame(anterior) || !nrow(anterior) ||
+      !"Empresa" %in% names(anterior)) return(character(0))
+  antes   <- table(anterior$Empresa)
+  despues <- if (is.data.frame(nuevo) && nrow(nuevo)) table(nuevo$Empresa) else table(character(0))
+  out <- character(0)
+  for (emp in names(antes)) {
+    a <- as.integer(antes[[emp]])
+    d <- if (emp %in% names(despues)) as.integer(despues[[emp]]) else 0L
+    if (a > 0L && d == 0L) out <- c(out, sprintf("%s: %d -> 0", emp, a))
+    else if (a >= 4L && d < a / 2) out <- c(out, sprintf("%s: %d -> %d", emp, a, d))
+  }
+  out
+}
+
+.sap_condicion <- function(clase, mensaje, ...) {
+  structure(class = c(clase, "error", "condition"),
+            list(message = mensaje, call = NULL, ...))
+}
+
+fetch_all_companies <- function(ledger = c("AR","AP"), cmap, client_id = NULL,
+                                exigir_todas = FALSE, piso = FALSE, guardar = TRUE,
+                                exigir_guardado = FALSE) {
   ledger <- match.arg(ledger)
   fetcher <- if (ledger == "AR") fetch_ar else fetch_ap
+  t0_ledger <- proc.time()
 
   # Track per-company outcome for the snapshot-content audit log below.
-  # Each entry is: list(initials, rows, status)  where status ∈ "ok"|"zero"|"failed"|"skipped"|"conn_failed"|"skipped_no_conn"
+  # Each entry is: list(initials, rows, status, seconds)  where status ∈ "ok"|"zero"|"failed"|"skipped"|"conn_failed"|"skipped_no_conn"
   outcomes          <- vector("list", length(cmap))
   names(outcomes)   <- names(cmap)
   results           <- vector("list", length(cmap))
   names(results)    <- names(cmap)
   connection_failed <- FALSE   # circuit breaker: first sap_connection_error opens it
+  resumen <- function(...) {
+    r <- c(list(ledger = ledger, client_id = client_id,
+                empresas = Filter(Negate(is.null), outcomes),
+                segundos = round((proc.time() - t0_ledger)[["elapsed"]], 1)), list(...))
+    assign(ledger, r, envir = .sap_resumen)
+    r
+  }
+  assign(ledger, NULL, envir = .sap_resumen)
 
   for (initials in names(cmap)) {
     # Circuit open — skip remaining companies without attempting any network I/O
@@ -497,50 +604,50 @@ fetch_all_companies <- function(ledger = c("AR","AP"), cmap, client_id = NULL) {
       outcomes[[initials]] <- list(initials = initials, rows = 0L, status = "skipped_no_conn")
       next
     }
+    t0_co <- proc.time()
     tryCatch({
-      url <- Sys.getenv(paste0("SAP_", toupper(initials), "_URL"))
+      url <- .sap_url_configurada(initials, client_id = client_id)
       if (grepl("\\[your-", url, ignore.case = TRUE) || !nzchar(url)) {
-        message("[SAP] Skipping ", initials, " (", ledger, ") — URL not configured")
+        message("[SAP] Skipping ", initials, " (", ledger, ") — no ERP credentials configured")
         outcomes[[initials]] <- list(initials = initials, rows = 0L, status = "skipped")
       } else {
         message("[SAP] Fetching ", initials, " (", ledger, ") from SAP...")
-        t0_co <- proc.time()
         df <- fetcher(initials, client_id = client_id)
         elapsed_co <- round((proc.time() - t0_co)[["elapsed"]], 1)
         if (nrow(df)) {
           message("[SAP] ", initials, " (", ledger, ") — ", nrow(df), " rows in ",
                   elapsed_co, "s, Empresa=", cmap[[initials]])
-          outcomes[[initials]] <- list(initials = initials, rows = nrow(df), status = "ok")
+          outcomes[[initials]] <- list(initials = initials, rows = nrow(df), status = "ok", seconds = elapsed_co)
           results[[initials]]  <- df |> mutate(Empresa = cmap[[initials]])
         } else {
           # SAP responded but returned 0 open invoices — all invoices for this
           # company are either paid or there are genuinely none outstanding.
           message("[SAP] ", initials, " (", ledger, ") — 0 open invoices in ",
                   elapsed_co, "s (all paid or none outstanding) — excluded from snapshot")
-          outcomes[[initials]] <- list(initials = initials, rows = 0L, status = "zero")
+          outcomes[[initials]] <- list(initials = initials, rows = 0L, status = "zero", seconds = elapsed_co)
         }
       }
     }, sap_connection_error = function(e) {
       # Transport-level failure (TCP timeout, DNS, refused) — open the circuit.
       # Remaining companies are skipped; caller receives sap_no_connection.
       message("[SAP] ", initials, " (", ledger, ") connection failed — circuit open: ", e$message)
-      outcomes[[initials]] <<- list(initials = initials, rows = 0L, status = "conn_failed")
+      outcomes[[initials]] <<- list(initials = initials, rows = 0L, status = "conn_failed",
+                                    error = conditionMessage(e))
       connection_failed    <<- TRUE
     }, error = function(e) {
       # HTTP or parsing error for this specific company — log and continue
       message("[SAP] ", initials, " (", ledger, ") FAILED: ", e$message)
       warning("[SAP] ", initials, " (", ledger, ") failed: ", e$message)
-      outcomes[[initials]] <<- list(initials = initials, rows = 0L, status = "failed")
+      outcomes[[initials]] <<- list(initials = initials, rows = 0L, status = "failed",
+                                    error = conditionMessage(e))
     })
   }
 
   # Circuit was opened — throw sap_no_connection so load_ledger() can fall back
   # to the snapshot without retrying any remaining companies or showing generic errors.
   if (connection_failed) {
-    stop(structure(
-      list(message = paste("SAP connection unavailable for", ledger), call = NULL),
-      class = c("sap_no_connection", "error", "condition")
-    ))
+    resumen(guardado = FALSE, motivo = "sin_conexion")
+    stop(.sap_condicion("sap_no_connection", paste("SAP connection unavailable for", ledger)))
   }
 
   combined <- bind_rows(Filter(Negate(is.null), results))
@@ -564,27 +671,60 @@ fetch_all_companies <- function(ledger = c("AR","AP"), cmap, client_id = NULL) {
     nrow(combined)
   ))
 
-  if (!nrow(combined)) return(NULL)
+  # C3: all or nothing.
+  if (isTRUE(exigir_todas) && length(failed_cos)) {
+    fallidas <- vapply(failed_cos, function(o) o$initials, character(1))
+    resumen(guardado = FALSE, motivo = "incompleto", fallidas = unname(fallidas))
+    stop(.sap_condicion("erp_incompleto",
+                        sprintf("%s: %s failed; nothing was saved", ledger, paste(fallidas, collapse = ", ")),
+                        fallidas = unname(fallidas)))
+  }
+
+  if (!nrow(combined)) {
+    resumen(guardado = FALSE, motivo = "vacio")
+    return(NULL)
+  }
+
+  # C4: the floor against the snapshot S3 holds now (strict read).
+  if (isTRUE(piso)) {
+    key <- if (ledger == "AR") S3_KEYS_CRITICAL$sap_snap_ar else S3_KEYS_CRITICAL$sap_snap_ap
+    actual <- .s3_leer_para_escribir(key, client_id)   # stop()s if S3 cannot answer
+    malas  <- .sap_piso_violaciones(combined, actual$data)
+    if (length(malas)) {
+      resumen(guardado = FALSE, motivo = "piso", piso = malas)
+      stop(.sap_condicion("erp_piso",
+                          sprintf("%s: too few rows against the current snapshot (%s); nothing was saved",
+                                  ledger, paste(malas, collapse = "; ")),
+                          violaciones = malas))
+    }
+  }
+
+  if (!isTRUE(guardar)) {
+    resumen(guardado = FALSE, motivo = "prueba", filas = nrow(combined))
+    return(combined)
+  }
 
   # Save snapshot for outage resilience — rotates prev1/prev2 before writing.
   # The new snapshot contains ONLY the invoices returned by THIS fetch —
   # no data from any prior snapshot is carried forward.
   #
   # BUG (found 2026-09-01): this hardcoded client_id = NULL instead of using
-  # this function's OWN client_id parameter (received correctly from every
-  # caller, e.g. app.R's load_ledger() already passes
-  # client_id = effective_client_id()) -- so every successful live fetch
-  # silently persisted the fresh snapshot under the shared deployment's bare
-  # env-level prefix ("hd-admin/...") instead of the actual client's own
-  # ("networks/..."). The read side (load_sap_snapshot(), fixed 2026-08-27
-  # to properly use client_id) was therefore reading a CORRECTLY-scoped key
-  # that nothing was writing to -- so the fallback-on-SAP-outage snapshot
-  # silently never advanced past its original one-time seed (2026-06-25),
-  # and any session that hit the live-SAP-unavailable fallback path (VPN not
-  # yet connected, SAP transiently unreachable) got served 2+ month old
-  # data with only an easy-to-miss toast, not a code bug someone would
-  # normally think to check the snapshot's own actual freshness against.
-  save_sap_snapshot(combined, ledger, client_id = client_id)
+  # this function's OWN client_id parameter -- every live fetch persisted the
+  # snapshot under the shared deployment's prefix ("hd-admin/...") instead of
+  # the client's own. Fixed: client_id is threaded through.
+  #
+  # C6: a save that failed is never "saved": the snapshot writer stops with
+  # `foto_no_guardada`; here the live rows are still returned (the app shows
+  # them and warns) unless exigir_guardado (the script: exit != 0).
+  guardado <- tryCatch({ save_sap_snapshot(combined, ledger, client_id = client_id); TRUE },
+                       foto_no_guardada = function(e) e)
+  if (!isTRUE(guardado)) {
+    resumen(guardado = FALSE, motivo = "no_guardado", error = conditionMessage(guardado),
+            filas = nrow(combined))
+    if (isTRUE(exigir_guardado)) stop(guardado)
+    return(combined)
+  }
+  resumen(guardado = TRUE, filas = nrow(combined))
   combined
 }
 
