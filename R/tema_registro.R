@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 23L
+HD_TEMAS_CSS_VERSION <- 24L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -711,6 +711,79 @@ tema_color <- function(rol, tema = HD_TEMA_OMISION) {
   v
 }
 
+# ── .hd-marca in every theme (TEMA 6-10) ─────────────────────────────────────
+# Panorama, Requisiciones' folders panel and form and the ☰ menu panel carry
+# the class .hd-marca and paint only with the brand variables (--hd-marino,
+# --hd-oro...). www/hd_marca.css gives them Marca's values only under
+# html[data-hd-tema="marca"]. In every other theme this map points each
+# variable at a role of the active theme (Luis, 2026-11-24: Panorama follows
+# the chosen theme like any screen). A string is a role;
+# c(rol, pct, sobre) is color-mix(in srgb, rol pct%, sobre), where sobre is a
+# role or "transparent". The brand variables that are also roles of every
+# theme (borde, radio, radio-md, radio-sm, sombra, foco, pildora) are not
+# redefined: the theme's own value applies.
+# oro and sube are lightened towards encabezado-texto: they are text on the
+# dark band (marino), and the plain acento / oscuro-peligro of Clásico give
+# 3.98 and 3.43 there (4.76 and 4.78 this way). tests/test_temas_guardian.R
+# checks Panorama's text pairs through this map in every theme.
+.HD_MARCA_TEMA <- "marca"
+.HD_MARCA_MAPA <- list(
+  marino        = "encabezado",
+  tinta         = "texto",
+  pizarra       = "texto",
+  gris          = "texto-2",
+  niebla        = "borde-fuerte",
+  linea         = "primario-suave",
+  papel         = "fondo",
+  crema         = "superficie-2",
+  blanco        = "superficie",
+  oro           = c("acento", "85", "encabezado-texto"),
+  `oro-osc`     = "acento-texto",
+  `oro-claro`   = c("acento", "45", "superficie"),
+  `oro-velo`    = c("acento", "14", "transparent"),
+  `ambar-bg`    = "aviso-suave",
+  `ambar-bd`    = c("aviso", "35", "superficie"),
+  `ambar-tag`   = c("aviso", "22", "superficie"),
+  `ambar-fg`    = "aviso-texto",
+  `salvia-bg`   = "info-suave",
+  `salvia-bd`   = c("info", "35", "superficie"),
+  `salvia-tag`  = c("info", "22", "superficie"),
+  `salvia-fg`   = "info",
+  `lila-bg`     = "modo-pago-suave",
+  `lila-bd`     = c("modo-pago", "35", "superficie"),
+  `lila-tag`    = c("modo-pago", "22", "superficie"),
+  `lila-fg`     = "modo-pago",
+  `olivo-bg`    = "exito-suave",
+  `olivo-bd`    = c("exito", "35", "superficie"),
+  `olivo-tag`   = c("exito", "22", "superficie"),
+  `olivo-fg`    = "exito-texto",
+  sube          = c("oscuro-peligro", "70", "encabezado-texto"),
+  `sube-tinta`  = "oscuro-fondo-2",
+  baja          = "oscuro-texto-2",
+  serif         = "fuente-titulos",
+  sans          = "fuente-texto"
+)
+
+# The CSS value of one map entry.
+.marca_mapa_css <- function(m) {
+  if (length(m) == 1L) return(paste0("var(--hd-", m, ")"))
+  sobre <- if (identical(m[3], "transparent")) "transparent" else paste0("var(--hd-", m[3], ")")
+  paste0("color-mix(in srgb, var(--hd-", m[1], ") ", m[2], "%, ", sobre, ")")
+}
+
+# The colour a brand variable paints inside .hd-marca under `tema` (hex, or
+# rgba for a mix over transparent): Marca's value under Marca, the map's role
+# otherwise. For the guardian's contrast pairs and any R code that needs it.
+tema_marca_color <- function(var, tema = HD_TEMA_OMISION) {
+  if (!tema_valido(tema)) tema <- HD_TEMA_OMISION
+  if (identical(tolower(trimws(tema)), .HD_MARCA_TEMA)) return(tema_color(var, .HD_MARCA_TEMA))
+  m <- .HD_MARCA_MAPA[[var]]
+  if (is.null(m)) return(tema_color(var, tema))
+  if (length(m) == 1L) return(tema_color(m, tema))
+  if (identical(m[3], "transparent")) return(tema_mezcla(m[1], as.integer(m[2]), tema))
+  .tema_mezclar_hex(tema_color(m[1], tema), as.integer(m[2]), tema_color(m[3], tema))
+}
+
 # ── CSS ──────────────────────────────────────────────────────────────────────
 
 .tema_bloque <- function(selector, valores, titulo = NULL) {
@@ -741,7 +814,11 @@ tema_css <- function() {
   for (t in otros)
     lineas <- c(lineas, "", .tema_bloque(paste0("[data-hd-tema=\"", t, "\"]"),
                                          HD_TEMAS[[t]]$tokens, paste0("Roles: ", t)))
-  c(lineas, "")
+  c(lineas, "",
+    .tema_bloque(paste0(":root:not([data-hd-tema=\"", .HD_MARCA_TEMA, "\"]) .hd-marca"),
+                 lapply(.HD_MARCA_MAPA, .marca_mapa_css),
+                 paste0(".hd-marca outside ", .HD_MARCA_TEMA, ": the brand variables point at the theme's roles (TEMA 6-10)")),
+    "")
 }
 
 # The text of www/hd_clasico_legado.css. Every theme but Clásico gets the

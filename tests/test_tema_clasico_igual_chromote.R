@@ -96,6 +96,20 @@ PESTANAS <- c(PAN = "Panorama", CAL = "Calendario", VEN = "Vencidos", PH = "Agen
               IC = "Intercompany", PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo",
               REQ = "Requisiciones")
 
+# CAMBIO ESPERADO (TEMA 6-10, Luis 2026-11-24: Panorama follows the chosen
+# theme). These views hold .hd-marca elements, which under Clásico now take
+# Clásico's roles instead of Marca's fixed values. Inside .hd-marca they may
+# differ from master (debe = TRUE: they must, or the change is not there);
+# outside .hd-marca they stay the same. Every other view: 0 differences.
+.CAMBIO_ESPERADO <- list(
+  PAN       = list(debe = TRUE,  motivo = "Panorama (.hd-marca.hd-panorama) in Clásico's roles"),
+  REQ       = list(debe = TRUE,  motivo = "Requisiciones' folders panel (.hdreq-lado.hd-marca)"),
+  REQ_NUEVA = list(debe = TRUE,  motivo = "the new-request form (.hdreq-form.hd-marca)"),
+  MENU      = list(debe = TRUE,  motivo = "the ☰ menu panel (R/ui_components.R adds .hd-marca)"),
+  REQ_EVID  = list(debe = FALSE, motivo = "a request's detail, only if it sits inside .hd-marca"),
+  REQ_COM   = list(debe = FALSE, motivo = "a request's detail, only if it sits inside .hd-marca")
+)
+
 # Every visible element: a stable key (its path of tag#id.class:nth-of-type)
 # and the style properties a theme can touch.
 ESTILOS_JS <- "(function(){
@@ -113,15 +127,18 @@ ESTILOS_JS <- "(function(){
     return s + ':' + i;
   }
   function clave(e){ var p = [], n = e; for (var k = 0; n && n.nodeType === 1 && k < 6; k++, n = n.parentElement) p.unshift(paso(n)); return p.join('>'); }
-  var out = {};
+  var out = {}, marca = [];
   document.querySelectorAll('body *').forEach(function(e){
     if (!(e.offsetParent !== null || getComputedStyle(e).position === 'fixed')) return;
     var r = e.getBoundingClientRect(); if (r.width === 0 || r.height === 0) return;
     if (r.bottom < 0 || r.top > window.innerHeight) return;
     var s = getComputedStyle(e), v = {};
     props.forEach(function(p){ v[p] = s.getPropertyValue(p); });
-    out[clave(e)] = v;
+    var k = clave(e);
+    out[k] = v;
+    if (e.closest('.hd-marca')) marca.push(k);
   });
+  out['__marca__'] = marca;
   var hs = getComputedStyle(document.documentElement);
   out['__html__'] = { tema: document.documentElement.getAttribute('data-hd-tema') || '',
                       primario: hs.getPropertyValue('--hd-primario').trim(), body_bg: getComputedStyle(document.body).backgroundColor };
@@ -295,6 +312,26 @@ recorrer <- function(raiz, etiqueta, quien) {
     captura(sprintf("%s_%s_%s", etiqueta, quien, v))
     if (v %in% c("CAL", "PH", "PSV", "VEN")) captura_marca(etiqueta, sprintf("%s_%s_%s", etiqueta, quien, v))
   }
+  # TEMA 6-10: the ☰ menu panel (R/ui_components.R, it carries .hd-marca)
+  # measured open. A panel that does not open is NOT COVERED, never "the same".
+  menu(TRUE); Sys.sleep(1.5)
+  panel_js <- "(function(){ var p = document.querySelector('nav.navbar .navbar-collapse.hd-marca');
+    return !!p && p.getClientRects().length > 0 && getComputedStyle(p).display !== 'none'; })()"
+  if (!isTRUE(tryCatch(ev(panel_js), error = function(x) FALSE))) {
+    tryCatch(ev("(function(){ var b = document.getElementById('hd-menu-btn'); if (b && b.offsetParent !== null) b.click(); return true; })()"),
+             error = function(x) FALSE)
+    Sys.sleep(1.5)
+  }
+  if (isTRUE(tryCatch(ev(panel_js), error = function(x) FALSE))) {
+    ev("document.activeElement && document.activeElement.blur && document.activeElement.blur(); true")
+    Sys.sleep(1)
+    res[["MENU"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+    captura(sprintf("%s_%s_MENU", etiqueta, quien))
+  } else no_cubierta(etiqueta, quien, "Menú ☰ abierto", "the .hd-marca menu panel did not open")
+  menu(FALSE)
+  tryCatch(ev("(function(){ var n = document.querySelector('nav.navbar'); var b = document.getElementById('hd-menu-btn');
+    if (n && b && n.classList.contains('hd-menu-abierto')) b.click(); return true; })()"), error = function(x) FALSE)
+  Sys.sleep(1)
   # Signed in but no tab measured would make "the same" out of nothing.
   if (!ok(sprintf("[%s · %s] at least one tab measured (%s)", etiqueta, quien,
                   paste(setdiff(names(res), "ENTRAR"), collapse = ",")), length(setdiff(names(res), "ENTRAR")) > 0L)) {
@@ -604,24 +641,28 @@ for (quien in quienes) {
   for (v in intersect(names(base), names(rama))) {
     eb <- base[[v]]; er <- rama[[v]]
     eb[["__html__"]] <- NULL; er[["__html__"]] <- NULL
+    en_marca <- unique(c(unlist(eb[["__marca__"]]), unlist(er[["__marca__"]])))
+    eb[["__marca__"]] <- NULL; er[["__marca__"]] <- NULL
     # Shiny puts .shiny-busy on <html> while it works: one side measured busy
     # and the other not would share no key at all (the overlay was skipped so).
     sin_busy <- function(x) { names(x) <- gsub("\\.shiny-busy", "", names(x)); x }
     eb <- sin_busy(eb); er <- sin_busy(er)
     comunes <- intersect(names(eb), names(er))
-    difs <- character()
+    difs <- character(); difs_k <- character()
     nombre <- switch(v, ENTRAR = "sign-in page", CARGA = "Pantalla de carga", FLUJO = "Flujo (vista previa)",
                      ACT_INVALIDA = "Activación (enlace inválido)", OLVIDE = "Olvidé mi contraseña",
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
-                     REQ_NUEVA = "Nueva requisición", REQ_EVID = "Requisición abierta · Evidencia",
+                     REQ_NUEVA = "Nueva requisición", MENU = "Menú ☰ abierto", REQ_EVID = "Requisición abierta · Evidencia",
                      REQ_COM = "Requisición abierta · Comentarios", POL = "Ajustes · Políticas (simulador)", AJ_IC = "Ajustes · Intercompany", EMP = "Grupo · Empresas",
                      TIERS = "Grupo · Usuarios", TIERS_ED = "Usuarios · editor de permisos", TIERS_INV = "Usuarios · Invitaciones",
                      TIERS_NOT = "Usuarios · Notificaciones", TIERS_CFG = "Usuarios · Niveles", TIERS_ACT = "Usuarios · Actividad (barra fija)",
                      PESTANAS[[v]])
     for (k in comunes) for (p in names(eb[[k]])) {
       r <- tema_comparar_valor(p, eb[[k]][[p]], er[[k]][[p]], de_max = DE_MAX, alfa_max = 0.01)
-      if (r$estado == "falla")
+      if (r$estado == "falla") {
         difs <- c(difs, sprintf("%s { %s: %s -> %s }", k, p, eb[[k]][[p]], er[[k]][[p]]))
+        difs_k <- c(difs_k, k)
+      }
       else if (r$estado == "aviso")
         AVISOS[[length(AVISOS) + 1L]] <- data.frame(pestana = nombre, usuario = quien, elemento = k, propiedad = p,
                                                      master = eb[[k]][[p]], rama = er[[k]][[p]], dE = round(r$de, 2))
@@ -637,6 +678,17 @@ for (quien in quienes) {
     # The loading overlay is measured over the sign-in page, form included.
     if (!v %in% c("ENTRAR", "CARGA"))
       ok(sprintf("[%s] %s: no sign-in form in master or branch", quien, nombre), !login(eb) && !login(er))
+    # Expected change (TEMA 6-10): inside .hd-marca the view may change, and
+    # where the list says so it must; outside .hd-marca it stays the same.
+    if (v %in% names(.CAMBIO_ESPERADO)) {
+      dentro <- difs_k %in% en_marca
+      if (.CAMBIO_ESPERADO[[v]]$debe)
+        ok(sprintf("[%s] %s: CAMBIO ESPERADO (%s): %d differences inside .hd-marca (must be > 0)",
+                   quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(dentro)), sum(dentro) > 0L)
+      else cat(sprintf("      | [%s] %s: cambio permitido dentro de .hd-marca (%s): %d differences\n",
+                       quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(dentro)))
+      difs <- difs[!dentro]
+    }
     if (!ok(sprintf("[%s] %s: %d elements compared, same computed style within ΔE %g (only in master %d, only in branch %d)",
                     quien, nombre, length(comunes), DE_MAX, length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
             length(difs) == 0L && length(comunes) > min_elementos))

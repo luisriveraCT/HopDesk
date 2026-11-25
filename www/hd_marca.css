@@ -5,6 +5,12 @@
    here, under the root class .hd-marca: a screen takes the brand by adding
    that class, and nothing outside it changes.
    Screen styles (www/panorama.css, ...) use only these variables.
+   TEMA 6-10: these values apply only under the Marca theme
+   (html[data-hd-tema="marca"]). In every other theme www/hd_temas.css
+   (generated from .HD_MARCA_MAPA in R/tema_registro.R) points the same
+   variables at the active theme's roles, so .hd-marca screens follow the
+   theme like the rest of the app. A fixed value outside the Marca block
+   below fails tests/test_temas_guardian.R.
    ========================================================================== */
 
 @font-face {
@@ -28,7 +34,7 @@
                  U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-.hd-marca {
+html[data-hd-tema="marca"] .hd-marca {
   /* Ink and surfaces */
   --hd-marino:     #13213A;   /* navy: headings, the dark bar, selected chips */
   --hd-tinta:      #1A2233;   /* body text */
@@ -69,7 +75,10 @@
   --hd-pildora:   999px;
   --hd-sombra:    0 1px 2px rgba(19, 33, 58, 0.06), 0 8px 24px rgba(19, 33, 58, 0.06);
   --hd-foco:      0 0 0 3px rgba(201, 174, 110, 0.55);
+}
 
+/* Every theme: the variables above (Marca) or the generated map (the rest). */
+.hd-marca {
   font-family: var(--hd-sans);
   color: var(--hd-tinta);
 }

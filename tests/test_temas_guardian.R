@@ -219,6 +219,89 @@ for (t in names(tema$HD_TEMAS)) {
   }
 }
 
+# ── 6b. .hd-marca follows the theme (TEMA 6-10) ─────────────────────────────
+# www/hd_marca.css: brand values only under html[data-hd-tema="marca"]; every
+# other theme gets .HD_MARCA_MAPA (generated into hd_temas.css, checked in 5).
+.SEL_MARCA <- "html[data-hd-tema=\"marca\"] .hd-marca"
+bloques_css <- function(texto) {
+  texto <- gsub("(?s)/\\*.*?\\*/", "", texto, perl = TRUE)
+  texto <- gsub("@font-face\\s*\\{[^{}]*\\}", "", texto, perl = TRUE)
+  m <- regmatches(texto, gregexpr("([^{}]+)\\{([^{}]*)\\}", texto, perl = TRUE))[[1]]
+  lapply(m, function(b) list(sel = trimws(sub("\\{.*$", "", b)), cuerpo = sub("^[^{]*\\{", "", b)))
+}
+# A block that defines a --hd-* with a fixed value (not var() / color-mix of var()).
+fijos_fuera_de_marca <- function(texto) {
+  malos <- character(0)
+  for (b in bloques_css(texto)) {
+    defs <- regmatches(b$cuerpo, gregexpr("--hd-[a-z0-9-]+\\s*:\\s*[^;]+", b$cuerpo, perl = TRUE))[[1]]
+    if (!length(defs) || !grepl("hd-marca", b$sel, fixed = TRUE) || identical(b$sel, .SEL_MARCA)) next
+    v <- trimws(sub("^--hd-[a-z0-9-]+\\s*:", "", defs))
+    fijo <- !grepl("^(var\\(--hd-[a-z0-9-]+\\)|color-mix\\(in srgb, var\\(--hd-[a-z0-9-]+\\) [0-9]+%, (var\\(--hd-[a-z0-9-]+\\)|transparent)\\))$", v)
+    if (any(fijo)) malos <- c(malos, paste0(b$sel, " { ", paste(defs[fijo], collapse = "; "), " }"))
+  }
+  malos
+}
+hojas <- setdiff(list.files("www", pattern = "\\.css$", full.names = TRUE),
+                 c("www/hd_clasico_legado.css", "www/hd_tema_bootstrap.css"))
+fuera <- unlist(lapply(hojas, function(f) fijos_fuera_de_marca(paste(leer(f), collapse = "\n"))))
+ok(sprintf("no .hd-marca rule in www/*.css (%d sheets) gives a --hd-* a fixed value outside the Marca block", length(hojas)),
+   length(fuera) == 0L || { message("  fixed: ", paste(fuera, collapse = " | ")); FALSE })
+ok("the check catches a fixed value (plain .hd-marca, another theme) and lets the Marca block and the map through",
+   length(fijos_fuera_de_marca(".hd-marca { --hd-oro: #C9AE6E; }")) == 1L &&
+   length(fijos_fuera_de_marca("[data-hd-tema=\"clasico\"] .x.hd-marca { --hd-marino: #1E3A5F; }")) == 1L &&
+   length(fijos_fuera_de_marca(paste0(.SEL_MARCA, " { --hd-oro: #C9AE6E; }"))) == 0L &&
+   length(fijos_fuera_de_marca(".a .hd-marca { --hd-oro: color-mix(in srgb, var(--hd-acento) 85%, var(--hd-superficie)); --hd-x: var(--hd-y); }")) == 0L &&
+   length(fijos_fuera_de_marca(".hd-marca { font-family: var(--hd-sans); }")) == 0L)
+marca_bloques <- Filter(function(b) grepl("--hd-[a-z0-9-]+\\s*:", b$cuerpo, perl = TRUE), bloques_css(marca_css))
+ok("hd_marca.css: one block of variables, under the Marca theme",
+   length(marca_bloques) == 1L && identical(marca_bloques[[1]]$sel, .SEL_MARCA))
+# Every brand variable is either mapped or a role of every theme (kept as is).
+tema_roles_todos <- Reduce(intersect, lapply(names(tema$HD_TEMAS), function(t)
+  c(names(tema$.HD_COMUNES), names(tema$HD_TEMAS[[t]]$tokens))))
+sin_mapa <- setdiff(nombres, names(tema$.HD_MARCA_MAPA))
+ok(sprintf("the map covers hd_marca.css: %d mapped, the other %d (%s) are roles of every theme",
+           length(intersect(nombres, names(tema$.HD_MARCA_MAPA))), length(sin_mapa), paste(sin_mapa, collapse = ", ")),
+   all(names(tema$.HD_MARCA_MAPA) %in% nombres) && all(sin_mapa %in% tema_roles_todos))
+otros_temas <- setdiff(names(tema$HD_TEMAS), tema$.HD_MARCA_TEMA)
+ok("every role the map names exists in every theme",
+   all(vapply(otros_temas, function(t) all(vapply(names(tema$.HD_MARCA_MAPA), function(v)
+     !inherits(try(tema$tema_marca_color(v, t), silent = TRUE), "try-error"), logical(1))), logical(1))))
+ok("tema_marca_color(): Marca's value under Marca, the role (or its mix) elsewhere",
+   identical(tema$tema_marca_color("marino", "marca"), "#13213A") &&
+   identical(tema$tema_marca_color("marino", "clasico"), tema$tema_color("encabezado", "clasico")) &&
+   identical(tema$tema_marca_color("oro-claro", "clasico"),
+             tema$.tema_mezclar_hex(tema$tema_color("acento", "clasico"), 45L, tema$tema_color("superficie", "clasico"))))
+# The text pairs of www/panorama.css (and Requisiciones / the ☰ panel, same
+# variables), each through the map, in every theme: text on the dark band,
+# chips, cards, the strong badge and the four kinds of aviso.
+.PARES_MARCA <- list(
+  c("blanco", "marino"), c("marino", "blanco"), c("marino", "papel"), c("tinta", "papel"),
+  c("gris", "blanco"), c("gris", "papel"), c("pizarra", "crema"),
+  c("oro-osc", "papel"), c("oro-osc", "blanco"),
+  c("oro-claro", "marino"), c("oro", "marino"), c("marino", "oro"),
+  c("sube-tinta", "sube"), c("sube", "marino"), c("baja", "marino"),
+  c("ambar-fg", "ambar-bg"), c("salvia-fg", "salvia-bg"), c("olivo-fg", "olivo-bg"), c("lila-fg", "lila-bg")
+)
+# Marca's pairs below AA today: Marca does not change in the TEMA 6-10 (its
+# gold "new" mark and the date line, #B0924F, 2.75-2.97). Can only shrink.
+.MARCA_BAJO_AA <- c("oro-osc/papel", "oro-osc/blanco")
+ok("every listed Marca exception is a pair this test checks",
+   all(.MARCA_BAJO_AA %in% vapply(.PARES_MARCA, paste, character(1), collapse = "/")))
+for (t in names(tema$HD_TEMAS)) for (p in .PARES_MARCA) {
+  id <- paste(p, collapse = "/")
+  r <- contraste(tema$tema_marca_color(p[1], t), tema$tema_marca_color(p[2], t))
+  if (t == tema$.HD_MARCA_TEMA && id %in% .MARCA_BAJO_AA)
+    ok(sprintf("[%s · .hd-marca] %s = %.2f (below AA today, listed)", t, id, r), r < 4.5)
+  else
+    ok(sprintf("[%s · .hd-marca] %s = %.2f >= 4.5", t, id, r), r >= 4.5)
+}
+# The Diseñador's condition: where marino is the theme's encabezado, the band
+# reads both ways (encabezado-texto on it, it on the page).
+for (t in otros_temas) for (p in list(c("encabezado", "superficie"), c("encabezado", "fondo"), c("encabezado-texto", "encabezado"))) {
+  r <- contraste(tema$tema_color(p[1], t), tema$tema_color(p[2], t))
+  ok(sprintf("[%s] %s/%s = %.2f >= 4.5 (marino -> encabezado)", t, p[1], p[2], r), r >= 4.5)
+}
+
 # ── 7. Rule 29 and the Bootstrap theme ──────────────────────────────────────
 exprs <- parse("R/tema_registro.R", keep.source = FALSE)
 literal <- function(e) {
@@ -523,11 +606,15 @@ ok(sprintf("hd_table_deps() links the token sheets with the same URLs as tema_he
    length(de_tema) == 2L && identical(de_tema, de_motor))
 raiz_hd <- function(f) {
   x <- paste(leer(f), collapse = "\n")
-  x <- gsub("/\\*.*?\\*/", "", x, perl = TRUE)
+  x <- gsub("(?s)/\\*.*?\\*/", "", x, perl = TRUE)
   b <- regmatches(x, gregexpr("([^{}]+)\\{([^{}]*)\\}", x, perl = TRUE))[[1]]
   any(vapply(b, function(r) {
-    sel <- sub("\\{.*", "", r)
-    grepl(":root|data-hd-tema", sel) && grepl("--hd-[a-zA-Z0-9-]+\\s*:", sub("^[^{]*\\{", "", r), perl = TRUE)
+    # The rule must land on the root element itself: a selector part that
+    # ends in :root / [data-hd-tema...] (TEMA 6-10: html[data-hd-tema="marca"]
+    # .hd-marca targets the .hd-marca elements, not the root).
+    partes <- trimws(strsplit(sub("\\{.*", "", r), ",", fixed = TRUE)[[1]])
+    any(grepl("(:root|\\[data-hd-tema[^]]*\\])$", partes, perl = TRUE)) &&
+      grepl("--hd-[a-zA-Z0-9-]+\\s*:", sub("^[^{]*\\{", "", r), perl = TRUE)
   }, logical(1)))
 }
 generadas <- c("www/hd_temas.css", "www/hd_clasico_legado.css", "www/hd_tema_bootstrap.css")

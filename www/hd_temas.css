@@ -232,3 +232,41 @@
   --hd-foco-color: #8A6D2C;
 }
 
+/* .hd-marca outside marca: the brand variables point at the theme's roles (TEMA 6-10) */
+:root:not([data-hd-tema="marca"]) .hd-marca {
+  --hd-marino: var(--hd-encabezado);
+  --hd-tinta: var(--hd-texto);
+  --hd-pizarra: var(--hd-texto);
+  --hd-gris: var(--hd-texto-2);
+  --hd-niebla: var(--hd-borde-fuerte);
+  --hd-linea: var(--hd-primario-suave);
+  --hd-papel: var(--hd-fondo);
+  --hd-crema: var(--hd-superficie-2);
+  --hd-blanco: var(--hd-superficie);
+  --hd-oro: color-mix(in srgb, var(--hd-acento) 85%, var(--hd-encabezado-texto));
+  --hd-oro-osc: var(--hd-acento-texto);
+  --hd-oro-claro: color-mix(in srgb, var(--hd-acento) 45%, var(--hd-superficie));
+  --hd-oro-velo: color-mix(in srgb, var(--hd-acento) 14%, transparent);
+  --hd-ambar-bg: var(--hd-aviso-suave);
+  --hd-ambar-bd: color-mix(in srgb, var(--hd-aviso) 35%, var(--hd-superficie));
+  --hd-ambar-tag: color-mix(in srgb, var(--hd-aviso) 22%, var(--hd-superficie));
+  --hd-ambar-fg: var(--hd-aviso-texto);
+  --hd-salvia-bg: var(--hd-info-suave);
+  --hd-salvia-bd: color-mix(in srgb, var(--hd-info) 35%, var(--hd-superficie));
+  --hd-salvia-tag: color-mix(in srgb, var(--hd-info) 22%, var(--hd-superficie));
+  --hd-salvia-fg: var(--hd-info);
+  --hd-lila-bg: var(--hd-modo-pago-suave);
+  --hd-lila-bd: color-mix(in srgb, var(--hd-modo-pago) 35%, var(--hd-superficie));
+  --hd-lila-tag: color-mix(in srgb, var(--hd-modo-pago) 22%, var(--hd-superficie));
+  --hd-lila-fg: var(--hd-modo-pago);
+  --hd-olivo-bg: var(--hd-exito-suave);
+  --hd-olivo-bd: color-mix(in srgb, var(--hd-exito) 35%, var(--hd-superficie));
+  --hd-olivo-tag: color-mix(in srgb, var(--hd-exito) 22%, var(--hd-superficie));
+  --hd-olivo-fg: var(--hd-exito-texto);
+  --hd-sube: color-mix(in srgb, var(--hd-oscuro-peligro) 70%, var(--hd-encabezado-texto));
+  --hd-sube-tinta: var(--hd-oscuro-fondo-2);
+  --hd-baja: var(--hd-oscuro-texto-2);
+  --hd-serif: var(--hd-fuente-titulos);
+  --hd-sans: var(--hd-fuente-texto);
+}
+
