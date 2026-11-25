@@ -266,6 +266,22 @@ pagarHoyUI <- function(id) {
 # the bank account id or NA; .parte_ap: the T72-F event; .ph_fallido and
 # .link_counter: the calling server's own (its failure notice and the
 # tables' refresh counter).
+# T104: the origin account of a confirmation, checked on the server: it must
+# be an account of the client's catalog in the payment's currency. Returns
+# list(foto) -- its snapshot for the log (cuenta_foto()) -- or
+# list(error = "sin_cuenta" | "lectura").
+.ph_cuenta_confirmacion <- function(shared, cuenta_sel, cur) {
+  cuenta_sel <- as.character(cuenta_sel %||% NA_character_)[1]
+  if (is.na(cuenta_sel) || !nzchar(trimws(cuenta_sel))) return(list(error = "sin_cuenta"))
+  cid  <- shared$effective_client_id()
+  ctas <- tryCatch(if (is.function(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas(client_id = cid),
+                   error = function(e) NULL)
+  bnk  <- load_ctas_bancos(client_id = cid)   # only the bank's name; it never stops (empty if unreadable)
+  if (!is.data.frame(ctas)) return(list(error = "lectura"))
+  foto <- cuenta_foto(cuenta_sel, ctas, bnk, moneda = cur)
+  if (is.null(foto)) list(error = "sin_cuenta") else list(foto = foto)
+}
+
 .ph_confirmar_ap <- function(shared, emp, cur, rows, cuenta_sel, fecha_pago, .parte_ap,
                              .ph_fallido, .link_counter, extra = NULL) {
   # T72-F: every write of this action leaves a staff-only "/parte" trace once
@@ -275,6 +291,14 @@ pagarHoyUI <- function(id) {
   if (is.null(.parte_ap))
     .parte_ap <- evento_parte_de("confirmar_pago", "pagar_hoy", shared$current_user(),
                                  tryCatch(shared$home_client_id(), error = function(e) NULL))
+  # T104: no confirmation without its origin account -- from the Agenda or
+  # from the bank's report, checked here before anything is read or written.
+  cuenta_ap <- .ph_cuenta_confirmacion(shared, cuenta_sel, cur)
+  if (!is.null(cuenta_ap$error)) {
+    showNotification(tr(if (identical(cuenta_ap$error, "lectura")) "comun.reintentar"
+                        else "tablas.agenda.confirmar.sin_cuenta_servidor"), type = "error", duration = 10)
+    return()
+  }
   abono_error <- NULL   # T72-F (a): the abono's save error, if it failed
   # Split: abono rows go to abonos_db; invoice rows go through normal path
   abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
@@ -398,6 +422,7 @@ pagarHoyUI <- function(id) {
       metadata  = list(empresa = emp, ids = rm_ids,
                        moneda = as.character(cur %||% NA_character_),
                        cuenta_id = as.character(cuenta_sel %||% NA_character_),
+                       cuenta_origen = cuenta_ap$foto,   # T104
                        fecha_pago = as.character(fecha_pago %||% NA_character_),
                        pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago)),
       client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
@@ -604,6 +629,7 @@ pagarHoyUI <- function(id) {
                                sap_ids = sap_fact_ids, man_ids = man_fact_ids,
                                moneda = as.character(cur %||% NA_character_),
                                cuenta_id = as.character(cuenta_sel %||% NA_character_),
+                               cuenta_origen = cuenta_ap$foto,   # T104
                                fecha_pago = as.character(fecha_pago %||% NA_character_),
                                pagos = .pago_audit_detalle(factura_rows, cur, cuenta_sel, fecha_pago),
                                secondary_error = if (inherits(secondary_err_ap, "error"))
@@ -2204,7 +2230,10 @@ pagarHoyServer <- function(id, shared) {
         no_cta_ap <- all(unname(cuenta_choices) == "")
         showModal(modalDialog(
           title = paste0("Confirmar pagos \u2014 ", emp), size = "m", easyClose = TRUE,
-          footer = tagList(modalButton("Cancelar"),
+          # T104: every confirmation carries its origin account -- without one
+          # in this currency there is nothing to confirm with (the server
+          # refuses it too, .ph_cuenta_confirmacion()).
+          footer = tagList(modalButton("Cancelar"), if (!no_cta_ap)
             tags$button(
               type    = "button",
               class   = "btn btn-success",
@@ -2226,9 +2255,8 @@ pagarHoyServer <- function(id, shared) {
               tags$label("Cuenta bancaria", class = "form-label small"),
               selectInput(ns(paste0("conf_cuenta_ap_", emp)), NULL,
                           choices = cuenta_choices, width = "100%", selectize = FALSE),
-              if (no_cta_ap) tags$small(class = "text-warning d-block mt-1",
-                paste0("Sin cuentas ", cur, " registradas para ", emp,
-                       ". Se confirmar\u00e1 sin cuenta bancaria.")) else NULL
+              if (no_cta_ap) tags$small(class = "text-danger d-block mt-1",
+                tr("tablas.agenda.confirmar.sin_cuenta", empresa = emp, moneda = cur)) else NULL
             ),
             div(class = "col-md-5",
               tags$label("Fecha de pago", class = "form-label small"),
@@ -2254,6 +2282,12 @@ pagarHoyServer <- function(id, shared) {
         if (!nrow(rows)) return()
         cuenta_sel_raw <- input[[paste0("conf_cuenta_ap_", emp)]]
         cuenta_sel <- if (!is.null(cuenta_sel_raw) && nzchar(trimws(as.character(cuenta_sel_raw)))) cuenta_sel_raw else NA_character_
+        # T104: the account must be one of THIS company's, in this currency
+        # (the modal's list); .ph_confirmar_ap() checks the catalog again.
+        if (is.na(cuenta_sel) || !cuenta_sel %in% setdiff(unname(.bancos_cuenta_choices_for(emp, cur)), "")) {
+          showNotification(tr("tablas.agenda.confirmar.sin_cuenta_servidor"), type = "error", duration = 10)
+          return()
+        }
         fecha_pago <- tryCatch(as.Date(input[[paste0("conf_fecha_ap_", emp)]]),
                                error = function(e) hoy())
 

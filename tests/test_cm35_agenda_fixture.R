@@ -36,6 +36,8 @@ err <- tryCatch({
     antes <- nrow(AGENDA())
     do.call(session$setInputs, setNames(list("MXN", as.character(Sys.Date())),
                                         c(paste0("ph-bal_cur_", EMP), paste0("ph-conf_fecha_ap_", EMP))))
+    # T104: the payment's origin account, chosen in the modal.
+    do.call(session$setInputs, setNames(list("CT-NTS"), paste0("ph-conf_cuenta_ap_", EMP)))
     do.call(session$setInputs, setNames(list(list(nonce = 1)), paste0("ph-do_confirm_ap_", EMP)))
     session$flushReact()
     res <<- list(reg = registro(), antes = antes, despues = nrow(AGENDA()))

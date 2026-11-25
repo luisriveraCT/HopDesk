@@ -52,6 +52,8 @@ for (e in parse("R/ui_components.R", keep.source = FALSE, encoding = "UTF-8"))  
     eval(e, globalenv())
 source("R/agenda_filas.R")   # staged() reads agenda_pendientes() (T60)
 source("R/pagar_hoy_module.R")
+source("tests/helpers/cuenta_origen_t104.R")   # T104: a confirmation carries its origin account
+CTAS_NTS <- transform(CTAS_T104[1, ], id = "CT1", Empresa = "NTS", alias = "NTSBB")
 
 # Stubs (after the module): no UI, no audit, no sync bus.
 LOGS <- list(); AVISOS <- character()
@@ -64,6 +66,7 @@ showModal <- function(...) invisible(NULL)
 removeModal <- function(...) invisible(NULL)
 showNotification <- function(ui, ...) { AVISOS <<- c(AVISOS, paste(as.character(ui), collapse = "")); invisible("id") }
 .log_pago_generado <- function(...) invisible(NULL)
+load_ctas_bancos <- function(...) BANCOS_T104   # T104: the account's bank, for its name
 
 CID <- "dev"; EMP <- "Networks"
 KEY <- paste0(CID, "/", S3_KEYS$pagar_hoy_sync)
@@ -109,7 +112,7 @@ correr <- function(accion, agenda, ledger = "AP") {
     abonos_db = reactiveVal(NULL),
     effective_client_id = function() CID, current_user = function() "luis",
     usuario = reactiveVal(list(user = "luis", permisos = list())),
-    home_client_id = function() CID)
+    home_client_id = function() CID, ctas_cuentas = reactiveVal(CTAS_NTS))
   invisible(capture.output(testServer(pagarHoyServer, args = list(shared = shared), {
     session$userData$anota <- function(...) invisible(NULL)
     session$flushReact()
@@ -119,6 +122,8 @@ correr <- function(accion, agenda, ledger = "AP") {
       l <- tolower(ledger)
       do.call(session$setInputs, setNames(list("MXN", "2026-11-19"),
                                           c(paste0("bal_cur_", EMP), paste0("conf_fecha_", l, "_", EMP))))
+      # T104: the payment's origin account, chosen in the modal (AP only).
+      if (ledger == "AP") do.call(session$setInputs, setNames(list("CT1"), paste0("conf_cuenta_ap_", EMP)))
       do.call(session$setInputs, setNames(list(list(nonce = 1)), paste0("do_confirm_", l, "_", EMP)))
     }
   })))

@@ -37,6 +37,8 @@ cargar("R/global.R", c("fmt_money", "is_erp_sourced"))
 cargar("R/data_pipeline.R", ".politica_doc_unica")   # T52g: the Referencia of each row's own invoice
 cargar("R/persistence.R", c("unstage_pagar_hoy", "evento_parte_de"))   # T72-F: Confirmar's /parte events
 cargar("R/bancos_persistence.R", "autor_registrable")   # CM35: Confirmar records who (confirmado_por)
+cargar("R/pagos_audit_viewer_module.R", c(".cuenta_digitos", "cuenta_foto", "cuenta_confirmacion_texto",
+                                          "cuenta_id_de_numero"))   # T104: Confirmar's origin account
 cargar("R/ui_components.R", "app_styles")
 cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
                               "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))   # T66
@@ -67,7 +69,13 @@ stubs <- list(
     .anota(sprintf("confirmados AP: %s", paste(nuevas$agenda_item_id, collapse = ",")))
     nuevas
   },
-  load_ctas_cuentas = function(...) NULL,
+  # T104: a confirmation needs its origin account -- one NTS account in MXN
+  # (the Agenda's modal lists it; the server checks it).
+  load_ctas_cuentas = function(...)
+    data.frame(id = "CT-NTS", banco_id = "BB", Empresa = "NTS", razon_social = "", rfc = "", Moneda = "MXN",
+               alias = "Operativa", cuenta = "73543010201", clabe_interbancaria = "", is_ppl_default = TRUE,
+               saldo_inicial = 0, activa = TRUE, stringsAsFactors = FALSE),
+  load_ctas_bancos = function(...) data.frame(id = "BB", nombre = "BanBajío", stringsAsFactors = FALSE),
   get_cuentas_ppl_data = function(emp, cur, shared)
     data.frame(cuenta = "012180001111111111", banco = "012", alias = "Operativa", is_ppl_default = TRUE,
                stringsAsFactors = FALSE),
