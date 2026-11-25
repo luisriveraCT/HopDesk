@@ -109,6 +109,29 @@ PANORAMA_ES_INICIO <- TRUE
 # so "Requisiciones" showed alone while the app loaded (T51).
 HD_PESTANAS_FINANCIERAS <- c("PAN", "CAL", "VEN", "PH", "BNC", "IC", "PSV", "REQ", "FC", "RPT")
 
+# T87-M7: the Grupo menu (Usuarios, Empresas) is born hidden -- its toggle AND
+# every entry of its dropdown, which the ☰ panel showed loose ("TIERS EMP")
+# for ~10 s after a client signed in, before the server's rules arrived. Only
+# the observer of usuario_sesion() shows an entry, with an inline
+# !important, and only when the session may: if it never runs or fails, the
+# entries stay hidden (fail-closed). tests/test_t87_m7.R.
+# The toggle by a[data-value]: bslib only adds .nav-link to it with its own
+# JavaScript, after the first paint (a .nav-link selector left it visible).
+.MENU_GRUPO_CSS <- paste0(
+  ".navbar a[data-value='GRUPO'],",
+  ".navbar li:has(> a[data-value='GRUPO']),",
+  ".navbar .dropdown-menu a[data-value],",
+  ".navbar .dropdown-menu li:has(> a[data-value]){display:none!important}")
+
+# Which Grupo entries a session may see, by usuario_sesion(): the EFFECTIVE
+# tier and its resolved permissions -- staff in "ver como" see what the tier
+# they view sees (as T87-M6's table gate), at home their own.
+menu_grupo_visibles <- function(u) {
+  ver <- function(p) isTRUE(tryCatch(puede(u, p), error = function(e) FALSE))
+  tiers <- ver("can_view_tiers"); emp <- ver("can_manage_empresas")
+  c(GRUPO = tiers || emp, TIERS = tiers, EMP = emp)
+}
+
 # ── UI ─────────────────────────────────────────────────────────────────────────
 ui <- bslib::page_navbar(
   title    = "HopDesk",
@@ -130,8 +153,9 @@ ui <- bslib::page_navbar(
     tags$script(src = "panorama.js?v=1"),
     # Hide shinymanager's default floating session/logout widget (uses .mfb-* classes)
     tags$style(HTML("[id*=shinymanager],[class*=shinymanager],[class*=mfb-]{display:none!important}")),
-    # Hide GRUPO menu by default — server shows it only for dev / admin tier
-    tags$style(HTML(".navbar .nav-link[data-value='GRUPO']{display:none!important}")),
+    # Hide the GRUPO menu -- its toggle and every dropdown entry -- by default;
+    # the server shows each one only to who may (T87-M7, .MENU_GRUPO_CSS).
+    tags$style(HTML(.MENU_GRUPO_CSS)),
     # In admin deployment: hide all financial tabs until a client context is jumped into
     if (IS_ADMIN_DEPLOYMENT) tags$style(HTML(paste0(
       paste0(".navbar .nav-link[data-value='", HD_PESTANAS_FINANCIERAS, "']", collapse = ","),
@@ -1962,41 +1986,17 @@ server <- function(input, output, session) {
   # Empresas  → dev + admin  (can_manage_empresas permission, TRUE for both by default).
   # Usuarios  → dev only; hidden from admin's dropdown so they don't see the option.
   observeEvent(usuario_sesion(), {
-    u <- usuario_sesion()
-    ve_usuarios <- isTRUE(u$is_staff) || puede(u, "can_view_tiers")
-    if (!ve_usuarios && !puede(u, "can_manage_empresas")) return()
-
-    # Reveal the GRUPO dropdown toggle (overrides CSS !important)
-    shinyjs::runjs("
-      document.querySelectorAll('.navbar .nav-link[data-value=\"GRUPO\"]')
-        .forEach(function(el) {
-          el.style.setProperty('display', 'flex', 'important');
-          var li = el.closest('li');
-          if (li) li.style.setProperty('display', 'list-item', 'important');
-        });
-    ")
-
-    if (ve_usuarios) {
-      # Staff and whoever holds can_view_tiers see both dropdown items — ensure Usuarios item is visible
-      shinyjs::runjs("
-        document.querySelectorAll('.dropdown-menu a[data-value=\"TIERS\"]')
-          .forEach(function(el) {
-            var li = el.closest('li');
-            if (li) li.style.removeProperty('display');
-            else    el.style.removeProperty('display');
-          });
-      ")
-    } else {
-      # Admin: hide Usuarios item — they only access Empresas
-      shinyjs::runjs("
-        document.querySelectorAll('.dropdown-menu a[data-value=\"TIERS\"]')
-          .forEach(function(el) {
-            var li = el.closest('li');
-            if (li) li.style.setProperty('display', 'none', 'important');
-            else    el.style.setProperty('display', 'none', 'important');
-          });
-      ")
-    }
+    # T87-M7: every Grupo entry is shown or hidden explicitly (an inline
+    # !important beats .MENU_GRUPO_CSS); nothing here means hidden.
+    vis <- menu_grupo_visibles(usuario_sesion())
+    shinyjs::runjs(paste(vapply(names(vis), function(v) sprintf(
+      "document.querySelectorAll('.navbar [data-value=\"%s\"]').forEach(function(el) {
+         el.style.setProperty('display', '%s', 'important');
+         var li = el.closest('li');
+         if (li) li.style.setProperty('display', '%s', 'important');
+       });",
+      v, if (vis[[v]]) (if (v == "GRUPO") "flex" else "block") else "none",
+      if (vis[[v]]) "list-item" else "none"), ""), collapse = "\n"))
   }, ignoreInit = FALSE)
 
   # ── Pestañas por nivel (registro) ───────────────────────────────────────────
