@@ -209,6 +209,9 @@ MEDIR_JS <- "(function(){
   for (var i = 0; i < todos.length; i++) {
     var e = todos[i];
     if (!e.getClientRects().length) continue;
+    // A theme's preview (Empresas' theme picker, .hd-muestra-tema) paints
+    // that theme's own colours on purpose: data, not Marca's look (T6-6b).
+    if (e.classList && e.classList.contains('hd-muestra-tema')) continue;
     var cs = getComputedStyle(e);
     if (cs.visibility === 'hidden' || cs.display === 'none' || parseFloat(cs.opacity) === 0) continue;
     n++;
