@@ -523,6 +523,10 @@ source("R/pasivos_schemas.R")
 source("R/pasivos_persistence.R")
 # Requisiciones (front E): they use the pasivos schemas and etapa_de_provision_en().
 source("R/adjuntos_s3.R")
+source("R/adjuntos_registro.R")    # T106: the attachments layer -- what can have documents
+source("R/adjuntos_almacen.R")     # T106: where their bytes live (S3 today)
+source("R/adjuntos_documentos.R")  # T106: the documents table
+source("R/adjuntos_pasivo_ui.R")   # T106: "Documentos" in a liability's detail
 source("R/requisiciones_persistence.R")
 source("R/pasivos_capabilities.R")
 source("R/pasivos_audit.R")

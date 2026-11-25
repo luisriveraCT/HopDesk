@@ -137,7 +137,7 @@ ok("3.8 cerrar sesión dentro de un cliente registra la salida ('cierre'), solo 
 cat("== 4. El escáner ==\n")
 C_CONOCIDAS <- c(
   "_conflict_replay", "_queue_bucket_mismatch", "_queue_corrupt_payload", "_queue_red_refused",
-  "_queue_stale_broadcast", "_queue_superseded", "_queue_tenant_mismatch", "activacion_usuario",
+  "_queue_stale_broadcast", "_queue_superseded", "_queue_tenant_mismatch", "activacion_usuario", "adjuntar_documento",
   "agregar_item", "agregar_item_fallido", "agregar_seleccion", "agregar_todo", "aplicar_filtros",
   "archivar_manual_fallo_guardado", "cambio_contrasena_obligatorio", "cargar_saldos_bancos", "confirmar_cobro", "confirmar_cobro_incompleto",
   "confirmar_pago", "confirmar_pago_incompleto", "confirmar_renombre", "convertir", "crear_empresa",
@@ -151,11 +151,11 @@ C_CONOCIDAS <- c(
   "exportar_cashflow_word", "exportar_pagos_pdf", "fx_fix", "generar_archivo_pago", "generar_archivo_pago_sin_cuenta", "generar_archivo_pago_zip",
   "guardar_config_grupo", "guardar_preferencias", "guardar_tier_config", "importar_proveedores",
   "importar_proveedores_fallido", "inactivar_proveedores_fallido", "inactivar_sel", "incluir_sin_cuenta",
-  "invitacion_vencida_eliminada", "login", "logout", "mover", "papelera", "ppl_banco_fuera_catalogo", "provisiones_refrescadas",
+  "invitacion_vencida_eliminada", "login", "logout", "mover", "papelera", "papelera_documento", "pegar_tabla_documento", "ppl_banco_fuera_catalogo", "provisiones_refrescadas",
   "quitar_agenda_manual_fallo_guardado", "quitar_cobros", "quitar_cobros_incompleto", "quitar_de_agenda_dia",
   "quitar_de_agenda_dia_incompleto", "quitar_etiqueta", "quitar_pagos", "quitar_pagos_incompleto",
   "recuperar_papelera_fallo_guardado", "refrescar_metrica", "refrescar_todas_metricas", "reintentar_todo",
-  "renombrar_iniciales", "reservar_renombre", "reset_contrasena_cambiada", "restaurar", "restaurar_aviso", "revertir_confirmacion", "revocar_invitacion",
+  "renombrar_iniciales", "reservar_renombre", "reset_contrasena_cambiada", "restaurar", "restaurar_aviso", "restaurar_documento", "revertir_confirmacion", "revocar_invitacion",
   "sembrar_catalogo", "solicitar_usuarios", "subir_reporte_banco", "vaciar_agenda", "vincular_proveedor")
 todas <- acciones_en_codigo(".")
 ok("4.0 el escáner ve las acciones de todas las fuentes (log_action, eventos, /parte, sin_evento)",

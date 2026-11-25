@@ -247,6 +247,7 @@ s3_objeto_existe <- function(full_key, bucket, cabeza = aws.s3::object_exists) {
 # file alone simply do not have it.
 .S3_SOLO_CRECEN <- function() c(unname(unlist(S3_KEYS[c("pasivos_audit", "papelera", "bancos_confirmados", "abonos", "bancos_papelera")])),
                                 "contacts.rds",
+                                "adjuntos_documentos.rds",   # T106: documents are trashed by a mark, never removed
                                 .HD_ADMIN_SOLO_CRECEN,
                                 if (exists("REQ_KEYS")) unname(unlist(REQ_KEYS)))
 # Keys outside the net, each for a reason:

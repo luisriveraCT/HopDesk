@@ -1902,6 +1902,9 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     shiny::removeModal()
   })
 
+  # T106: the documents of the liability open in the wizard (R/adjuntos_pasivo_ui.R).
+  setup_adjuntos_pasivo(input, output, session, shared, entidad_id = shiny::reactive(wiz$edit_target_id))
+
   invisible(NULL)
 }
 

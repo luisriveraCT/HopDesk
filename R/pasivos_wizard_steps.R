@@ -800,7 +800,8 @@ pasivos_step_ui_revision <- function(draft, errors = list()) {
     shiny::div(
       class = "mt-3 p-2 bg-light rounded small text-muted",
       shiny::uiOutput("pwiz_revision_notice")
-    )
+    ),
+    adjuntos_pasivo_ui()   # T106: the liability's documents (R/adjuntos_pasivo_ui.R), collapsed, read on expand
   )
 }
 
