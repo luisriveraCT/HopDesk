@@ -477,6 +477,14 @@ btr_preparar <- function(reporte, generados, agenda, proveedores = NULL, alias_m
   ya <- con_fila & !filas$agenda_item_id %in% as.character(pend$id)
   filas$estado[ya & filas$estado %in% c("confirmar", "sugerido")] <- "ya_confirmado"
   filas$empresa <- as.character(pend$Empresa)[match(filas$agenda_item_id, as.character(pend$id))]
+  # The currency: the report's (btr_moneda) must be the Agenda row's. A
+  # Divisa it does not recognise (NA) or another currency than the row's is
+  # never confirmed -- "moneda_distinta", locked like an Editado. When they
+  # match, the row's own Moneda is what the confirmation keeps.
+  filas$moneda_agenda <- as.character(pend$Moneda)[match(filas$agenda_item_id, as.character(pend$id))]
+  dist <- filas$estado %in% c("confirmar", "sugerido") &
+    (is.na(filas$moneda) | is.na(filas$moneda_agenda) | toupper(filas$moneda) != toupper(filas$moneda_agenda))
+  filas$estado[dist] <- "moneda_distinta"
   filas$estado[filas$llave %in% registradas] <- "ya_registrado"
   filas$elegible <- filas$estado %in% c("confirmar", "sugerido")
   filas$marcado  <- filas$estado == "confirmar"
@@ -494,10 +502,10 @@ btr_a_confirmar <- function(prep, marcados) {
 
 # ── T93 · The screen (in "Archivos de pago") ────────────────────────────────
 BTR_ESTADOS <- c("confirmar", "editado", "agregado", "no_aplicado", "sin_casar", "sugerido", "varias",
-                 "ya_registrado", "ya_confirmado", "sin_agenda")
+                 "ya_registrado", "ya_confirmado", "sin_agenda", "moneda_distinta")
 .btr_tono <- c(confirmar = "exito", sugerido = "info", varias = "aviso", editado = "aviso", agregado = "aviso",
                no_aplicado = "peligro", sin_casar = "peligro", ya_registrado = "neutro", ya_confirmado = "neutro",
-               sin_agenda = "aviso")
+               sin_agenda = "aviso", moneda_distinta = "aviso")
 .btr_columnas <- function() list(
   col_opcion("decision", "tablas.archivos_pago.btr.col_decision", opciones = c(
     confirmar = "tablas.archivos_pago.btr.op_confirmar", omitir = "tablas.archivos_pago.btr.op_omitir")),
@@ -547,16 +555,19 @@ btr_confirmar <- function(shared, prep, conf, ahora = Sys.time()) {
   if (nrow(conf)) {
     ph <- tryCatch(safe_load_pagar_hoy(username = user, client_id = cid), error = function(e) NULL)
     if (is.null(ph)) return(list(confirmados = character(), registrados = 0L, error = "agenda"))
-    grupos <- split(seq_len(nrow(conf)), paste(conf$empresa, conf$moneda, conf$fecha, sep = "\x1f"))
+    # By the Agenda row's currency (btr_preparar() already left out any row
+    # whose report currency differs); the row read now must still have it.
+    grupos <- split(seq_len(nrow(conf)), paste(conf$empresa, conf$moneda_agenda, conf$fecha, sep = "\x1f"))
     for (g in grupos) {
       cg   <- conf[g, , drop = FALSE]
-      rows <- ph[as.character(ph$id) %in% cg$agenda_item_id & ph$ledger %in% "AP", , drop = FALSE]
+      rows <- ph[as.character(ph$id) %in% cg$agenda_item_id & ph$ledger %in% "AP" &
+                   toupper(as.character(ph$Moneda)) %in% toupper(cg$moneda_agenda[1]), , drop = FALSE]
       if (!nrow(rows)) next
       # The confirmation's writes are parts of THIS action (the upload, whose
       # event "subir_reporte_banco" is written below); .ph_confirmar_ap()
       # still logs its own "confirmar_pago" for the client, as from the Agenda.
       .parte <- evento_parte_de("subir_reporte_banco", "archivos_pago", user, home)
-      .ph_confirmar_ap(shared, cg$empresa[1], cg$moneda[1], rows, NA_character_, as.Date(cg$fecha[1]), .parte,
+      .ph_confirmar_ap(shared, cg$empresa[1], cg$moneda_agenda[1], rows, NA_character_, as.Date(cg$fecha[1]), .parte,
                        .ph_fallido = fallido, .link_counter = function(x) if (missing(x)) 0L else invisible(NULL),
                        extra = cg[, c("agenda_item_id", "clave_rastreo", "autorizacion", "respuesta_id")])
       ya <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)

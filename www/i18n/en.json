@@ -730,6 +730,7 @@
   "tablas.archivos_pago.btr.estado.ya_registrado": "Already recorded",
   "tablas.archivos_pago.btr.estado.ya_confirmado": "Already confirmed",
   "tablas.archivos_pago.btr.estado.sin_agenda": "No Agenda row",
+  "tablas.archivos_pago.btr.estado.moneda_distinta": "Currency does not match",
   "tablas.archivos_pago.hora": "Time",
   "tablas.archivos_pago.usuario": "User",
   "tablas.archivos_pago.tipo": "Type",

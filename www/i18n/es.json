@@ -730,6 +730,7 @@
   "tablas.archivos_pago.btr.estado.ya_registrado": "Ya registrado",
   "tablas.archivos_pago.btr.estado.ya_confirmado": "Ya confirmado",
   "tablas.archivos_pago.btr.estado.sin_agenda": "Sin fila en la Agenda",
+  "tablas.archivos_pago.btr.estado.moneda_distinta": "Moneda no coincide",
   "tablas.archivos_pago.hora": "Hora",
   "tablas.archivos_pago.usuario": "Usuario",
   "tablas.archivos_pago.tipo": "Tipo",

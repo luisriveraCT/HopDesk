@@ -70,9 +70,9 @@ ENC <- paste0("#,Fecha,Hora de Operación,Cuenta Origen,Nombre del Ordenante,Cue
               "Importe de la Operación,IVA,Divisa,Clasificación de la Operación,Concepto de Pago,Referencia,",
               "Comisión,IVA Comisión,No. de Autorización / Clave de Rastreo,Capturó,Autorizó,",
               "Estatus de Transferencia,Mensaje")
-linea <- function(n, cuenta, alias, imp, aut, registro = "Correcto", estatus = "Aplicado")
+linea <- function(n, cuenta, alias, imp, aut, registro = "Correcto", estatus = "Aplicado", divisa = "MN")
   paste(n, "24112026", "101500", "73543010201", "EMPRESA SA", cuenta, "CLABE", "BBVA", "PROV", alias, "XAXX010101000", "",
-        "Transferencia Interbancaria SPEI", imp, "0.00", "MN", "", "F", "123456", "0.00", "0.00", paste0(aut, "/BB", aut),
+        "Transferencia Interbancaria SPEI", imp, "0.00", divisa, "", "F", "123456", "0.00", "0.00", paste0(aut, "/BB", aut),
         "U 24-Nov-2026", "U 24-Nov-2026 Horas", estatus, "", "", "", "Bajionet", registro, sep = ",")
 archivo_reporte <- function(nombre_lote, ...) {
   f <- tempfile(fileext = ".txt")
@@ -132,6 +132,20 @@ ok("3 · camino B: \"sugerido\", y sin marcar no confirma nada (pero sí registr
    r$prep$camino == "B" && r$prep$filas$estado == "sugerido" && !length(CONF) && nrow(REG$filas) == 1L)
 r <- correr(upb, decisiones = c(L3 = "confirmar"), prov = prov)
 ok("3 · marcado por el usuario: confirma su fila sugerida (B1)", length(CONF) == 1L && identical(CONF[[1]]$ids, "B1"))
+
+# ── 3b · The currency: the report's must be the Agenda row's ────────────────
+r <- correr(archivo_reporte("pagos_NCS_24112026_001.txt", linea(1, "012180000000000001", "UNO", "100.00", "1111111111111", divisa = "USD")),
+            decisiones = c(L3 = "confirmar"))
+ok("3b · USD en el reporte, fila MXN: \"moneda_distinta\", y no se confirma aunque el navegador lo pida",
+   r$prep$filas$estado == "moneda_distinta" && !length(CONF) && REG$filas$estado == "moneda_distinta")
+r <- correr(archivo_reporte("pagos_NCS_24112026_001.txt", linea(1, "012180000000000001", "UNO", "100.00", "1111111111111", divisa = "XYZ")))
+ok("3b · divisa no reconocida: \"moneda_distinta\", no se confirma", r$prep$filas$estado == "moneda_distinta" && !length(CONF))
+AGENDA_BASE <- AGENDA
+AGENDA$Moneda <- "mxn"   # the same currency, written otherwise: shows WHICH value is kept
+r <- correr(archivo_reporte("pagos_NCS_24112026_001.txt", linea(1, "012180000000000001", "UNO", "100.00", "1111111111111")))
+ok("3b · contraprueba: misma moneda -> se confirma y guarda la MONEDA DE LA FILA (\"mxn\"), no la del reporte (\"MXN\")",
+   length(CONF) == 1L && identical(CONF[[1]]$cur, "mxn"))
+AGENDA <- AGENDA_BASE
 
 # ── 4 · UI and dictionary ───────────────────────────────────────────────────
 src <- readLines("R/pagos_audit_viewer_module.R", warn = FALSE, encoding = "UTF-8")

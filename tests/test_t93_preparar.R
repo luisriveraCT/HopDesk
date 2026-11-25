@@ -58,6 +58,17 @@ ok("1 · su fila ya no está pendiente (A9) -> \"ya_confirmado\", no elegible", 
 G0 <- G; G0$beneficiarios <- as.character(jsonlite::toJSON(list(ben("012180000000000001", "UNO", 100)), auto_unbox = TRUE))
 f0 <- btr_preparar(reporte("pagos_NCS_24112026_001.txt", pago(3, "012180000000000001", "UNO", 100)), G0, AG)$filas
 ok("1 · un archivo de antes de 2b (sin fila de Agenda) -> \"sin_agenda\", nunca solo", f0$estado == "sin_agenda" && !f0$elegible)
+# The currency: the report's must be the Agenda row's (A1 is MXN).
+con_divisa <- function(d) { p <- pago(3, "012180000000000001", "UNO", 100); p$divisa <- d; p }
+fz <- btr_preparar(reporte("pagos_NCS_24112026_001.txt", con_divisa("ZZZ")), G, AG)$filas
+ok("1 · divisa que no se reconoce (NA) -> \"moneda_distinta\", bloqueada y sin marcar",
+   is.na(fz$moneda) && fz$estado == "moneda_distinta" && !fz$elegible && !fz$marcado)
+fu <- btr_preparar(reporte("pagos_NCS_24112026_001.txt", con_divisa("USD")), G, AG)$filas
+ok("1 · USD en el reporte contra una fila MXN -> \"moneda_distinta\", bloqueada",
+   fu$moneda == "USD" && fu$estado == "moneda_distinta" && !fu$elegible)
+fm <- btr_preparar(reporte("pagos_NCS_24112026_001.txt", con_divisa("MN")), G, AG)$filas
+ok("1 · contraprueba: MN (= MXN) contra la fila MXN se confirma, con la moneda de la fila",
+   fm$estado == "confirmar" && fm$elegible && fm$moneda_agenda == "MXN")
 
 # ── 2 · Path B ──────────────────────────────────────────────────────────────
 prov <- data.frame(nombre = c("CINCO SA", "SEIS SA", "SIETE SA"), alias = c("CINCO", "SEIS", "SIETE"),
