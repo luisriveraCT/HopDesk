@@ -207,7 +207,12 @@ MEDIR_JS <- "(function(){
     nota('background-color', cs.backgroundColor, e);
     ['Top', 'Right', 'Bottom', 'Left'].forEach(function(s){
       if (parseFloat(cs['border' + s + 'Width']) > 0 && cs['border' + s + 'Style'] !== 'none') nota('border-color', cs['border' + s + 'Color'], e); });
-    if (e instanceof SVGElement) { nota('fill', cs.fill, e); nota('stroke', cs.stroke, e); }
+    // Only shapes and text paint a fill or a stroke. The <svg> box itself
+    // never does: its fill is only inherited (black by default). That was the
+    // black #000000 of every tab (TEMA 6-10): bslib's 0x0 <svg> of icon
+    // gradients (insertSvgGradient, components.js), the calendar arrow (its
+    // path has fill none) and the empty Bancos sparkline.
+    if (e instanceof SVGGeometryElement || e instanceof SVGTextContentElement) { nota('fill', cs.fill, e); nota('stroke', cs.stroke, e); }
   }
   return {n: n, colores: Object.keys(out).map(function(k){ return out[k]; })};
 })()"
