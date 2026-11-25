@@ -294,15 +294,30 @@ if (abre("(function(){ var b = document.getElementById('hd-menu-btn'); if (b && 
     (b && b.offsetParent !== null ? b : t).click(); return true; })()"), error = function(e) FALSE)
   Sys.sleep(1)
 } else { cat("      | NOT COVERED MENU: the .hd-marca menu panel did not open\n"); SIN_CUBRIR <- c(SIN_CUBRIR, "MENU") }
-if ("REQ" %in% pestanas &&
-    isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS, jsonlite::toJSON("REQ", auto_unbox = TRUE))), error = function(e) FALSE)) &&
-    { Sys.sleep(4); abre("(function(){ var b = document.getElementById('req-nueva'); if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()",
-                         "(function(){ var f = document.querySelector('.modal.show .hdreq-form.hd-marca'); return !!f && f.getClientRects().length > 0; })()") }) {
-  Sys.sleep(2); medir_vista("REQ_NUEVA")
+# Requisiciones' two forms (TEMA 6-6). The new-request form is NOT .hd-marca
+# (its evidence zone .hdreq-zona says it opened; waiting for .hd-marca there
+# left it NOT COVERED in T6-10); the folder form (the panel's "+") is
+# .hdreq-form.hd-marca. Nothing is written: both close without Guardar.
+cerrar_req <- function() {
   tryCatch(ev("(function(){ var b = document.querySelector('.modal.show .hd-modal-cerrar, .modal.show .btn-close'); if (b) b.click(); return true; })()"),
            error = function(e) FALSE)
+  poll_until(function() identical(tryCatch(as.integer(ev("document.querySelectorAll('.modal.show').length")), error = function(e) NA_integer_), 0L),
+             timeout_s = 15, interval_s = 0.5)
   Sys.sleep(1)
+}
+req_abierta <- "REQ" %in% pestanas &&
+  isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS, jsonlite::toJSON("REQ", auto_unbox = TRUE))), error = function(e) FALSE)) &&
+  { Sys.sleep(4); TRUE }
+if (req_abierta &&
+    abre("(function(){ var b = document.getElementById('req-nueva'); if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()",
+         "(function(){ var z = document.querySelector('.modal.show .hdreq-zona'); return !!z && z.getClientRects().length > 0; })()")) {
+  Sys.sleep(2); medir_vista("REQ_NUEVA"); cerrar_req()
 } else { cat("      | NOT COVERED REQ_NUEVA: the new-request form did not open\n"); SIN_CUBRIR <- c(SIN_CUBRIR, "REQ_NUEVA") }
+if (req_abierta &&
+    abre("(function(){ var b = document.getElementById('req-carpeta_nueva'); if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()",
+         "(function(){ var f = document.querySelector('.modal.show .hdreq-form.hd-marca'); return !!f && f.getClientRects().length > 0; })()")) {
+  Sys.sleep(2); medir_vista("REQ_CARPETA"); cerrar_req()
+} else { cat("      | NOT COVERED REQ_CARPETA: the folder form did not open\n"); SIN_CUBRIR <- c(SIN_CUBRIR, "REQ_CARPETA") }
 todo <- if (length(filas)) do.call(rbind, filas) else
   data.frame(pestana = character(), propiedad = character(), color = character(), alfa = numeric(), n = integer(), ejemplos = character())
 write.table(todo, file.path(SALIDA, "fuera_de_marca.tsv"), sep = "\t", row.names = FALSE, quote = FALSE, fileEncoding = "UTF-8")
