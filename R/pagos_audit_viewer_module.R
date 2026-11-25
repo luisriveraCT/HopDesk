@@ -91,6 +91,12 @@ pagosAuditViewerServer <- function(id, shared) {
       refresh_tick(refresh_tick() + 1L)
     }, ignoreInit = TRUE)
 
+    # T93: BajíoNet's report confirms the payments the bank applied
+    # (R/bancos_respuesta.R; permission can_confirm_payments, checked on the
+    # server at every step).
+    .btr_servidor(input, output, session, shared, al_terminar = function() refresh_tick(refresh_tick() + 1L))
+    .btr_puede <- reactive(isTRUE(tryCatch(puede(shared$usuario(), "can_confirm_payments"), error = function(e) FALSE)))
+
     fetched <- reactive({
       refresh_tick()
       req(can_view())
@@ -167,7 +173,10 @@ pagosAuditViewerServer <- function(id, shared) {
               downloadButton(ns("pagos_export_pdf"), " Exportar PDF",
                             class = "btn btn-sm btn-outline-primary",
                             icon = icon("file-pdf"),
-                            title = "Exportar a PDF el rango y filtros actuales")
+                            title = "Exportar a PDF el rango y filtros actuales"),
+              if (.btr_puede())
+                actionButton(ns("btr_subir"), tr("tablas.archivos_pago.btr.subir"), icon = icon("file-import"),
+                             class = "btn btn-sm btn-outline-success")
             ),
             tags$p(class = "small text-muted mb-0 mt-2",
                    icon("circle-info"), " ", tr("tablas.archivos_pago.ayuda"))

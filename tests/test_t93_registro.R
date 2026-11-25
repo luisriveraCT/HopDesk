@@ -1,7 +1,7 @@
 # =============================================================================
 # tests/test_t93_registro.R
 # T93 (2)+(5), over the in-memory S3 (tests/helpers/s3_memoria.R):
-#   1  registrar_respuestas_banco(): appends on S3's table as it is now,
+#   1  modificar_respuestas_banco(): appends on S3's table as it is now,
 #      client_id explicit; the same report uploaded twice adds nothing (key:
 #      the bank's authorisation; without one, the batch's file + the line)
 #   2  a failed read writes nothing and stops (never an empty table)
@@ -37,18 +37,18 @@ fila <- function(aut, linea, imp = 100, cuenta = "012180000000001234")
              stringsAsFactors = FALSE)
 
 # ── 1 · Append-only, no duplicates ──────────────────────────────────────────
-r1 <- registrar_respuestas_banco(CID, rbind(fila("1111111111111", 3), fila("2222222222222", 4)))
+r1 <- modificar_respuestas_banco(CID, rbind(fila("1111111111111", 3), fila("2222222222222", 4)))
 ok("1 · primera subida: 2 renglones nuevos en S3", nrow(r1$nuevas) == 2L && nrow(.mem[[k]]) == 2L && r1$repetidas == 0L)
-r2 <- registrar_respuestas_banco(CID, rbind(fila("1111111111111", 3), fila("2222222222222", 4), fila("3333333333333", 5)))
+r2 <- modificar_respuestas_banco(CID, rbind(fila("1111111111111", 3), fila("2222222222222", 4), fila("3333333333333", 5)))
 ok("1 · el mismo reporte otra vez (más uno nuevo): solo entra el nuevo, 2 repetidos",
    nrow(r2$nuevas) == 1L && r2$repetidas == 2L && nrow(.mem[[k]]) == 3L)
 ok("1 · la llave es la autorización", identical(sort(.mem[[k]]$llave), paste0("aut:", c("1111111111111", "2222222222222", "3333333333333"))))
-r3 <- registrar_respuestas_banco(CID, rbind(fila(NA, 7), fila(NA, 7), fila(NA, 8)))
+r3 <- modificar_respuestas_banco(CID, rbind(fila(NA, 7), fila(NA, 7), fila(NA, 8)))
 ok("1 · sin autorización: llave archivo del lote + línea; repetida dentro de la subida, una vez",
    nrow(r3$nuevas) == 2L && all(c("lin:pagos_NCS_24112026_001.txt#7", "lin:pagos_NCS_24112026_001.txt#8") %in% .mem[[k]]$llave))
 ok("1 · lo de antes no se toca: los 3 primeros siguen igual",
    identical(.mem[[k]]$id[1:3], c(r1$nuevas$id, r2$nuevas$id)))
-ok("1 · sin client_id no escribe", falla(registrar_respuestas_banco("", fila("9", 9))) && nrow(.mem[[k]]) == 5L)
+ok("1 · sin client_id no escribe", falla(modificar_respuestas_banco("", fila("9", 9))) && nrow(.mem[[k]]) == 5L)
 ok("1 · leer_respuestas_banco() devuelve la tabla del cliente con su esquema",
    nrow(leer_respuestas_banco(CID)) == 5L && identical(names(leer_respuestas_banco(CID)), names(.schema_respuestas_banco())))
 
@@ -56,7 +56,7 @@ ok("1 · leer_respuestas_banco() devuelve la tabla del cliente con su esquema",
 antes <- .mem_escrituras
 .mem_falla <- k
 ok("2 · lectura fallida: se detiene y no escribe nada",
-   falla(registrar_respuestas_banco(CID, fila("4444444444444", 9))) && .mem_escrituras == antes)
+   falla(modificar_respuestas_banco(CID, fila("4444444444444", 9))) && .mem_escrituras == antes)
 .mem_falla <- character()
 ok("2 · y la tabla sigue con sus 5 renglones", nrow(.mem[[k]]) == 5L)
 

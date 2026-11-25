@@ -268,6 +268,13 @@ pagarHoyUI <- function(id) {
 # tables' refresh counter).
 .ph_confirmar_ap <- function(shared, emp, cur, rows, cuenta_sel, fecha_pago, .parte_ap,
                              .ph_fallido, .link_counter, extra = NULL) {
+  # T72-F: every write of this action leaves a staff-only "/parte" trace once
+  # it worked; the client's one row stays the log_action below (and its
+  # _incompleto), word for word. Made here, beside that log (the Agenda's
+  # Confirmar passes NULL); the bank's report passes its own upload's /parte.
+  if (is.null(.parte_ap))
+    .parte_ap <- evento_parte_de("confirmar_pago", "pagar_hoy", shared$current_user(),
+                                 tryCatch(shared$home_client_id(), error = function(e) NULL))
   abono_error <- NULL   # T72-F (a): the abono's save error, if it failed
   # Split: abono rows go to abonos_db; invoice rows go through normal path
   abono_rows   <- rows |> dplyr::filter(!is.na(tipo_item) & tipo_item == "abono")
@@ -2187,11 +2194,6 @@ pagarHoyServer <- function(id, shared) {
 
       observeEvent(input[[paste0("do_confirm_ap_", emp)]], {
         if (!puede_o_avisa(shared, "can_confirm_payments")) return()
-        # T72-F: every write of this action leaves a staff-only "/parte" trace once
-        # it worked; the client's one row stays the log_action below (and its
-        # _incompleto), word for word.
-        .parte_ap <- evento_parte_de("confirmar_pago", "pagar_hoy", shared$current_user(),
-                                    tryCatch(shared$home_client_id(), error = function(e) NULL))
         s_emp    <- staged() |> dplyr::filter(Empresa == emp, ledger == "AP")
         cur      <- moneda_sel(emp)
         s_cur    <- s_emp |> dplyr::filter(Moneda == cur)
@@ -2204,7 +2206,7 @@ pagarHoyServer <- function(id, shared) {
         fecha_pago <- tryCatch(as.Date(input[[paste0("conf_fecha_ap_", emp)]]),
                                error = function(e) hoy())
 
-        .ph_confirmar_ap(shared, emp, cur, rows, cuenta_sel, fecha_pago, .parte_ap,
+        .ph_confirmar_ap(shared, emp, cur, rows, cuenta_sel, fecha_pago, NULL,
                          .ph_fallido = .ph_fallido, .link_counter = .link_counter)
       }, ignoreInit = TRUE)
 

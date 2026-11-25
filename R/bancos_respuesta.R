@@ -381,8 +381,8 @@ leer_respuestas_banco <- function(client_id) {
 # `filas`. evento: the T72 event, logged by the write layer once the save
 # worked. Returns list(tabla, nuevas = the rows added, repetidas = how many
 # were already there).
-registrar_respuestas_banco <- function(client_id, filas, evento = NULL) {
-  if (is.null(client_id) || !nzchar(client_id)) stop("registrar_respuestas_banco: sin client_id", call. = FALSE)
+modificar_respuestas_banco <- function(client_id, filas, evento = NULL) {
+  if (is.null(client_id) || !nzchar(client_id)) stop("modificar_respuestas_banco: sin client_id", call. = FALSE)
   f <- as.data.frame(filas, stringsAsFactors = FALSE)
   n <- nrow(f)
   if (!"llave" %in% names(f) || anyNA(f$llave)) f$llave <- btr_llave(f$autorizacion, f$lote_archivo, f$linea)
@@ -395,8 +395,7 @@ registrar_respuestas_banco <- function(client_id, filas, evento = NULL) {
     if (!nrow(nuevas)) return(actual)
     dplyr::bind_rows(actual, .normalize(nuevas, .schema_respuestas_banco))
   }
-  tabla <- if (is.null(evento)) modificar_tabla(S3_KEYS$respuestas_banco, client_id, .schema_respuestas_banco, cambio)
-           else modificar_tabla(S3_KEYS$respuestas_banco, client_id, .schema_respuestas_banco, cambio, evento = evento)
+  tabla <- modificar_tabla(S3_KEYS$respuestas_banco, client_id, .schema_respuestas_banco, cambio, evento = evento)
   list(tabla = tabla, nuevas = nuevas %||% f[0, , drop = FALSE], repetidas = nrow(f) - nrow(nuevas %||% f[0, , drop = FALSE]))
 }
 
@@ -491,4 +490,175 @@ btr_preparar <- function(reporte, generados, agenda, proveedores = NULL, alias_m
 btr_a_confirmar <- function(prep, marcados) {
   f <- prep$filas
   f[f$elegible & f$linea %in% suppressWarnings(as.integer(marcados)) & !is.na(f$agenda_item_id), , drop = FALSE]
+}
+
+# ── T93 · The screen (in "Archivos de pago") ────────────────────────────────
+BTR_ESTADOS <- c("confirmar", "editado", "agregado", "no_aplicado", "sin_casar", "sugerido", "varias",
+                 "ya_registrado", "ya_confirmado", "sin_agenda")
+.btr_tono <- c(confirmar = "exito", sugerido = "info", varias = "aviso", editado = "aviso", agregado = "aviso",
+               no_aplicado = "peligro", sin_casar = "peligro", ya_registrado = "neutro", ya_confirmado = "neutro",
+               sin_agenda = "aviso")
+.btr_columnas <- function() list(
+  col_opcion("decision", "tablas.archivos_pago.btr.col_decision", opciones = c(
+    confirmar = "tablas.archivos_pago.btr.op_confirmar", omitir = "tablas.archivos_pago.btr.op_omitir")),
+  col_insignia("estado", "tablas.archivos_pago.btr.col_estado", mapa = stats::setNames(
+    lapply(BTR_ESTADOS, function(e) list(texto = paste0("tablas.archivos_pago.btr.estado.", e), tono = .btr_tono[[e]])),
+    BTR_ESTADOS)),
+  col_fecha("fecha", "tablas.archivos_pago.btr.col_fecha"),
+  col_texto("alias", "tablas.archivos_pago.btr.col_alias"),
+  col_texto("cuenta", "tablas.archivos_pago.btr.col_cuenta"),
+  col_dinero("importe", "tablas.archivos_pago.btr.col_importe", moneda = "moneda"),
+  col_texto("mensaje", "tablas.archivos_pago.btr.col_mensaje", opcional = TRUE))
+
+# The preview's rows: one per payment, by its line ("L<linea>"); what may
+# not be confirmed is locked (no choice); A's "confirmar" comes ticked.
+.btr_vista <- function(prep) {
+  vacia <- data.frame(id = character(), decision = character(), estado = character(), fecha = as.Date(character()),
+                      alias = character(), cuenta = character(), importe = numeric(), moneda = character(),
+                      mensaje = character(), .bloqueada = logical(), stringsAsFactors = FALSE, check.names = FALSE)
+  if (is.null(prep) || !nrow(prep$filas)) return(vacia)
+  f <- prep$filas
+  data.frame(id = paste0("L", f$linea), decision = ifelse(f$marcado, "confirmar", "omitir"), estado = f$estado,
+             fecha = f$fecha, alias = f$alias, cuenta = f$cuenta, importe = f$importe, moneda = f$moneda,
+             mensaje = ifelse(is.na(f$mensaje), "", f$mensaje), .bloqueada = !f$elegible,
+             stringsAsFactors = FALSE, check.names = FALSE)
+}
+
+# Confirms `conf` (btr_a_confirmar()'s rows) through the Agenda's own
+# Confirmar (.ph_confirmar_ap), grouped by company, currency and date, then
+# records every payment of the report in respuestas_banco with what was
+# done. Server-side only. Returns list(confirmados, registrados, error).
+btr_confirmar <- function(shared, prep, conf, ahora = Sys.time()) {
+  cid  <- shared$effective_client_id()
+  user <- tryCatch(shared$current_user(), error = function(e) NULL) %||% "unknown"
+  home <- tryCatch(shared$home_client_id(), error = function(e) NULL)
+  fallido <- function(accion, de, emp, e, aviso = tr("comun.error_guardar")) {
+    message("[archivos_pago] ", accion, " failed: ", conditionMessage(e))
+    showNotification(aviso, type = "warning")
+    tryCatch(log_action(user, "archivos_pago", paste0(accion, "_fallido"), conditionMessage(e), target_id = emp,
+                        metadata = list(accion = de, empresa = emp), client_id = cid, viewer_home_client_id = home),
+             error = function(e2) NULL)
+    NULL
+  }
+  f <- prep$filas
+  f$respuesta_id <- vapply(seq_len(nrow(f)), function(i) uuid::UUIDgenerate(), character(1))
+  conf$respuesta_id <- f$respuesta_id[match(conf$linea, f$linea)]
+  confirmados <- character()
+  if (nrow(conf)) {
+    ph <- tryCatch(safe_load_pagar_hoy(username = user, client_id = cid), error = function(e) NULL)
+    if (is.null(ph)) return(list(confirmados = character(), registrados = 0L, error = "agenda"))
+    grupos <- split(seq_len(nrow(conf)), paste(conf$empresa, conf$moneda, conf$fecha, sep = "\x1f"))
+    for (g in grupos) {
+      cg   <- conf[g, , drop = FALSE]
+      rows <- ph[as.character(ph$id) %in% cg$agenda_item_id & ph$ledger %in% "AP", , drop = FALSE]
+      if (!nrow(rows)) next
+      # The confirmation's writes are parts of THIS action (the upload, whose
+      # event "subir_reporte_banco" is written below); .ph_confirmar_ap()
+      # still logs its own "confirmar_pago" for the client, as from the Agenda.
+      .parte <- evento_parte_de("subir_reporte_banco", "archivos_pago", user, home)
+      .ph_confirmar_ap(shared, cg$empresa[1], cg$moneda[1], rows, NA_character_, as.Date(cg$fecha[1]), .parte,
+                       .ph_fallido = fallido, .link_counter = function(x) if (missing(x)) 0L else invisible(NULL),
+                       extra = cg[, c("agenda_item_id", "clave_rastreo", "autorizacion", "respuesta_id")])
+      ya <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
+      if (is.data.frame(ya) && "respuesta_id" %in% names(ya))
+        confirmados <- c(confirmados, intersect(cg$respuesta_id, as.character(ya$respuesta_id)))
+    }
+  }
+  ya <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
+  conf_id <- if (is.data.frame(ya) && "respuesta_id" %in% names(ya))
+    as.character(ya$confirmacion_id)[match(f$respuesta_id, as.character(ya$respuesta_id))] else rep(NA_character_, nrow(f))
+  filas <- data.frame(
+    id = f$respuesta_id, llave = f$llave, ts = rep(ahora, nrow(f)), user = rep(user, nrow(f)),
+    archivo_reporte = rep(prep$archivo %||% NA_character_, nrow(f)),
+    lote_archivo = rep(prep$lote_archivo %||% NA_character_, nrow(f)), camino = rep(prep$camino, nrow(f)),
+    pago_generado_id = rep(if (is.null(prep$generado)) NA_character_ else as.character(prep$generado$id), nrow(f)),
+    linea = f$linea, fecha_operacion = f$fecha, autorizacion = f$autorizacion, clave_rastreo = f$clave_rastreo,
+    referencia = f$referencia, cuenta_destino = f$cuenta, alias = f$alias, importe = f$importe, moneda = f$moneda,
+    comision = f$comision, iva_comision = f$iva_comision, estatus = f$estatus, mensaje = f$mensaje,
+    registro = f$registro, estado = f$estado,
+    agenda_item_id = ifelse(f$respuesta_id %in% confirmados, f$agenda_item_id, NA_character_),
+    confirmacion_id = conf_id, stringsAsFactors = FALSE)
+  filas <- filas[f$estado != "ya_registrado", , drop = FALSE]
+  cuenta <- table(factor(filas$estado, levels = BTR_ESTADOS))
+  ev <- list(usuario = user, modulo = "archivos_pago", accion = "subir_reporte_banco",
+             descripcion = tr("tablas.archivos_pago.btr.log", archivo = prep$archivo %||% "",
+                              n = as.character(nrow(filas)), confirmados = as.character(length(confirmados))),
+             metadata = list(archivo = prep$archivo, lote = prep$lote_archivo, camino = prep$camino,
+                             confirmados = length(confirmados), estados = as.list(cuenta[cuenta > 0])),
+             target_id = prep$archivo, home = home)
+  reg <- tryCatch(if (nrow(filas)) modificar_respuestas_banco(cid, filas, evento = ev) else list(nuevas = filas),
+                  error = function(e) { message("[archivos_pago] respuestas_banco: ", conditionMessage(e)); NULL })
+  list(confirmados = confirmados, registrados = if (is.null(reg)) NA_integer_ else nrow(reg$nuevas),
+       error = if (is.null(reg)) "registro" else NULL)
+}
+
+# The upload's server, called once from pagosAuditViewerServer (its ns and
+# shared). Permission can_confirm_payments on the server at every step.
+.btr_servidor <- function(input, output, session, shared, al_terminar = function() NULL) {
+  ns <- session$ns
+  prep_rv <- reactiveVal(NULL)
+  t_btr <- hd_table_server("btr_t", tabla = "respuesta_banco",
+                           datos = reactive(.btr_vista(prep_rv())), columnas = reactive(.btr_columnas()))
+  observeEvent(input$btr_subir, {
+    if (!puede_o_avisa(shared, "can_confirm_payments")) return()
+    showModal(modalDialog(
+      title = tagList(icon("file-import"), " ", tr("tablas.archivos_pago.btr.titulo")), easyClose = TRUE,
+      tags$p(class = "small text-muted", tr("tablas.archivos_pago.btr.ayuda")),
+      fileInput(ns("btr_archivo"), tr("tablas.archivos_pago.btr.elegir"), accept = c(".txt", ".csv")),
+      footer = modalButton(tr("comun.cancelar"))))
+  }, ignoreInit = TRUE)
+  observeEvent(input$btr_archivo, {
+    if (!puede_o_avisa(shared, "can_confirm_payments")) return()
+    a <- input$btr_archivo
+    if (is.null(a) || !nrow(a)) return()
+    cid <- shared$effective_client_id()
+    rep <- tryCatch(leer_transferencias_bajionet(a$datapath[1]), error = function(e) NULL)
+    if (is.null(rep) || !nrow(rep$pagos)) {
+      showNotification(tr("tablas.archivos_pago.btr.no_legible"), type = "error", duration = 8); return()
+    }
+    gen <- tryCatch(read_pagos_generados(client_id = cid), error = function(e) NULL)
+    reg <- tryCatch(leer_respuestas_banco(cid)$llave, error = function(e) NULL)
+    ag  <- tryCatch(safe_load_pagar_hoy(username = shared$current_user(), client_id = cid), error = function(e) NULL)
+    if (is.null(gen) || is.null(reg) || is.null(ag)) {
+      showNotification(tr("comun.reintentar"), type = "error", duration = 8); return()
+    }
+    ag <- ag[ag$ledger %in% "AP", , drop = FALSE]
+    prov <- tryCatch(shared$proveedores_db(), error = function(e) NULL)
+    amap <- tryCatch(shared$parte_alias_map_db(), error = function(e) NULL)
+    prep <- btr_preparar(rep, gen, ag, prov, amap, reg)
+    prep$archivo <- as.character(a$name[1]); prep$lote_archivo <- rep$lote$archivo %||% NA_character_
+    prep$problemas <- nrow(rep$problemas)
+    prep_rv(prep)
+    n_est <- table(factor(prep$filas$estado, levels = BTR_ESTADOS))
+    showModal(modalDialog(
+      title = tagList(icon("building-columns"), " ", tr("tablas.archivos_pago.btr.titulo")), size = "l", easyClose = FALSE,
+      div(class = "small mb-2",
+          tags$b(tr(paste0("tablas.archivos_pago.btr.camino_", tolower(prep$camino)), archivo = prep$lote_archivo %||% "")),
+          if (prep$problemas > 0) div(class = "text-danger", tr("tablas.archivos_pago.btr.problemas", n = as.character(prep$problemas)))),
+      div(class = "d-flex flex-wrap gap-1 mb-2",
+          lapply(names(n_est)[n_est > 0], function(e)
+            tags$span(class = "badge bg-secondary", paste0(tr(paste0("tablas.archivos_pago.btr.estado.", e)), ": ", n_est[[e]])))),
+      hd_table_ui(ns("btr_t")),
+      tags$p(class = "small text-muted mt-2 mb-0", icon("circle-info"), " ", tr("tablas.archivos_pago.btr.nota")),
+      footer = tagList(modalButton(tr("comun.cancelar")),
+                       actionButton(ns("btr_confirmar"), tr("tablas.archivos_pago.btr.boton"), class = "btn btn-success"))))
+  }, ignoreInit = TRUE)
+  observeEvent(input$btr_confirmar, {
+    if (!puede_o_avisa(shared, "can_confirm_payments")) return()
+    prep <- prep_rv()
+    if (is.null(prep)) return()
+    op <- t_btr$opciones()
+    marcados <- sub("^L", "", op$id[op$opcion %in% "confirmar"])
+    conf <- btr_a_confirmar(prep, marcados)
+    r <- btr_confirmar(shared, prep, conf)
+    prep_rv(NULL)
+    removeModal()
+    if (identical(r$error, "agenda")) { showNotification(tr("comun.reintentar"), type = "error", duration = 8); return() }
+    showNotification(tr("tablas.archivos_pago.btr.hecho", confirmados = as.character(length(r$confirmados)),
+                        n = as.character(nrow(prep$filas))),
+                     type = if (is.null(r$error)) "message" else "warning", duration = 8)
+    if (identical(r$error, "registro")) showNotification(tr("tablas.archivos_pago.btr.error_registro"), type = "error", duration = 12)
+    al_terminar()
+  }, ignoreInit = TRUE)
+  invisible(list(prep = prep_rv, tabla = t_btr))
 }
