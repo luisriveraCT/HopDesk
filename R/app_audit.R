@@ -440,6 +440,8 @@ ACCIONES_STAFF <- list(
   reintentar_email        = list(clase = "S"),
   consulta_bitacora       = list(clase = "S"),
   sin_evento              = list(clase = "S"),
+  # T72-H: a seat change rolled back -- nothing changed for the client.
+  cambio_limite_revertido = list(clase = "S"),
   cambio_limite_usuarios  = list(clase = "N", texto = "tablas.actividad.neutral.cambio_limite",
                                  params = function(m) list(antes = m$old_max_users %||% m$old_limit %||% "?",
                                                            despues = m$new_max_users %||% m$new_limit %||% "?"),

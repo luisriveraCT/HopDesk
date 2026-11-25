@@ -139,7 +139,7 @@ C_CONOCIDAS <- c(
   "_conflict_replay", "_queue_bucket_mismatch", "_queue_corrupt_payload", "_queue_red_refused",
   "_queue_stale_broadcast", "_queue_superseded", "_queue_tenant_mismatch", "activacion_usuario",
   "agregar_item", "agregar_item_fallido", "agregar_seleccion", "agregar_todo", "aplicar_filtros",
-  "archivar_manual_fallo_guardado", "cargar_saldos_bancos", "confirmar_cobro", "confirmar_cobro_incompleto",
+  "archivar_manual_fallo_guardado", "cambio_contrasena_obligatorio", "cargar_saldos_bancos", "confirmar_cobro", "confirmar_cobro_incompleto",
   "confirmar_pago", "confirmar_pago_incompleto", "confirmar_renombre", "convertir", "crear_empresa",
   "crear_suscripcion_global", "crear_usuario", "crudos", "datos_fallido", "desactivar_empresa",
   "deshacer_abono", "desvincular_proveedor", "editar_empresa", "editar_factura_sap",
@@ -155,7 +155,7 @@ C_CONOCIDAS <- c(
   "quitar_agenda_manual_fallo_guardado", "quitar_cobros", "quitar_cobros_incompleto", "quitar_de_agenda_dia",
   "quitar_de_agenda_dia_incompleto", "quitar_etiqueta", "quitar_pagos", "quitar_pagos_incompleto",
   "recuperar_papelera_fallo_guardado", "refrescar_metrica", "refrescar_todas_metricas", "reintentar_todo",
-  "renombrar_iniciales", "reservar_renombre", "restaurar", "revertir_confirmacion", "revocar_invitacion",
+  "renombrar_iniciales", "reservar_renombre", "reset_contrasena_cambiada", "restaurar", "revertir_confirmacion", "revocar_invitacion",
   "sembrar_catalogo", "solicitar_usuarios", "vaciar_agenda", "vincular_proveedor")
 todas <- acciones_en_codigo(".")
 ok("4.0 el escáner ve las acciones de todas las fuentes (log_action, eventos, /parte, sin_evento)",
