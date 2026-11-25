@@ -21,3 +21,6 @@ scripts/seed_*.R
 # OS
 .DS_Store
 Thumbs.db
+
+# T103: scripts/actualizar_erp.R local run logs (per machine, never committed)
+logs/

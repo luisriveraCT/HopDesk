@@ -26,3 +26,4 @@ wipe_scripts
 # (tests/_run_saas.R, tests/_run_agenda.R) monkey-patch aws.s3 with in-memory
 # mocks, which is exactly what must never be loadable next to live data.
 tests
+logs

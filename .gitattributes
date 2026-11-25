@@ -3,3 +3,5 @@
 coordinacion/*.tsv text eol=lf
 # T84: golden fixtures (invented data) compared byte by byte; git never touches their line ends
 tests/fixtures/t84/* -text
+# T103: Windows launchers (scripts/actualizar_erp*.bat) keep CRLF
+*.bat text eol=crlf
