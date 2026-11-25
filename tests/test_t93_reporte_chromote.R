@@ -49,7 +49,15 @@ raton <- function(tipo, p, botones = 0L, n = 1L)
   b$Input$dispatchMouseEvent(type = tipo, x = p[[1]], y = p[[2]], button = if (tipo == "mouseMoved") "none" else "left",
                              buttons = botones, clickCount = n)
 clic <- function(js_el) { p <- centro(js_el); raton("mouseMoved", p); raton("mousePressed", p, 1L); raton("mouseReleased", p); Sys.sleep(0.6) }
-pestana <- function(v) { clic(sprintf("document.querySelector(\".navbar .nav-link[data-value='%s']\")", v)); Sys.sleep(0.8) }
+# The tab by its own link's click(), not a mouse event: in this fixture the
+# active tab's content covers the navbar's links (elementFromPoint at the
+# link's centre is the tab-pane), on master too (test_registros_hd_chromote's
+# P block fails there the same way, 2026-11-24). Every other click is real.
+pestana <- function(v) {
+  ev(sprintf("document.querySelector(\".navbar .nav-link[data-value='%s']\").click(); 0", v))
+  poll_until(function() isTRUE(ev(sprintf("(document.querySelector('.navbar .nav-link.active')||{}).dataset.value === '%s'", v))), timeout_s = 10)
+  Sys.sleep(0.8)
+}
 registro <- function() strsplit(ev("document.getElementById('registro').textContent") %||% "", "\n")[[1]]
 foto <- function(n) { s <- b$Page$captureScreenshot(); writeBin(jsonlite::base64_dec(s$data), file.path(capturas, n)) }
 
