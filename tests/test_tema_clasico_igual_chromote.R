@@ -246,10 +246,14 @@ recorrer <- function(raiz, etiqueta, quien) {
         window.__temaFoco = document.activeElement;
         if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
         var c = document.createElement('style'); c.id = 'tema-carga-quieta';
-        c.textContent = '#hopdesk-loading, #hopdesk-loading * { animation: none !important; transition: none !important; }';
+        c.textContent = '#hopdesk-loading, #hopdesk-loading *, #auth-user_id, #auth-user_pwd { animation: none !important; transition: none !important; }';
         document.head.appendChild(c); o.style.display = 'flex'; return true; })()"), error = function(e) FALSE))) {
     Sys.sleep(1.5)
-    res[["CARGA"]] <- jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
+    # The field may take the focus after the blur above (its autofocus came
+    # late in 2 of 2 runs of 2026-11-25, branch only): blur again just now.
+    ev("(function(){ var a = document.activeElement; if (a && a !== document.body && a.blur) { window.__temaFoco = a; a.blur(); } return true; })()")
+    Sys.sleep(0.3)
+    res[["CARGA"]] <-jsonlite::fromJSON(ev(ESTILOS_JS), simplifyVector = FALSE)
     captura(sprintf("%s_%s_CARGA", etiqueta, quien))
     captura_marca(etiqueta, sprintf("%s_%s_CARGA", etiqueta, quien))
     ev("(function(){ document.getElementById('hopdesk-loading').style.display = 'none';
