@@ -120,7 +120,8 @@ mostrar_pestana <- function(v) isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS
 .CAMBIO_ESPERADO <- list(
   PAN       = list(debe = TRUE,  motivo = "Panorama (.hd-marca.hd-panorama) in Clásico's roles"),
   REQ       = list(debe = TRUE,  motivo = "Requisiciones' folders panel (.hdreq-lado.hd-marca)"),
-  REQ_NUEVA = list(debe = TRUE,  motivo = "the new-request form (.hdreq-form.hd-marca)"),
+  REQ_NUEVA = list(debe = FALSE, motivo = "the new-request form is NOT .hd-marca (Bootstrap, every theme): only the folders panel behind it"),
+  REQ_CARPETA = list(debe = TRUE, motivo = "the folder form (modal_carpeta: .hdreq-form.hd-marca)"),
   MENU      = list(debe = TRUE,  motivo = "the ☰ menu panel (R/ui_components.R adds .hd-marca)"),
   REQ_EVID  = list(debe = FALSE, motivo = "a request's detail, only if it sits inside .hd-marca"),
   REQ_COM   = list(debe = FALSE, motivo = "a request's detail, only if it sits inside .hd-marca")
@@ -499,6 +500,18 @@ recorrer <- function(raiz, etiqueta, quien) {
       medir_req("REQ_NUEVA")
       cerrar_modal()
     }
+    # TEMA 6-10: the .hd-marca form of Requisiciones is the folder one
+    # (requisiciones_module.R, modal_carpeta: .hdreq-form.hd-marca), opened by
+    # the folders panel's "+" (#req-carpeta_nueva). Nothing is written: closed
+    # without Guardar. Not opening is NOT COVERED, never "the same".
+    carpeta <- isTRUE(tryCatch(ev("(function(){ var b = document.getElementById('req-carpeta_nueva');
+      if (!b || b.getClientRects().length === 0) return false; b.click(); return true; })()"), error = function(x) FALSE)) &&
+      poll_until(function() isTRUE(tryCatch(ev("(function(){ var f = document.querySelector('.modal.show .hdreq-form.hd-marca');
+        return !!f && f.getClientRects().length > 0; })()"), error = function(x) FALSE)), timeout_s = 30, interval_s = 1)
+    if (carpeta) {
+      medir_req("REQ_CARPETA")
+      cerrar_modal()
+    } else no_cubierta(etiqueta, quien, "Nueva carpeta", "the folder form (.hdreq-form.hd-marca) did not open")
     fila <- tryCatch(ev("(function(){
       var trs = Array.from(document.querySelectorAll('.hdreq .hdt-tabla tbody tr'))
         .filter(function(r){ return r.getClientRects().length > 0 && r.querySelector('button[data-accion]'); });
@@ -684,7 +697,7 @@ for (quien in quienes) {
     nombre <- switch(v, ENTRAR = "sign-in page", CARGA = "Pantalla de carga", FLUJO = "Flujo (vista previa)",
                      ACT_INVALIDA = "Activación (enlace inválido)", OLVIDE = "Olvidé mi contraseña",
                      CAL_AP = "Calendario · Pagos", NOTAS = "Notas abiertas", BURBUJA = "Burbuja de valor",
-                     REQ_NUEVA = "Nueva requisición", MENU = "Menú ☰ abierto", REQ_EVID = "Requisición abierta · Evidencia",
+                     REQ_NUEVA = "Nueva requisición", REQ_CARPETA = "Nueva carpeta", MENU = "Menú ☰ abierto", REQ_EVID = "Requisición abierta · Evidencia",
                      REQ_COM = "Requisición abierta · Comentarios", POL = "Ajustes · Políticas (simulador)", AJ_IC = "Ajustes · Intercompany", EMP = "Grupo · Empresas",
                      TIERS = "Grupo · Usuarios", TIERS_ED = "Usuarios · editor de permisos", TIERS_INV = "Usuarios · Invitaciones",
                      TIERS_NOT = "Usuarios · Notificaciones", TIERS_CFG = "Usuarios · Niveles", TIERS_ACT = "Usuarios · Actividad (barra fija)",
