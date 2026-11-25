@@ -170,11 +170,17 @@ shiny::testServer(function(input, output, session) {
   src("nada"); session$flushReact()
   d$req <<- tryCatch({ shiny::isolate(e()); "sin error" }, error = function(err) class(err)[1])
   src("b"); session$flushReact(); d$v2 <<- shiny::isolate(e())
+  # the same name on both sides (as `pagos <- .pan_estable(pagos)`): it must
+  # wrap the old reactive, not read itself (R's lazy arguments)
+  mismo <- shiny::reactive(src()); mismo <- .pan_estable(mismo)
+  session$flushReact(); d$mismo <<- tryCatch(shiny::isolate(mismo()), error = function(err) paste("error:", conditionMessage(err)))
 }, {})
 ok("D1 it gives the value, and an identical value does not wake its readers", identical(d$v0, "a") && d$c1 == d$c0)
 ok("D2 an error in the source reaches the reader as an error", identical(d$err, "roto"))
 ok("D3 a req() in the source stays a silent stop", identical(d$req, "shiny.silent.error"))
 ok("D4 after an error, a new value goes through", identical(d$v2, "b"))
+ok(sprintf("D5 `x <- .pan_estable(x)` wraps the old x (force: R's lazy argument) -- got %s", format(d$mismo)),
+   identical(d$mismo, "b"))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 shiny:::MockShinySession$set("public", "defineOutput", .def_orig, overwrite = TRUE)   # restored

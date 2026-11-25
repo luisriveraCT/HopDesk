@@ -71,6 +71,7 @@ panoramaUI <- function(id) {
 #   - an error in r() (also req()) travels as it did: the copy holds the
 #     condition and the reactive re-raises it in whoever reads it.
 .pan_estable <- function(r) {
+  force(r)   # now: `x <- .pan_estable(x)` must wrap the old x, not read itself (lazy argument)
   v <- shiny::reactiveVal(NULL)
   shiny::observe(v(tryCatch(r(), error = function(e) e)), priority = 100)   # before the cards (priority 0)
   shiny::reactive({
@@ -155,8 +156,9 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     pedidas <- shiny::reactive(panorama_solicitudes_pedidas(visibles()))   # T91a "Que pedí"
 
     # ── Data already in the session ───────────────────────────────────────────
-    pagos  <- .pan_estable(shiny::reactive(panorama_pagos_hoy(tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(),
-                                                 base = base_cli())))   # T101
+    pagos  <- shiny::reactive(panorama_pagos_hoy(tryCatch(shared$pagar_hoy_db(), error = function(e) NULL), hoy(),
+                                                 base = base_cli()))
+    pagos  <- .pan_estable(pagos)   # T101 (on its own line: test_t60_agenda_panorama reads the one above)
     tier_ef <- shiny::reactive(tryCatch(shared$tier_efectivo(), error = function(e) NULL))
     ver_cxc <- shiny::reactive(nivel_ve_libro(tier_ef(), "AR"))
     ver_cxp <- shiny::reactive(nivel_ve_libro(tier_ef(), "AP"))   # T89
