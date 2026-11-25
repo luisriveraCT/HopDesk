@@ -831,9 +831,12 @@ generate_audit_log_html_doc <- function(export_df, meta_info = list(), tema = NU
   paste(col_fecha_hora("t")$valores(t)$mostrar, format(t, "%Z"))
 }
 
-actividad_para_cliente <- function(df, tz = ZONA_OMISION) {
+actividad_para_cliente <- function(df, tz = NULL) {
   if (!is.data.frame(df) || !nrow(df)) return(df)
-  if (!is.character(tz) || length(tz) != 1L || is.na(tz) || !tz %in% OlsonNames()) tz <- ZONA_OMISION
+  # No browser zone yet (or not a real one): Mexico's (R/zona.R); UTC only
+  # where zona.R is not loaded (a test that loads this file by pieces).
+  if (!is.character(tz) || length(tz) != 1L || is.na(tz) || !tz %in% OlsonNames())
+    tz <- get0("ZONA_OMISION", ifnotfound = "UTC")
   user <- as.character(df$user); user[is.na(user)] <- ""
   meta <- lapply(as.character(df$metadata), .t87_leer_meta)
   casa <- vapply(meta, function(m) as.character(m$home_client %||% NA_character_)[1], "")
@@ -843,8 +846,9 @@ actividad_para_cliente <- function(df, tz = ZONA_OMISION) {
   accion <- as.character(df$action)
   clase <- vapply(accion, t87_clase_accion, "", USE.NAMES = FALSE)
   clase[accion == "external_access"] <- "A"          # the old hidden entry
-  # Whitelist: a staff row shows only if it is not S.
-  queda <- !(staff & clase == "S")
+  # Whitelist: a staff row shows only if it is not S. An old external_access
+  # whose actor cannot be told (no home_client) is bookkeeping, not shown.
+  queda <- !(staff & clase == "S") & !(!staff & accion == "external_access")
   # The staff's first name: stored on the row (T87), or from the directory.
   firma <- lapply(seq_len(nrow(df)), function(i) {
     if (!staff[i]) return(NULL)
@@ -1188,7 +1192,8 @@ auditLogViewerServer <- function(id, shared, mode,
         if (nrow(df) && "description" %in% names(df))
           df$description <- sub(" \\[tabla=[^]]*\\]$", "", df$description)
         # T87 paso 3: what the staff did, by whitelist and signed by first name.
-        df <- actividad_para_cliente(df, tz = zona_navegador(session))
+        # The browser's zone, read as .audit_rango() reads it (input$client_tz).
+        df <- actividad_para_cliente(df, tz = tryCatch(session$rootScope()$input$client_tz, error = function(e) NULL))
       } else if (viewer_is_staff()) {
         # T87 paso 3: staff see the account behind a signed client row.
         df <- actividad_para_staff(df)

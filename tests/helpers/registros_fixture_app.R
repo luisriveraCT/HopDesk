@@ -29,7 +29,11 @@ cargar <- function(archivo, nombres) {
 }
 suppressPackageStartupMessages({ library(dplyr); library(shinyjs) })
 cargar("R/ui_components.R", "app_styles")
-cargar("R/app_audit.R", c(".APP_AUDIT_SCHEMA", "read_audit_log_scoped"))
+cargar("R/app_audit.R", c(".APP_AUDIT_SCHEMA", "read_audit_log_scoped",
+                          # T87: the client's view of its log reads the catalog and the staff directory
+                          "ACCIONES_STAFF", "t87_clase_accion", ".T87_CASA_STAFF", ".T87_DIRECTORIO",
+                          ".T87_DIRECTORIO_TTL", "t87_directorio_invalidar", ".t87_directorio",
+                          "t87_staff_firma", "t87_staff_por_codigo", "t87_usuario_staff", ".t87_limpiar"))
 cargar("R/pagos_generados_persistence.R", c(".schema_pagos_generados", "mask_clabe",
                                              "parse_pago_beneficiarios", "parse_pago_detalle"))
 local({

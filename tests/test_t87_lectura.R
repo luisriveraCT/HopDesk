@@ -59,6 +59,8 @@ df <- rbind(
   fila(32, "zz_canario_staff", "ver_como", "zz_canario_staff (como Admin)", '{"nivel":"admin","home_client":"hd-admin"}', "niveles"),
   fila(33, "mouse", "hop_access_approved", "Mouse aprobó acceso de zz_canario_staff a acme (24h)",
        '{"grantee":"zz_canario_staff","home_client":"hd-admin"}', "tiers"),
+  # Old jump bookkeeping whose actor cannot be told (no home_client)
+  fila(50, "mouse", "external_access", "HopDesk staff accessed this client's data", "{}", "clientes"),
   # A client user's own row
   fila(40, "ana", "eliminar_nota", "Nota eliminada: Mía", '{"ledger":"AP"}', "notes", "nota-2"))
 TZ <- "America/Mexico_City"
@@ -68,6 +70,7 @@ FIRMA <- paste0("Zelda · ", tr("comun.staff.etiqueta"))
 
 cat("== 1. Lista blanca ==\n")
 ok("1.1 las acciones S (aunque sean viejas) no se muestran", !any(v$action %in% c("ver_como", "hop_access_approved")))
+ok("1.3 un external_access viejo sin marca de staff no se muestra", !any(v$ts == t0 + 50 * 60))
 ok("1.2 C, N y A sí", all(c("eliminar_nota", "cambio_limite_usuarios", "confirmar_pago", "acceso_staff") %in% v$action))
 
 cat("== 2. Firmado por primer nombre ==\n")
@@ -117,7 +120,7 @@ ok("6.3 un código desconocido se queda como está", identical(actividad_para_st
 cat("== 7. El visor la usa ==\n")
 src <- readLines("R/audit_log_viewer_module.R", warn = FALSE, encoding = "UTF-8")
 ok("7.1 el cliente recibe actividad_para_cliente() en la zona de su navegador",
-   any(grepl("df <- actividad_para_cliente(df, tz = zona_navegador(session))", src, fixed = TRUE)))
+   any(grepl("df <- actividad_para_cliente(df, tz = tryCatch(session$rootScope()$input$client_tz", src, fixed = TRUE)))
 ok("7.2 el staff recibe actividad_para_staff()", any(grepl("df <- actividad_para_staff(df)", src, fixed = TRUE)))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
