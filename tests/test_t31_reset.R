@@ -194,7 +194,10 @@ ok("el cambio con el enlace avisa al Dev del cliente (informativo)",
 
 # ── 6. The log ───────────────────────────────────────────────────────────────
 reiniciar(); pedir("ana@x.mx"); tk <- tokens_de(correos[[1]]$html)[1]
-reset_resolver(paste0(substr(tk, 1, 63), "0"), T0 + 1); reset_aplicar(tk, "Nueva#2026x", "Nueva#2026x", T0 + 60)
+# T96: a forged token always differs from tk (it used to end in "0", which
+# was tk itself 1 run in 16: then the link was valid and logged nothing).
+falso <- paste0(substr(tk, 1, 63), if (endsWith(tk, "0")) "1" else "0")
+reset_resolver(falso, T0 + 1); reset_aplicar(tk, "Nueva#2026x", "Nueva#2026x", T0 + 60)
 pedir("nadie@x.mx", T0 + 2)
 todo_log <- paste(unlist(registro), collapse = " | ")
 acciones <- vapply(registro, `[[`, "", "action")
