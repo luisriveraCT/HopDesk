@@ -17,7 +17,8 @@
 #   6  not logged: app_audit*, sync_versions, *_backup_*, preferencias.rds;
 #   7  no log_action() (the emails job): the write goes on;
 #   8  no recursion: a log_action() that writes logs nothing more;
-#   9  evento_sistema(); 10  the difference of 50 000 rows takes < 200 ms;
+#   9  evento_sistema(); 10  the difference of 50 000 rows: (a) the counts,
+#      (b) its time, relative to a base measured in the same run (T96b);
 #  11  the integrador's fixes: (A) a list column with 0 ids in common does
 #      not lose the difference; (B) contrase/credencial/llave/private/passw
 #      are secret; (C) the two copies of .t72_diferencia stay identical.
@@ -161,14 +162,32 @@ N <- 50000L
 grande <- tibble(id = paste0("m", seq_len(N)), fecha = as.Date("2026-01-01") + seq_len(N) %% 300, importe = seq_len(N) / 7,
                  concepto = paste("Movimiento", seq_len(N)), banco = rep(c("BBVA", "Banorte", "BanBajio"), length.out = N),
                  conciliado = seq_len(N) %% 2 == 0, creado = as.POSIXct("2026-01-01", tz = "UTC") + seq_len(N))
-otra <- grande; idx <- sample.int(N, 500L); otra$importe[idx] <- otra$importe[idx] + 1
+# T96b: 500 fixed rows, none of 1..10 (they are removed below). It was
+# sample.int(N, 500L) with no seed: 9.56% of the runs picked one of 1..10,
+# which then counts as removed, not changed -- and the FAIL said "< 200 ms".
+otra <- grande; idx <- 10L + seq(1L, by = 97L, length.out = 500L); otra$importe[idx] <- otra$importe[idx] + 1
 otra <- bind_rows(otra[-(1:10), ], tibble(id = "nuevo", fecha = as.Date("2026-11-21"), importe = 1, concepto = "x", banco = "BBVA",
                                           conciliado = FALSE, creado = as.POSIXct("2026-11-21", tz = "UTC")))
-invisible(dif("bancos_movimientos.rds", grande, otra))   # warm-up
-ms <- min(vapply(1:3, function(i) system.time(dd <<- dif("bancos_movimientos.rds", grande, otra))[["elapsed"]], 1)) * 1000
-cat(sprintf("   (50 000 rows: %.0f ms)\n", ms))
-ok(sprintf("10 the difference of 50 000 rows (500 changed, 10 removed, 1 new) takes < 200 ms (%.0f ms)", ms),
-   !is.null(dif) && ms < 200 && identical(unname(dd$n), c(1L, 500L, 10L)))
+# The base: the same match + compare, column by column, with no detail --
+# what any vectorized difference has to do. Measured in the same run, so a
+# loaded machine slows both (T96b). Each time is the best of 3 rounds of 10
+# calls (Windows' clock ticks every 10 ms).
+base_op <- function(a, b) { ia <- match(b$id, a$id); s <- 0L
+  for (cl in setdiff(names(b), "id")) s <- s + sum(a[[cl]][ia] != b[[cl]], na.rm = TRUE); s }
+t_ms <- function(f) min(vapply(1:3, function(i) system.time(for (j in 1:10) f())[["elapsed"]], 1)) * 100
+dd <- if (!is.null(dif)) dif("bancos_movimientos.rds", grande, otra)   # also the warm-up
+ok("10a the difference of 50 000 rows counts 1 new, 500 changed, 10 removed",
+   !is.null(dd) && identical(unname(dd$n), c(1L, 500L, 10L)))
+invisible(base_op(grande, otra))
+ms   <- if (!is.null(dif)) t_ms(function() dif("bancos_movimientos.rds", grande, otra)) else Inf
+base <- t_ms(function() base_op(grande, otra))
+# Measured 2026-11-24 under a full battery: ratio ~5; a row-by-row
+# difference ~1300. 25 leaves room for load and still catches that by ~50x.
+T72B_K <- 25
+tope <- max(200, T72B_K * base)
+cat(sprintf("   (50 000 rows: %.0f ms; base %.0f ms; ratio %.1f; limit %.0f ms)\n", ms, base, ms / max(base, 1), tope))
+ok(sprintf("10b ...and takes < max(200 ms, %g x the base in this same run) (%.0f ms, limit %.0f ms)", T72B_K, ms, tope),
+   ms < tope)
 
 # ── 11. The integrador's fixes (A, B, C) ───────────────────────────────────
 dif_de <- function(f) { d <- NULL
