@@ -323,3 +323,79 @@ btr_sugerir_b <- function(pagos, agenda) {
   }
   out
 }
+
+# ── T93 · respuestas_banco.rds: what the bank said, kept forever ────────────
+# One row per payment of every report uploaded. Only ever appended (like
+# pagos_generados): a report uploaded twice adds nothing -- the key is the
+# bank's authorisation number (`llave`; for a payment without one, the
+# batch's file + the line). Never a full account: the destination is kept
+# masked (****1234), as the screen and the log show it.
+.schema_respuestas_banco <- function() tibble::tibble(
+  id               = character(),   # UUID
+  llave            = character(),   # "aut:<autorización>" | "lin:<archivo del lote>#<línea>"
+  ts               = as.POSIXct(character()),
+  user             = character(),
+  archivo_reporte  = character(),   # the uploaded file's name
+  lote_archivo     = character(),   # the batch's file name, as the report says
+  camino           = character(),   # "A" (HopDesk's file) | "B" (another one)
+  pago_generado_id = character(),   # pagos_generados$id of the batch (A), else NA
+  linea            = integer(),
+  fecha_operacion  = as.Date(character()),
+  autorizacion     = character(),
+  clave_rastreo    = character(),
+  referencia       = character(),
+  cuenta_destino   = character(),   # masked: ****1234
+  alias            = character(),
+  importe          = numeric(),
+  moneda           = character(),   # ISO (btr_moneda)
+  comision         = numeric(),
+  iva_comision     = numeric(),
+  estatus          = character(),   # as the bank wrote it
+  mensaje          = character(),
+  registro         = character(),   # correcto / editado / agregado
+  estado           = character(),   # confirmar / editado / agregado / no_aplicado / sin_casar / sugerido / varias
+  agenda_item_id   = character(),   # the Agenda row it confirmed, if any
+  confirmacion_id  = character()    # bancos_confirmados$confirmacion_id, if confirmed
+)
+
+btr_enmascarar <- function(cuenta) {
+  d <- gsub("[^0-9]", "", as.character(cuenta)); d[is.na(d)] <- ""
+  ifelse(nchar(d) >= 4L, paste0("****", substr(d, nchar(d) - 3L, nchar(d))), ifelse(nzchar(d), "****", ""))
+}
+
+btr_llave <- function(autorizacion, lote_archivo, linea) {
+  a <- trimws(as.character(autorizacion)); a[is.na(a)] <- ""
+  ifelse(nzchar(a), paste0("aut:", a), paste0("lin:", as.character(lote_archivo %||% ""), "#", linea))
+}
+
+# The client's table; a failed read stops (a failed read is never an empty
+# table -- A2). client_id always explicit.
+leer_respuestas_banco <- function(client_id) {
+  if (is.null(client_id) || !nzchar(client_id)) stop("leer_respuestas_banco: sin client_id", call. = FALSE)
+  .normalize(.s3_read_with(S3_KEYS$respuestas_banco, client_id = client_id), .schema_respuestas_banco)
+}
+
+# Appends `filas` (columns of .schema_respuestas_banco; id, llave and ts are
+# filled when missing) on S3's table as it is now (modificar_tabla: strict
+# read, the write net), skipping every llave already there or repeated in
+# `filas`. evento: the T72 event, logged by the write layer once the save
+# worked. Returns list(tabla, nuevas = the rows added, repetidas = how many
+# were already there).
+registrar_respuestas_banco <- function(client_id, filas, evento = NULL) {
+  if (is.null(client_id) || !nzchar(client_id)) stop("registrar_respuestas_banco: sin client_id", call. = FALSE)
+  f <- as.data.frame(filas, stringsAsFactors = FALSE)
+  n <- nrow(f)
+  if (!"llave" %in% names(f) || anyNA(f$llave)) f$llave <- btr_llave(f$autorizacion, f$lote_archivo, f$linea)
+  if (!"id" %in% names(f)) f$id <- vapply(seq_len(n), function(i) uuid::UUIDgenerate(), character(1))
+  if (!"ts" %in% names(f)) f$ts <- rep(Sys.time(), n)
+  f <- f[!duplicated(f$llave), , drop = FALSE]
+  nuevas <- NULL
+  cambio <- function(actual) {
+    nuevas <<- f[!f$llave %in% actual$llave, , drop = FALSE]
+    if (!nrow(nuevas)) return(actual)
+    dplyr::bind_rows(actual, .normalize(nuevas, .schema_respuestas_banco))
+  }
+  tabla <- if (is.null(evento)) modificar_tabla(S3_KEYS$respuestas_banco, client_id, .schema_respuestas_banco, cambio)
+           else modificar_tabla(S3_KEYS$respuestas_banco, client_id, .schema_respuestas_banco, cambio, evento = evento)
+  list(tabla = tabla, nuevas = nuevas %||% f[0, , drop = FALSE], repetidas = nrow(f) - nrow(nuevas %||% f[0, , drop = FALSE]))
+}

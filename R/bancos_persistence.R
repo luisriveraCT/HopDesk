@@ -103,7 +103,17 @@
   #                   original row of a "Recuperar", Pasivos deleting a paid
   #                   provision).
   confirmado_por            = character(),
-  eliminado_por             = character()
+  eliminado_por             = character(),
+  # ── T93: a confirmation that came from the bank's report (BajíoNet's
+  # "Transferencias por archivo"). Additive: NA on every row written before
+  # and on every confirmation made by hand in the Agenda.
+  #   clave_rastreo: SPEI's tracking key (BB...), the key to the statement's
+  #                  movement (bancos_movimientos.clave_rastreo)
+  #   autorizacion:  the bank's authorisation number of the payment
+  #   respuesta_id:  its row in respuestas_banco.rds
+  clave_rastreo             = character(),
+  autorizacion              = character(),
+  respuesta_id              = character()
 )
 
 # ── Shared normalizer (reuses persistence.R's .normalize) ────────────────────

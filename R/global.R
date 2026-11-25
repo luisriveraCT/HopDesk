@@ -511,6 +511,7 @@ source("R/ppl_generator.R")
 source("R/bancos_parser.R")
 source("R/bancos_detect.R")
 source("R/bancos_persistence.R")
+source("R/bancos_respuesta.R")   # T93: BajíoNet's report -> confirmations (after ppl_generator and pagos_generados)
 source("R/bancos_formatos.R")
 source("R/bancos_module.R")
 source("R/proveedores_match.R")
@@ -624,6 +625,7 @@ S3_KEYS <- list(
   pasivos_audit         = "pasivos_audit.rds",
   app_audit             = "app_audit.rds",
   pagos_generados       = "pagos_generados.rds",  # structured payment-file audit trail (see R/pagos_generados_persistence.R)
+  respuestas_banco      = "respuestas_banco.rds", # T93: what the bank's report said of each payment (append-only, R/bancos_respuesta.R)
   # Forecasting module (Stage 6.1)
   forecasting_series_observations = "forecasting_series_observations.rds",
   forecasting_metrics             = "forecasting_metrics.rds",
