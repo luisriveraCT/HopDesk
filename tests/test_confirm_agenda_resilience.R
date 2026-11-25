@@ -123,8 +123,23 @@ assign("%||%", function(x, y) if (is.null(x) || length(x) == 0L || (length(x) ==
   ar_start <- grep('paste0\\("do_confirm_ar_", emp\\)', txt)
   ok("found the AR confirm handler (do_confirm_ar_<emp>) to scan", length(ar_start) > 0)
 
+  # T93: the AP handler's body moved, untouched, to .ph_confirmar_ap() (a
+  # function of the file, so the bank's report confirms through the same
+  # path). The AP block is now that function's body plus the observer that
+  # calls it -- every assertion below still asks the same of it. Blindness
+  # check: the function and the call must be found, or this section fails
+  # instead of passing on empty text.
+  fn_start <- grep("^\\.ph_confirmar_ap <- function\\(", txt)
+  fn_end   <- grep("^pagarHoyServer <- function\\(", txt)
+  ok("found .ph_confirmar_ap() (the AP handler's body, T93) to scan",
+     length(fn_start) == 1L && length(fn_end) == 1L && fn_end > fn_start)
   if (length(ap_start) && length(ar_start)) {
-    ap_block <- paste(txt[ap_start[1]:(ar_start[1] - 1)], collapse = "\n")
+    ap_obs   <- paste(txt[ap_start[1]:(ar_start[1] - 1)], collapse = "\n")
+    ok("the AP observer calls .ph_confirmar_ap() (T93)", grepl(".ph_confirmar_ap(shared, emp, cur, rows,", ap_obs, fixed = TRUE))
+    ap_fn    <- if (length(fn_start) == 1L && length(fn_end) == 1L) paste(txt[fn_start:(fn_end - 1L)], collapse = "\n") else ""
+    ok("the AP handler's body is not empty (blindness check: > 200 lines)",
+       length(fn_start) == 1L && length(fn_end) == 1L && (fn_end - fn_start) > 200L)
+    ap_block <- paste(ap_obs, ap_fn, sep = "\n")
     ar_end   <- grep("Interco map button", txt)
     ar_end   <- ar_end[ar_end > ar_start[1]][1]
     ar_block <- paste(txt[ar_start[1]:(ar_end %||% (ar_start[1] + 260))], collapse = "\n")

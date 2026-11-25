@@ -510,7 +510,11 @@ escanear_camino <- function(f) {
       nm <- as.character(e[[2]])
       if (!grepl(.BASE_T72, nm) && !nm %in% .HELPERS_T72 && !.t72_contiene(e[[3]][[3]], nombres = "observeEvent")) {
         .t72_env$formal <- "evento" %in% names(e[[3]][[2]])
-        .t72_env$partes <- .t72_partes(e[[3]][[3]])
+        # A formal named .parte* is a /parte handed in by the caller (T93:
+        # .ph_confirmar_ap(..., .parte_ap), Confirmar's body moved out of its
+        # observer) -- passing it is a /parte, not a log, as when the body
+        # bound it to evento_parte_de() itself.
+        .t72_env$partes <- c(.t72_partes(e[[3]][[3]]), grep("^\\.parte", names(e[[3]][[2]]), value = TRUE))
         h <- .t72_cuerpo(e[[3]][[3]], ln)
         if (length(h)) out[[length(out) + 1L]] <- data.frame(file = f, label = nm, huecos = paste(h, collapse = ","),
                                                              stringsAsFactors = FALSE)
@@ -530,6 +534,10 @@ escanear_camino <- function(f) {
   ok("T72 camino: .req_modificar with no log -> a hole (the old scan never saw it)", nrow(r) == 1L)
   r <- fx(c('h <- function(x) {', '  prefs_guardar(cid, u, list(a = 1))', '  invisible(TRUE)', '}'))
   ok("T72 camino: prefs_guardar with no log -> a hole", nrow(r) == 1L)
+  r <- fx(c('h <- function(x, .parte_x) {', '  save_algo(x, evento = .parte_x)', '}'))
+  ok("T72 camino: a formal .parte* passed as evento is a /parte, not a log -> a hole (T93)", nrow(r) == 1L)
+  r <- fx(c('h <- function(x, ev) {', '  save_algo(x, evento = ev)', '}'))
+  ok("T72 camino: any other formal passed as evento is still a real event -> no hole", !nrow(r))
   r <- fx(c('h <- function(x) {', '  save_algo(x)', '  if (!nrow(x)) {', '    showNotification("x")', '    return(list(ok = TRUE))', '  }',
             '  if (x$a) {', '    pasivos_log_audit("liability.edited")', '    return(list(ok = TRUE))', '  }', '  log_action(user = "u")', '}'))
   ok("T72 camino: the wizard's shape -- a log in one branch, an early return after the save in another -> a hole at that return",
@@ -591,13 +599,15 @@ DEUDA_CAMINO <- c(
     "R/ledger_module.R :: .sap_ov_guardar",
     "R/ledger_module.R :: .sync_staged",
     "R/offline_queue.R :: .queue_replay_entry",
-    "R/pagar_hoy_module.R :: input[[paste0(\"do_confirm_ap_\", emp)]]",
     "R/pagar_hoy_module.R :: input[[paste0(\"do_confirm_ar_\", emp)]]",
     "R/pagar_hoy_module.R :: input$do_clear_all",
     # Entered master with the TANDA51 (T66's Saldo apertura / Bancos saldos,
     # CM34c's supplier links): a refused or failed save is told on screen but
     # not logged. Phase B's fallido events close them.
     "R/pagar_hoy_module.R :: input[[paste0(\"bal_\", emp)]]",
+    # T93: the AP Confirmar's body, moved untouched out of its observer
+    # (input[[paste0("do_confirm_ap_", emp)]]), keeps that observer's hole.
+    "R/pagar_hoy_module.R :: .ph_confirmar_ap",
     "R/pagar_hoy_module.R :: input$ph_link_supplier",
     "R/pagar_hoy_module.R :: input$ph_unlink_supplier",
     "R/pagar_hoy_module.R :: input$load_bancos_saldos",
