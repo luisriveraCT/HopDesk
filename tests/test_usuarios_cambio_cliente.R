@@ -20,23 +20,10 @@ ok <- function(label, expr) {
   else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
 
-# Every function definition in R/ (no top-level side effects), then the files
-# this module needs in full, so the real tiersServer finds what it calls.
-suppressMessages(for (f in list.files("R", pattern = "[.]R$", recursive = TRUE, full.names = TRUE)) {
-  ex <- tryCatch(parse(f, keep.source = FALSE), error = function(e) expression())
-  for (e in ex)
-    if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
-        is.call(e[[3]]) && identical(e[[3]][[1]], as.name("function")))
-      tryCatch(eval(e, envir = globalenv()), error = function(err) NULL)
-})
-suppressMessages({
-  for (f in c("R/tier_registry.R", "R/permisos.R", "R/i18n.R", "R/auth.R",
-              "R/tiers_tab_config.R", "R/audit_log_viewer_module.R",
-              "R/pagos_audit_viewer_module.R", "R/hd_registro.R", "R/hd_piezas.R",
-              "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R"))
-    if (file.exists(f)) source(f, local = FALSE)
-  source(Sys.getenv("TM_ARCHIVO", "R/tiers_module.R"), local = FALSE)
-})
+# T100: the real server's files come from ONE shared list
+# (tests/helpers/server_usuarios_archivos.R); stand-ins go after it.
+source("tests/helpers/server_usuarios_archivos.R")
+cargar_server_usuarios(c("R/tiers_module.R" = Sys.getenv("TM_ARCHIVO", "R/tiers_module.R")))
 tr <- function(k, ...) k
 IS_ADMIN_DEPLOYMENT <- TRUE   # staff deployment: the one that switches clients
 log_action <- function(...) invisible(NULL)

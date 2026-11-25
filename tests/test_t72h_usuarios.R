@@ -27,23 +27,10 @@ ok <- function(label, expr) {
   if (isTRUE(result)) { cat(" PASS:", label, "\n"); .pass <<- .pass + 1L }
   else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
-# As test_t31_usuarios.R: every function definition in R/, then the files
-# this test needs in full.
-suppressMessages(for (f in list.files("R", pattern = "[.]R$", recursive = TRUE, full.names = TRUE)) {
-  ex <- tryCatch(parse(f, keep.source = FALSE), error = function(e) expression())
-  for (e in ex)
-    if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
-        is.call(e[[3]]) && identical(e[[3]][[1]], as.name("function")))
-      tryCatch(eval(e, envir = globalenv()), error = function(err) NULL)
-})
-suppressMessages({
-  for (f in c("R/tier_registry.R", "R/permisos.R", "R/i18n.R", "R/auth.R", "R/tiers_tab_config.R",
-              "R/audit_log_viewer_module.R", "R/pagos_audit_viewer_module.R", "R/hd_registro.R",
-              "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R", "R/usuarios_cuentas.R",
-              "R/tiers_module.R", "R/tema_registro.R", "R/email_service.R", "R/auth_reset.R",
-              "R/bancos_respuesta.R"))   # T93: Archivos de pago's respuesta_banco table (BTR_ESTADOS)
-    if (file.exists(f)) source(f, local = FALSE)
-})
+# T100: the real server's files come from ONE shared list
+# (tests/helpers/server_usuarios_archivos.R); stand-ins go after it.
+source("tests/helpers/server_usuarios_archivos.R")
+cargar_server_usuarios()
 IS_ADMIN_DEPLOYMENT <- TRUE
 auth_get_credentials <- function() data.frame(user = character(), stringsAsFactors = FALSE)
 auth_invalidate_credentials <- function() invisible(NULL)
