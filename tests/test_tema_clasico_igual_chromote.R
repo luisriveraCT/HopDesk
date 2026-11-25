@@ -693,7 +693,10 @@ for (quien in quienes) {
     # The ☰ panel (nav .navbar-collapse.hd-marca, R/ui_components.R) is on
     # every signed-in view: its change is allowed in all of them (the MENU
     # view above is where it must change). Only that panel, nothing else.
-    en_menu <- difs_k %in% en_marca & grepl(".hd-marca.navbar-collapse", difs_k, fixed = TRUE)
+    # A key starts at the nearest id, so the panel's tabs and their dropdowns
+    # are keyed from ul#nav (the tab bar, which lives only in that panel).
+    en_menu <- difs_k %in% en_marca &
+      (grepl(".hd-marca.navbar-collapse", difs_k, fixed = TRUE) | startsWith(difs_k, "ul#nav."))
     if (any(en_menu)) {
       cat(sprintf("      | [%s] %s: cambio permitido en el panel ☰ (.hd-marca): %d differences\n", quien, nombre, sum(en_menu)))
       difs <- difs[!en_menu]; difs_k <- difs_k[!en_menu]
