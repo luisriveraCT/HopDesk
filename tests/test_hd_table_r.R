@@ -471,7 +471,7 @@ test_that("Excel, 300 rows: only the view's rows, in the view's order, typed, fo
   expect_equal(x$Importe, esperado$Importe)
   expect_s3_class(x$Vence, "Date")
   expect_identical(x$Vence, esperado$Vence)
-  expect_identical(x$Etapa, rep("a", nrow(x)))                     # raw value, not the label
+  expect_identical(x$Etapa, rep("Aprobada", nrow(x)))              # T110: the label the user sees, never the raw value
   expect_true("'=1+1" %in% x$Proveedor)                            # written as text
 })
 

@@ -778,6 +778,9 @@ hd_excel_escribir <- function(datos, columnas, ids, id_col, archivo, hoja = "dat
       numero = v$orden,
       fecha  = as.Date(ifelse(nzchar(v$copiar), v$copiar, NA_character_)),
       fecha_hora = as.POSIXct(ifelse(nzchar(v$copiar), v$copiar, NA_character_), tz = ""),
+      # A badge exports what the user sees, in their language ("Activo"),
+      # never its raw value ("active") (T110).
+      insignia = hd_neutralizar(v$mostrar),
       hd_neutralizar(v$copiar))
   })
   titulos <- vapply(columnas, function(col) .hd_texto(col$titulo), character(1))
