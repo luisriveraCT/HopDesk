@@ -1089,7 +1089,7 @@ bancosServer <- function(id, shared) {
 
     # ── Import reactives ──────────────────────────────────────────────────────
     # Raw TXT lines of the current upload; the banner derives empresa,
-    # account and currency from them (detectar_cuenta_banbajio).
+    # account and currency from them (the importer's detector, R/bancos_importadores.R).
     txt_lines_rv         <- reactiveVal(character(0))
     # TRUE once the user has consciously chosen an account in the banner dropdown.
     # Reset to FALSE on each new file upload so the best-match auto-selects again.
@@ -1740,9 +1740,10 @@ bancosServer <- function(id, shared) {
       cid       <- input$import_cuenta %||% ""
       cts       <- cuentas()
 
-      # Active BanBaj\u00edo accounts only (the only parser we support right now)
-      cts_baj <- dplyr::filter(cts, activa == TRUE,
-                               grepl("baj", banco, ignore.case = TRUE))
+      # The accounts this file's importer can load into (T84 A2: the
+      # registry, R/bancos_importadores.R -- today only BanBaj\u00edo's TXT).
+      imp     <- importador_de_cuenta(cts)
+      cts_baj <- cts[importador_llamar(imp, "acepta_cuenta", cts), , drop = FALSE]
 
       if (!nrow(cts_baj))
         return(div(
@@ -1754,8 +1755,8 @@ bancosServer <- function(id, shared) {
       # Rank by account number + subcuenta + currency + the CLIENT's raz\u00f3n
       # social registry (see R/bancos_detect.R for the evidence behind it).
       emp_df <- tryCatch(shared$empresas_db(), error = function(e) NULL)
-      det <- detectar_cuenta_banbajio(txt_lines, cts_baj, emp_df,
-                                      parsed = parsed_preview())
+      det <- importador_llamar(imp, "detectar", txt_lines, cts_baj, emp_df,
+                               parsed = parsed_preview())
       cts_baj <- det$ranking
       txt_emp <- det$encabezado$razon_social
 
@@ -1822,16 +1823,12 @@ bancosServer <- function(id, shared) {
       # Re-parse only if a file is already loaded
       req(input$txt_file)
       path <- input$txt_file$datapath
-      lines <- tryCatch(
-        readLines(path, encoding = "UTF-8", warn = FALSE),
-        error = function(e) tryCatch(
-          readLines(path, encoding = "latin1", warn = FALSE),
-          error = function(e2) NULL)
-      )
+      imp   <- importador_de_cuenta(cuentas())
+      lines <- importador_llamar(imp, "leer", path)
       if (is.null(lines) || length(lines) < 3L) return()
       cuenta_id_sel <- input$import_cuenta %||% ""
       result <- tryCatch(
-        parse_banbajio_txt(lines, cuenta_id_sel),
+        importador_llamar(imp, "parsear", lines, cuenta_id_sel),
         error = function(e) NULL
       )
       if (!is.null(result)) parsed_preview(result)
@@ -1841,13 +1838,8 @@ bancosServer <- function(id, shared) {
       req(input$txt_file)
       path <- input$txt_file$datapath
 
-      lines <- tryCatch(
-        readLines(path, encoding = "UTF-8", warn = FALSE),
-        error = function(e) {
-          tryCatch(readLines(path, encoding = "latin1", warn = FALSE),
-                   error = function(e2) NULL)
-        }
-      )
+      imp   <- importador_de_cuenta(cuentas())
+      lines <- importador_llamar(imp, "leer", path)
 
       if (is.null(lines) || length(lines) < 3L) {
         showNotification(tr("tablas.bancos.aviso.txt_no_leido"), type = "error")
@@ -1862,7 +1854,7 @@ bancosServer <- function(id, shared) {
 
       cuenta_id_sel <- input$import_cuenta %||% ""
       result <- tryCatch(
-        parse_banbajio_txt(lines, cuenta_id_sel),
+        importador_llamar(imp, "parsear", lines, cuenta_id_sel),
         error = function(e) {
           showNotification(tr("tablas.bancos.aviso.error_parsear", error = e$message), type = "error")
           NULL
@@ -1872,7 +1864,7 @@ bancosServer <- function(id, shared) {
       if (is.null(result)) { parsed_preview(NULL); return() }
 
       # Account suggestion lives in output$import_cuenta_banner, which re-ranks
-      # every render via detectar_cuenta_banbajio() (R/bancos_detect.R).
+      # every render through the importer's detector (R/bancos_importadores.R).
       parsed_preview(result)
     }, ignoreInit = TRUE)
 
