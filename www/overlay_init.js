@@ -20,7 +20,11 @@
        - the 100 % came (Phase 2 finished);
        - the client's theme came (the server's hdTema message);
        - the open tab has content and nothing in it is recalculating;
-       - Shiny has been idle for SILENCIO ms (no shiny:busy since).
+       - Shiny has been idle for SILENCIO ms (no shiny:busy since);
+       - the ☰ menu has at least one entry showing (T88-1c): until the
+         server's tier rules arrive, a client's menu can have none, and a
+         click there finds nothing (seen by ISO, T98: ~10 s on a first
+         session).
      TOPE ms after the 100 % it goes anyway; TOPE_CARGA ms after the page
      loaded too (a session that breaks never sends the 100 %). Pure (state
      and a clock in, a verdict out) for tests/test_overlay_salida.R. */
@@ -28,16 +32,33 @@
     SILENCIO: 1500,
     TOPE: 30000,
     TOPE_CARGA: 120000,
-    /* s: {cargaAt, pct100At, temaAt, busy, idleAt, pestanaLista}; times in ms.
-       'esperar' | 'quitar' | 'tope' */
+    /* s: {cargaAt, pct100At, temaAt, busy, idleAt, pestanaLista, menuListo};
+       times in ms. 'esperar' | 'quitar' | 'tope' */
     decidir: function(s, ahora) {
       if (!s) return 'esperar';
       if (s.cargaAt && ahora - s.cargaAt >= this.TOPE_CARGA) return 'tope';
       if (!s.pct100At) return 'esperar';
       if (ahora - s.pct100At >= this.TOPE) return 'tope';
-      if (!s.temaAt || s.busy || !s.pestanaLista) return 'esperar';
+      if (!s.temaAt || s.busy || !s.pestanaLista || !s.menuListo) return 'esperar';
       if (ahora - Math.max(s.idleAt || 0, s.pct100At) < this.SILENCIO) return 'esperar';
       return 'quitar';
+    },
+    /* T88-1c: whether the menu has an entry showing. links: the navbar's
+       a[data-value]; estilo(el) -> its computed style. An entry is hidden
+       when it or a container up to the .navbar has display:none -- the tier
+       rules hide that way (the first paint's CSS, the observer's inline
+       !important). The ☰ collapse panel and a closed dropdown are display:none
+       too, but by design (closed, not forbidden): they do not count. */
+    menuListo: function(links, estilo) {
+      for (var i = 0; i < (links ? links.length : 0); i++) {
+        var oculto = false;
+        for (var h = links[i]; h && !(h.classList && h.classList.contains('navbar')); h = h.parentElement) {
+          if (h.classList && (h.classList.contains('navbar-collapse') || h.classList.contains('dropdown-menu'))) continue;
+          if (estilo(h).display === 'none') { oculto = true; break; }
+        }
+        if (!oculto) return true;
+      }
+      return false;
     }
   };
 
@@ -335,6 +356,8 @@
       H.salidaT = setInterval(function() {
         try {
           H.salida.pestanaLista = _pestanaLista();
+          H.salida.menuListo = window.hldSalida.menuListo(
+            document.querySelectorAll('.navbar a[data-value]'), function(e) { return getComputedStyle(e); });
           var v = window.hldSalida.decidir(H.salida, Date.now());
           if (v !== 'esperar') _quitar(v);
         } catch (e) {

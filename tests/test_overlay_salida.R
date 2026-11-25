@@ -61,31 +61,57 @@ if (!nzchar(node)) {
 } else {
   # ── 1. The decision, with a fake clock ─────────────────────────────────────
   casos <- list(
-    sin_100        = list(s = list(temaAt = 1000, busy = FALSE, idleAt = 1000, pestanaLista = TRUE), t = 99999),
-    sin_tema       = list(s = list(pct100At = 10000, busy = FALSE, idleAt = 10000, pestanaLista = TRUE), t = 20000),
-    sin_tema_tope  = list(s = list(pct100At = 10000, busy = FALSE, idleAt = 10000, pestanaLista = TRUE), t = 40000),
-    ocupada        = list(s = list(pct100At = 10000, temaAt = 8000, busy = TRUE, idleAt = 9000, pestanaLista = TRUE), t = 20000),
-    pestana_vacia  = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 10000, pestanaLista = FALSE), t = 20000),
-    silencio_corto = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 12000, pestanaLista = TRUE), t = 13499),
-    silencio_ok    = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 12000, pestanaLista = TRUE), t = 13500),
-    idle_antes     = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 5000, pestanaLista = TRUE), t = 11000),
-    idle_antes_ok  = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 5000, pestanaLista = TRUE), t = 11500),
-    ocupada_tope   = list(s = list(pct100At = 10000, temaAt = 8000, busy = TRUE, idleAt = 9000, pestanaLista = FALSE), t = 40000),
+    sin_100        = list(s = list(temaAt = 1000, busy = FALSE, idleAt = 1000, pestanaLista = TRUE, menuListo = TRUE), t = 99999),
+    sin_tema       = list(s = list(pct100At = 10000, busy = FALSE, idleAt = 10000, pestanaLista = TRUE, menuListo = TRUE), t = 20000),
+    sin_tema_tope  = list(s = list(pct100At = 10000, busy = FALSE, idleAt = 10000, pestanaLista = TRUE, menuListo = TRUE), t = 40000),
+    ocupada        = list(s = list(pct100At = 10000, temaAt = 8000, busy = TRUE, idleAt = 9000, pestanaLista = TRUE, menuListo = TRUE), t = 20000),
+    pestana_vacia  = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 10000, pestanaLista = FALSE, menuListo = TRUE), t = 20000),
+    silencio_corto = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 12000, pestanaLista = TRUE, menuListo = TRUE), t = 13499),
+    silencio_ok    = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 12000, pestanaLista = TRUE, menuListo = TRUE), t = 13500),
+    idle_antes     = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 5000, pestanaLista = TRUE, menuListo = TRUE), t = 11000),
+    idle_antes_ok  = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 5000, pestanaLista = TRUE, menuListo = TRUE), t = 11500),
+    ocupada_tope   = list(s = list(pct100At = 10000, temaAt = 8000, busy = TRUE, idleAt = 9000, pestanaLista = FALSE, menuListo = TRUE), t = 40000),
     sin_100_carga  = list(s = list(cargaAt = 1000, busy = TRUE), t = 120999),
     sin_100_tope   = list(s = list(cargaAt = 1000, busy = TRUE), t = 121000),
-    nada           = list(s = NULL, t = 5000))
+    nada           = list(s = NULL, t = 5000),
+    sin_menu       = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 10000, pestanaLista = TRUE, menuListo = FALSE), t = 20000),
+    sin_menu_tope  = list(s = list(pct100At = 10000, temaAt = 8000, busy = FALSE, idleAt = 10000, pestanaLista = TRUE, menuListo = FALSE), t = 40000))
   r <- correr_node(c(
     sprintf("var casos = %s;", jsonlite::toJSON(casos, auto_unbox = TRUE, null = "null")),
     "var w = pagina({ app: false, ahora: 0 }).win, r = {};",
     "Object.keys(casos).forEach(function (k) { r[k] = w.hldSalida.decidir(casos[k].s, casos[k].t); });",
     # Production's 16:39 sign-in (T88 paso 0), time from Phase 1: 100 % at
     # 15 s, the theme at 8 s, busy until 28 s, the open tab drawn at 28 s.
-    "var s = { cargaAt: 1, pct100At: 15000, temaAt: 8000, busy: true, idleAt: 0, pestanaLista: false }, sale = null;",
+    "var s = { cargaAt: 1, pct100At: 15000, temaAt: 8000, busy: true, idleAt: 0, pestanaLista: false, menuListo: true }, sale = null;",
     "for (var t = 15000; t <= 60000 && !sale; t += 250) {",
     "  if (t >= 28000 && s.busy) { s.busy = false; s.idleAt = 28000; s.pestanaLista = true; }",
     "  var v = w.hldSalida.decidir(s, t); if (v !== 'esperar') sale = { t: t, v: v };",
     "}",
-    "r.prod = sale; r.silencio = w.hldSalida.SILENCIO; r.tope = w.hldSalida.TOPE; r.tope_carga = w.hldSalida.TOPE_CARGA;",
+    "r.prod = sale;",
+    # ISO's first session (T98): everything ready and idle at 20.5 s (the
+    # overlay used to go at ~22 s), the client's menu entries only at 32 s.
+    "s = { cargaAt: 1, pct100At: 20000, temaAt: 8000, busy: false, idleAt: 20500, pestanaLista: true, menuListo: false }; sale = null;",
+    "for (var t = 20000; t <= 60000 && !sale; t += 250) {",
+    "  if (t >= 32000) s.menuListo = true;",
+    "  var v = w.hldSalida.decidir(s, t); if (v !== 'esperar') sale = { t: t, v: v };",
+    "}",
+    "r.iso = sale;",
+    # the menu check, on a fake navbar: nav > collapse > ul > li > a
+    "function el(cls, disp, padre) { return { classList: { contains: function (c) { return cls.split(' ').indexOf(c) >= 0; } }, d: disp, parentElement: padre }; }",
+    "var est = function (e) { return { display: e.d }; };",
+    "function menu(ocultaLi, ocultaA, colapsado, enDropdown) {",
+    "  var nav = el('navbar', 'flex', null), col = el('navbar-collapse collapse', colapsado ? 'none' : 'block', nav);",
+    "  var ul = el('navbar-nav', 'flex', col); if (enDropdown) ul = el('dropdown-menu', 'none', el('nav-item dropdown', 'list-item', ul));",
+    "  var li = el('nav-item', ocultaLi ? 'none' : 'list-item', ul); return [el('nav-link', ocultaA ? 'none' : 'block', li)]; }",
+    "r.menu = {",
+    "  visible: w.hldSalida.menuListo(menu(false, false, false), est),",
+    "  colapsado: w.hldSalida.menuListo(menu(false, false, true), est),",
+    "  en_dropdown_cerrado: w.hldSalida.menuListo(menu(false, false, true, true), est),",
+    "  oculto_a: w.hldSalida.menuListo(menu(false, true, true), est),",
+    "  oculto_li: w.hldSalida.menuListo(menu(true, false, true), est),",
+    "  dos: w.hldSalida.menuListo(menu(true, false, true).concat(menu(false, false, true)), est),",
+    "  vacio: w.hldSalida.menuListo([], est), nulo: w.hldSalida.menuListo(null, est) };",
+    "r.silencio = w.hldSalida.SILENCIO; r.tope = w.hldSalida.TOPE; r.tope_carga = w.hldSalida.TOPE_CARGA;",
     "console.log(JSON.stringify(r));"))
   ok("1a  before the 100 %, it waits (whatever else is ready)", identical(r$sin_100, "esperar"))
   ok("1b  without the theme, it waits", identical(r$sin_tema, "esperar"))
@@ -100,6 +126,15 @@ if (!nzchar(node)) {
   ok("1j  no 100 % ever (a session that breaks): it goes 120 s after the page loaded, not before",
      identical(r$sin_100_carga, "esperar") && identical(r$sin_100_tope, "tope"))
   ok("1k  no state at all: it waits", identical(r$nada, "esperar"))
+  ok("1n  everything ready but the menu has no entry showing: it waits; at the cap it goes anyway (T88-1c)",
+     identical(r$sin_menu, "esperar") && identical(r$sin_menu_tope, "tope"))
+  ok(sprintf("1o  ISO's first session (T98): it goes at %.2f s, once the client's tabs are in the menu (32 s), not at ~22 s",
+             (if (is.null(r$iso$t)) NA else r$iso$t) / 1000), identical(r$iso$v, "quitar") && r$iso$t == 32000)
+  ok("1p  the menu check: an entry showing counts, also inside the closed ☰ panel or a closed dropdown",
+     isTRUE(r$menu$visible) && isTRUE(r$menu$colapsado) && isTRUE(r$menu$en_dropdown_cerrado))
+  ok("1q  ... an entry hidden (on the link or its li) does not; one showing among hidden ones does; none or null: not ready",
+     identical(r$menu$oculto_a, FALSE) && identical(r$menu$oculto_li, FALSE) && isTRUE(r$menu$dos) &&
+       identical(r$menu$vacio, FALSE) && identical(r$menu$nulo, FALSE))
   ok("1l  silence 1500 ms, cap 30000 ms after the 100 %, 120000 ms after the load",
      identical(r$silencio, 1500L) && identical(r$tope, 30000L) && identical(r$tope_carga, 120000L))
   ok(sprintf("1m  production's 16:39 sign-in: it goes at %.2f s from Phase 1, never before the tab is drawn (28 s)",
@@ -154,6 +189,9 @@ ok("3b  the 100 % starts the watcher (and stamps the time once)",
 ok("3c  the theme is heard on shiny:message, never with a second hdTema handler (it would replace the theme's own)",
    grepl("on('shiny:message'", js_txt, fixed = TRUE) && grepl("c.hdTema", js_txt, fixed = TRUE) &&
      !grepl("addCustomMessageHandler\\(\\s*['\"]hdTema", js_txt))
+ok("3d2 the watcher reads the menu: every a[data-value] of the navbar, by its computed style (T88-1c)",
+   grepl("H.salida.menuListo = window.hldSalida.menuListo(", js_txt, fixed = TRUE) &&
+     grepl("document.querySelectorAll('.navbar a[data-value]')", js_txt, fixed = TRUE))
 ok("3d  busy and idle come from Shiny's own events",
    grepl("on('shiny:busy'", js_txt, fixed = TRUE) && grepl("on('shiny:idle'", js_txt, fixed = TRUE))
 ok("3e  the open tab: the outermost active pane, nothing recalculating, something drawn",
