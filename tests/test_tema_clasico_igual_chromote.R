@@ -680,14 +680,23 @@ for (quien in quienes) {
       ok(sprintf("[%s] %s: no sign-in form in master or branch", quien, nombre), !login(eb) && !login(er))
     # Expected change (TEMA 6-10): inside .hd-marca the view may change, and
     # where the list says so it must; outside .hd-marca it stays the same.
+    # (Never name a local here "dentro": it is the sign-in check's function.)
     if (v %in% names(.CAMBIO_ESPERADO)) {
-      dentro <- difs_k %in% en_marca
+      en_mk <- difs_k %in% en_marca
       if (.CAMBIO_ESPERADO[[v]]$debe)
         ok(sprintf("[%s] %s: CAMBIO ESPERADO (%s): %d differences inside .hd-marca (must be > 0)",
-                   quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(dentro)), sum(dentro) > 0L)
+                   quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(en_mk)), sum(en_mk) > 0L)
       else cat(sprintf("      | [%s] %s: cambio permitido dentro de .hd-marca (%s): %d differences\n",
-                       quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(dentro)))
-      difs <- difs[!dentro]
+                       quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(en_mk)))
+      difs <- difs[!en_mk]; difs_k <- difs_k[!en_mk]
+    }
+    # The ☰ panel (nav .navbar-collapse.hd-marca, R/ui_components.R) is on
+    # every signed-in view: its change is allowed in all of them (the MENU
+    # view above is where it must change). Only that panel, nothing else.
+    en_menu <- difs_k %in% en_marca & grepl(".hd-marca.navbar-collapse", difs_k, fixed = TRUE)
+    if (any(en_menu)) {
+      cat(sprintf("      | [%s] %s: cambio permitido en el panel ☰ (.hd-marca): %d differences\n", quien, nombre, sum(en_menu)))
+      difs <- difs[!en_menu]; difs_k <- difs_k[!en_menu]
     }
     if (!ok(sprintf("[%s] %s: %d elements compared, same computed style within ΔE %g (only in master %d, only in branch %d)",
                     quien, nombre, length(comunes), DE_MAX, length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
