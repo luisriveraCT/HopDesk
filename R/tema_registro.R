@@ -36,7 +36,7 @@
 HD_TEMA_OMISION <- "clasico"
 
 # Bumped with every change to the generated file (browser cache on shinyapps.io).
-HD_TEMAS_CSS_VERSION <- 25L
+HD_TEMAS_CSS_VERSION <- 26L
 
 # ── Paleta (same in every theme) ─────────────────────────────────────────────
 .HD_PALETA <- list(
@@ -1024,7 +1024,12 @@ tema_legado_css <- function() {
     `--bs-btn-active-color` = "{barra-texto}", `--bs-btn-active-bg` = "color-mix(in srgb, {barra-texto} 20%, transparent)",
     `--bs-btn-active-border-color` = "{barra-texto}",
     `--bs-btn-disabled-color` = "{barra-texto}",
-    `--bs-btn-disabled-border-color` = "color-mix(in srgb, {barra-texto} 60%, transparent)"))
+    `--bs-btn-disabled-border-color` = "color-mix(in srgb, {barra-texto} 60%, transparent)")),
+  # TEMA 6-6b: the veil behind a modal is the theme's encabezado (Bootstrap
+  # paints it black at 50 %), and .text-bg-light's text is the theme's ink
+  # (Bootstrap writes color: #000 !important, so the bridge must too).
+  list(sel = c(".modal-backdrop"), decl = c(`--bs-backdrop-bg` = "{encabezado}")),
+  list(sel = c(".text-bg-light"), decl = c(color = "{texto} !important"))
 )
 
 # Bootstrap's coloured buttons: fill, the text on it, hover fill (NA: the fill

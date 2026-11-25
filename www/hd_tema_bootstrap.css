@@ -286,6 +286,12 @@ html[data-hd-tema="marca"] .btn-outline-light {
   --bs-btn-disabled-color: var(--hd-barra-texto);
   --bs-btn-disabled-border-color: color-mix(in srgb, var(--hd-barra-texto) 60%, transparent);
 }
+html[data-hd-tema="marca"] .modal-backdrop {
+  --bs-backdrop-bg: var(--hd-encabezado);
+}
+html[data-hd-tema="marca"] .text-bg-light {
+  color: var(--hd-texto) !important;
+}
 html[data-hd-tema="marca"] .btn-primary {
   --bs-btn-color: var(--hd-primario-texto);
   --bs-btn-bg: var(--hd-primario);
