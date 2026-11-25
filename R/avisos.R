@@ -51,7 +51,7 @@ AVISOS_CLASES     <- c("comunicado", "recordatorio", "reconocimiento", "solicitu
   retirado_por = character(),
   retirado_en = as.POSIXct(character(), tz = "UTC"),
   hechos      = character(),   # JSON array of usernames who marked it done
-  descartados = character()    # T95: JSON array of usernames who took it off their own view
+  descartados = character()    # T95: JSON array of usernames who took it off their own view (NA = nobody)
 )
 
 .schema_preferencias <- function() tibble::tibble(
@@ -229,7 +229,7 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
         df$titulo[i]      <- aviso$titulo %||% df$titulo[i]
         df$cuerpo[i]      <- aviso$cuerpo %||% df$cuerpo[i]
         df$hechos[i]      <- .json(character())   # news again: nobody has it done
-        df$descartados[i] <- .json(character())   # T95: nor discarded
+        df$descartados[i] <- NA_character_        # T95: nor discarded (NA = nobody, as rows from before T95)
         id_final <<- df$id[i]
         return(df)
       }
@@ -244,8 +244,7 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
       creado = ahora, actualizado = ahora,
       vence = as.POSIXct(aviso$vence %||% NA, tz = "UTC"),
       retirado = FALSE, retirado_por = NA_character_,
-      retirado_en = as.POSIXct(NA, tz = "UTC"), hechos = .json(character()),
-      descartados = .json(character()))
+      retirado_en = as.POSIXct(NA, tz = "UTC"), hechos = .json(character()))
     dplyr::bind_rows(df, fila)
   })
   id_final
