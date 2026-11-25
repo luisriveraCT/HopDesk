@@ -44,10 +44,11 @@ ini <- grep("^\\.log_pago_generado <- function", ph)
 fin <- siguiente(ph, "^}", ini, fixed = FALSE)
 ok(length(ini) == 1L && !any(g$linea > ini & g$linea < fin), "S archivo de pago: nada dentro de .log_pago_generado()")
 
-# Per company: right after the file is written.
-w <- grep("write_ppl(lines, file)", ph, fixed = TRUE)
+# Per company: right after the file is written (T84 B2: written through the
+# layouts' registry, layout_llamar(lay, "escribir", lines, file)).
+w <- grep('layout_llamar(lay, "escribir", lines, file)', ph, fixed = TRUE)
 ok(length(w) == 1L && any(g$accion == "generar_archivo_pago" & g$linea == w + 1L),
-   "S archivo de pago por empresa: justo después de write_ppl()")
+   "S archivo de pago por empresa: justo después de escribir el archivo (layout_llamar escribir)")
 
 # ZIP: once, after zip(), only when files were made.
 z <- grep('zip(file, fnames, flags = "-j")', ph, fixed = TRUE)
