@@ -20,7 +20,7 @@ ok <- function(label, expr) {
   else                { cat(" FAIL:", label, "\n"); .fail <<- .fail + 1L }
 }
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
-for (f in c("R/monedas.R", "R/ppl_generator.R", "R/bancos_respuesta.R")) source(f)
+for (f in c("R/monedas.R", "R/ppl_generator.R", "R/pagos_layouts.R", "R/bancos_respuesta.R")) source(f)
 for (e in parse("R/pagos_generados_persistence.R", keep.source = FALSE, encoding = "UTF-8"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "parse_pago_beneficiarios"))
     eval(e, globalenv())

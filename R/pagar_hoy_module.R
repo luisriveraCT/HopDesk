@@ -1908,9 +1908,11 @@ pagarHoyServer <- function(id, shared) {
           .ph_log_bancos_como_antes(shared, emp, cur_sel, ppl_rows, fname_ind)
           # T94: the file's currency and, for SPID, the classification chosen
           # in the preview -- checked against the guide's codes, never used raw.
-          lines <- generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur_sel,
-                                clasificacion = ppl_clasificacion(input[[paste0("ppl_clasif_", emp)]]))
-          write_ppl(lines, file)
+          # T84 B2: through the layouts' registry (R/pagos_layouts.R).
+          lay   <- layout_de_cuenta(cuenta_origen)
+          lines <- layout_llamar(lay, "generar", ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur_sel,
+                                 clasificacion = ppl_clasificacion(input[[paste0("ppl_clasif_", emp)]]))
+          layout_llamar(lay, "escribir", lines, file)
           avisos_actividad(shared$effective_client_id(), "generar_archivo_pago", shared$current_user(), list(cuerpo = paste0(emp, " · ", nrow(ppl_rows), " pago(s) · ", cur_sel)))
           removeModal()
         }
@@ -3335,8 +3337,9 @@ pagarHoyServer <- function(id, shared) {
             .ph_log_bancos_como_antes(shared, emp, cur, ppl_rows, basename(fname))
             # T94: the currency's divisa; SPID's classification is the default
             # ("07 Otro") -- the ZIP has no per-file selector.
-            write_ppl(generate_ppl(ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur,
-                                   clasificacion = PPL_CLASIFICACION_DEFECTO), fname)
+            lay <- layout_de_cuenta(cuenta_origen)   # T84 B2
+            layout_llamar(lay, "escribir", layout_llamar(lay, "generar", ppl_rows, cuenta_origen, hoy(), 1L, moneda = cur,
+                                                         clasificacion = PPL_CLASIFICACION_DEFECTO), fname)
             results[[length(results) + 1L]] <- list(
               fname = fname,
               summary = list(
@@ -3409,8 +3412,9 @@ pagarHoyServer <- function(id, shared) {
                   paste0("pagos_", emp, "_", cur, "_", format(hoy(), "%d%m%Y"), "_002.txt"))
                 .log_pago_generado(shared, emp, cur, origen, ppl_i, fname = basename(fname_i),
                                    source_type = "zip_bulk_sin_cuenta", banco_origen = banco_o)
-                write_ppl(generate_ppl(ppl_i, origen, hoy(), 2L, moneda = cur,
-                                       clasificacion = PPL_CLASIFICACION_DEFECTO), fname_i)
+                lay_i <- layout_de_cuenta(origen)   # T84 B2
+                layout_llamar(lay_i, "escribir", layout_llamar(lay_i, "generar", ppl_i, origen, hoy(), 2L, moneda = cur,
+                                                               clasificacion = PPL_CLASIFICACION_DEFECTO), fname_i)
                 results[[length(results) + 1L]] <- list(
                   fname = fname_i,
                   summary = list(

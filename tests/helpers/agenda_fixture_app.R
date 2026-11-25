@@ -42,7 +42,7 @@ cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_
                               "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))   # T66
 cargar("R/search_module.R", c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/monedas.R", "R/zona.R", "R/ppl_generator.R", "R/agenda_filas.R", "R/pagar_hoy_module.R"))
+            "R/monedas.R", "R/zona.R", "R/ppl_generator.R", "R/pagos_layouts.R", "R/agenda_filas.R", "R/pagar_hoy_module.R"))
   sys.source(file.path(raiz, f), envir = globalenv())
 assign(".i18n_dir", file.path(raiz, "www", "i18n"), envir = globalenv())
 suppressPackageStartupMessages({ library(dplyr) })

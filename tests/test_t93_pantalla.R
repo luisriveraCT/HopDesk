@@ -25,7 +25,7 @@ ok <- function(label, expr) {
 }
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/monedas.R",
-            "R/ppl_generator.R", "R/bancos_respuesta.R"))
+            "R/ppl_generator.R", "R/pagos_layouts.R", "R/bancos_respuesta.R"))
   source(f)
 for (e in parse("R/pagos_generados_persistence.R", keep.source = FALSE, encoding = "UTF-8"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "parse_pago_beneficiarios"))

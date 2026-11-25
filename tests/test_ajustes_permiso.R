@@ -42,7 +42,7 @@ for (e in parse("R/ui_components.R", keep.source = FALSE, encoding = "UTF-8"))  
       as.character(e[[2]]) %in% c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",
                                   "hd_numero_input", "hd_numero_update", "hd_numero_revisar"))
     eval(e, globalenv())
-for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/tier_registry.R", "R/permisos.R",
+for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/pagos_layouts.R", "R/tier_registry.R", "R/permisos.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))
   suppressMessages(source(f))

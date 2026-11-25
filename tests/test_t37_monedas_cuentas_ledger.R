@@ -20,7 +20,7 @@
 cat("=== test_t37_monedas_cuentas_ledger ===\n\n")
 suppressPackageStartupMessages({ library(shiny); library(dplyr) })
 `%||%` <- function(a, b) if (is.null(a)) b else a
-for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R")) source(f)
+for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/pagos_layouts.R")) source(f)
 source("R/settings/settings_helpers.R")
 for (e in parse("R/ui_components.R", keep.source = FALSE, encoding = "UTF-8"))   # T66: hd_numero_*
   if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&

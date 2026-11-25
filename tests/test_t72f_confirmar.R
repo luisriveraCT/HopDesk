@@ -44,7 +44,7 @@ for (e in parse("R/data_pipeline.R", keep.source = FALSE, encoding = "UTF-8"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), ".politica_doc_unica"))
     eval(e, globalenv())
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/monedas.R",
-            "R/zona.R", "R/ppl_generator.R"))
+            "R/zona.R", "R/ppl_generator.R", "R/pagos_layouts.R"))
   source(f)
 for (e in parse("R/search_module.R", keep.source = FALSE))
   if (is.call(e) && identical(e[[1]], as.name("<-")) &&

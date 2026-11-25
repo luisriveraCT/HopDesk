@@ -35,7 +35,7 @@ fmt_money <- function(x) paste0("$ ", formatC(x, format = "f", digits = 2, big.m
 
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/monedas.R",
             "R/zona.R",   # CM27-ppl: hoy_en(), the client's day for the payment files
-            "R/ppl_generator.R"))
+            "R/ppl_generator.R", "R/pagos_layouts.R"))
   source(f)
 # The raw SAP viewer the module makes once (search_module.R, T21).
 for (e in parse("R/search_module.R", keep.source = FALSE))

@@ -36,7 +36,7 @@ cargar("R/erp_connector_registry.R", "SAP_B1_ERP_TYPE")
 cargar("R/global.R", "is_erp_sourced")
 cargar("R/data_pipeline.R", ".politica_doc_unica")
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/monedas.R",
-            "R/zona.R", "R/ppl_generator.R"))
+            "R/zona.R", "R/ppl_generator.R", "R/pagos_layouts.R"))
   source(f)
 cargar("R/search_module.R", c(".datos_sap_filas", ".datos_sap_columnas", "datos_sap_tabla", "datos_sap_visor"))
 cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_numero_texto", "hd_numero_deps",

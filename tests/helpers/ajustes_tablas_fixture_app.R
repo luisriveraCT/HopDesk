@@ -40,7 +40,7 @@ cargar("R/ui_components.R", c("HD_NUMERO_FORMATOS", ".hd_numero_decimales", "hd_
 # Tags by posting date since T52d: etiquetas_por_factura() and its day, hoy_en() (R/zona.R) (T53)
 cargar("R/data_pipeline.R", c("etiquetas_por_factura", ".etiquetas_doc_unica", ".politica_doc", ".politica_doc_unica"))
 if (file.exists(file.path(raiz, "R/zona.R"))) sys.source(file.path(raiz, "R/zona.R"), envir = globalenv())
-for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/tier_registry.R", "R/permisos.R",
+for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/pagos_layouts.R", "R/tier_registry.R", "R/permisos.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
             "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))
   suppressMessages(source(f))

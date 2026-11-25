@@ -5,7 +5,7 @@
 suppressPackageStartupMessages(library(testthat))
 `%||%` <- function(a, b) if (is.null(a)) b else a
 source("R/monedas.R")
-for (f in c("R/ppl_generator.R", "R/proveedores_module.R"))
+for (f in c("R/ppl_generator.R", "R/pagos_layouts.R", "R/proveedores_module.R"))
   for (e in parse(f, keep.source = FALSE))
     if (is.call(e) && identical(e[[1]], as.name("<-")) &&
         as.character(e[[2]]) %in% c("ppl_moneda_palabra", ".prov_moneda_mostrar"))
