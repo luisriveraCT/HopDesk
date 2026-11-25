@@ -30,6 +30,8 @@ for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "
 for (e in parse("R/pagos_generados_persistence.R", keep.source = FALSE, encoding = "UTF-8"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "parse_pago_beneficiarios"))
     eval(e, globalenv())
+source("tests/helpers/cuenta_origen_t104.R")   # T104: each payment's origin account
+load_ctas_bancos <- function(...) BANCOS_T104
 evento_parte_de <- function(accion, modulo = NULL, usuario = NULL, home = NULL)
   list(.parte_de = accion, modulo = modulo, usuario = usuario, home = home)
 
@@ -39,7 +41,8 @@ puede_o_avisa <- function(shared, permiso, ...) PUEDE && identical(permiso, "can
 puede <- function(usuario, permiso) PUEDE
 CONF <- list(); REG <- NULL; AVISOS <- character()
 .ph_confirmar_ap <- function(shared, emp, cur, rows, cuenta_sel, fecha_pago, .parte_ap, .ph_fallido, .link_counter, extra = NULL) {
-  CONF[[length(CONF) + 1L]] <<- list(emp = emp, cur = cur, ids = rows$id, fecha = fecha_pago, extra = extra, parte = .parte_ap)
+  CONF[[length(CONF) + 1L]] <<- list(emp = emp, cur = cur, ids = rows$id, fecha = fecha_pago, extra = extra, parte = .parte_ap,
+                                   cuenta = cuenta_sel)
   bc <- shared$bancos_confirmados()
   shared$bancos_confirmados(rbind(bc, data.frame(confirmacion_id = paste0("C-", extra$agenda_item_id),
                                                  respuesta_id = extra$respuesta_id, stringsAsFactors = FALSE)))
@@ -84,7 +87,8 @@ correr <- function(subida, decisiones = NULL, prov = NULL) {
   CONF <<- list(); REG <<- NULL; AVISOS <<- character()
   shared <- list(effective_client_id = function() "acme", current_user = function() "luis", home_client_id = function() "acme",
                  usuario = reactiveVal(list(user = "luis")), bancos_confirmados = reactiveVal(data.frame(confirmacion_id = character(), respuesta_id = character())),
-                 proveedores_db = reactiveVal(prov), parte_alias_map_db = reactiveVal(NULL))
+                 proveedores_db = reactiveVal(prov), parte_alias_map_db = reactiveVal(NULL),
+                 ctas_cuentas = reactiveVal(CTAS_T104))
   res <- list()
   srv <- function(input, output, session) { h <- .btr_servidor(input, output, session, shared); session$userData$h <- h }
   invisible(capture.output(testServer(srv, {
@@ -113,6 +117,8 @@ ok("2 · la vista previa la arma el servidor: camino A, UNO \"confirmar\", DOS \
    r$prep$camino == "A" && identical(r$prep$filas$estado, c("confirmar", "editado")))
 ok("2 · confirma por el Confirmar de la Agenda SOLO la fila de UNO (A1); el Editado no, aunque el navegador lo pida",
    length(CONF) == 1L && identical(CONF[[1]]$ids, "A1") && CONF[[1]]$emp == "NCS" && CONF[[1]]$cur == "MXN")
+ok("2 · T104: con la cuenta origen de SU lote (073543010201 -> la cuenta NCS MXN del catálogo), nunca sin cuenta",
+   identical(CONF[[1]]$cuenta, "CT-NCS-MXN"))
 ok("2 · con su clave de rastreo, autorización y respuesta_id; fecha del banco; un evento /parte de subir_reporte_banco",
    CONF[[1]]$extra$clave_rastreo == "BB1111111111111" && CONF[[1]]$extra$autorizacion == "1111111111111" &&
      !is.na(CONF[[1]]$extra$respuesta_id) && identical(CONF[[1]]$fecha, as.Date("2026-11-24")) &&

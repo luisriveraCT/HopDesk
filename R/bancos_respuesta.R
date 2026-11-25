@@ -442,7 +442,8 @@ btr_agenda_cuentas <- function(agenda, proveedores, alias_map = NULL) {
 #   "ya_confirmado"  its Agenda row is no longer pending
 #   "sin_agenda"     A's match, but the file predates 2b (no Agenda row in
 #                    it): never confirmed alone, the user does it in the Agenda
-btr_preparar <- function(reporte, generados, agenda, proveedores = NULL, alias_map = NULL, registradas = character()) {
+btr_preparar <- function(reporte, generados, agenda, proveedores = NULL, alias_map = NULL, registradas = character(),
+                         ctas = NULL, bancos = NULL) {
   p <- reporte$pagos
   n <- nrow(p)
   gi <- btr_lote_generado(reporte$lote, p, generados)
@@ -485,6 +486,22 @@ btr_preparar <- function(reporte, generados, agenda, proveedores = NULL, alias_m
   dist <- filas$estado %in% c("confirmar", "sugerido") &
     (is.na(filas$moneda) | is.na(filas$moneda_agenda) | toupper(filas$moneda) != toupper(filas$moneda_agenda))
   filas$estado[dist] <- "moneda_distinta"
+  # T104: the origin account -- the batch's (path A), else the report line's
+  # (path B) -- as an account of the client's catalog (ctas: ctas_cuentas)
+  # in the row's currency. A row that would be confirmed without one is
+  # locked, "sin_cuenta_origen": no confirmation without its account.
+  num <- if (camino == "A") rep(as.character(generados$cuenta_origen[gi]), n) else as.character(p$cuenta_origen)
+  mon <- ifelse(is.na(filas$moneda_agenda), filas$moneda, filas$moneda_agenda)
+  filas$cuenta_origen_id <- vapply(seq_len(n), function(i)
+    cuenta_id_de_numero(num[i], ctas, mon[i], filas$empresa[i]), character(1))
+  filas$cuenta_origen <- vapply(seq_len(n), function(i) {
+    d <- gsub("[^0-9]", "", ifelse(is.na(num[i]), "", num[i]))
+    foto <- cuenta_foto(filas$cuenta_origen_id[i], ctas, bancos) %||%
+      list(ultimos4 = if (nchar(d) >= 4L) substr(d, nchar(d) - 3L, nchar(d)) else NA_character_)
+    cuenta_confirmacion_texto(foto)
+  }, character(1))
+  sin_cta <- filas$estado %in% c("confirmar", "sugerido") & is.na(filas$cuenta_origen_id)
+  filas$estado[sin_cta] <- "sin_cuenta_origen"
   filas$estado[filas$llave %in% registradas] <- "ya_registrado"
   filas$elegible <- filas$estado %in% c("confirmar", "sugerido")
   filas$marcado  <- filas$estado == "confirmar"
@@ -502,10 +519,10 @@ btr_a_confirmar <- function(prep, marcados) {
 
 # ── T93 · The screen (in "Archivos de pago") ────────────────────────────────
 BTR_ESTADOS <- c("confirmar", "editado", "agregado", "no_aplicado", "sin_casar", "sugerido", "varias",
-                 "ya_registrado", "ya_confirmado", "sin_agenda", "moneda_distinta")
+                 "ya_registrado", "ya_confirmado", "sin_agenda", "moneda_distinta", "sin_cuenta_origen")
 .btr_tono <- c(confirmar = "exito", sugerido = "info", varias = "aviso", editado = "aviso", agregado = "aviso",
                no_aplicado = "peligro", sin_casar = "peligro", ya_registrado = "neutro", ya_confirmado = "neutro",
-               sin_agenda = "aviso", moneda_distinta = "aviso")
+               sin_agenda = "aviso", moneda_distinta = "aviso", sin_cuenta_origen = "aviso")
 .btr_columnas <- function() list(
   col_opcion("decision", "tablas.archivos_pago.btr.col_decision", opciones = c(
     confirmar = "tablas.archivos_pago.btr.op_confirmar", omitir = "tablas.archivos_pago.btr.op_omitir")),
@@ -513,6 +530,7 @@ BTR_ESTADOS <- c("confirmar", "editado", "agregado", "no_aplicado", "sin_casar",
     lapply(BTR_ESTADOS, function(e) list(texto = paste0("tablas.archivos_pago.btr.estado.", e), tono = .btr_tono[[e]])),
     BTR_ESTADOS)),
   col_fecha("fecha", "tablas.archivos_pago.btr.col_fecha"),
+  col_texto("cuenta_origen", "tablas.archivos_pago.btr.col_cuenta_origen"),   # T104, masked
   col_texto("alias", "tablas.archivos_pago.btr.col_alias"),
   col_texto("cuenta", "tablas.archivos_pago.btr.col_cuenta"),
   col_dinero("importe", "tablas.archivos_pago.btr.col_importe", moneda = "moneda"),
@@ -522,12 +540,14 @@ BTR_ESTADOS <- c("confirmar", "editado", "agregado", "no_aplicado", "sin_casar",
 # not be confirmed is locked (no choice); A's "confirmar" comes ticked.
 .btr_vista <- function(prep) {
   vacia <- data.frame(id = character(), decision = character(), estado = character(), fecha = as.Date(character()),
+                      cuenta_origen = character(),
                       alias = character(), cuenta = character(), importe = numeric(), moneda = character(),
                       mensaje = character(), .bloqueada = logical(), stringsAsFactors = FALSE, check.names = FALSE)
   if (is.null(prep) || !nrow(prep$filas)) return(vacia)
   f <- prep$filas
   data.frame(id = paste0("L", f$linea), decision = ifelse(f$marcado, "confirmar", "omitir"), estado = f$estado,
-             fecha = f$fecha, alias = f$alias, cuenta = f$cuenta, importe = f$importe, moneda = f$moneda,
+             fecha = f$fecha, cuenta_origen = f$cuenta_origen,
+             alias = f$alias, cuenta = f$cuenta, importe = f$importe, moneda = f$moneda,
              mensaje = ifelse(is.na(f$mensaje), "", f$mensaje), .bloqueada = !f$elegible,
              stringsAsFactors = FALSE, check.names = FALSE)
 }
@@ -557,7 +577,8 @@ btr_confirmar <- function(shared, prep, conf, ahora = Sys.time()) {
     if (is.null(ph)) return(list(confirmados = character(), registrados = 0L, error = "agenda"))
     # By the Agenda row's currency (btr_preparar() already left out any row
     # whose report currency differs); the row read now must still have it.
-    grupos <- split(seq_len(nrow(conf)), paste(conf$empresa, conf$moneda_agenda, conf$fecha, sep = "\x1f"))
+    # T104: by origin account too -- each group is confirmed with its own.
+    grupos <- split(seq_len(nrow(conf)), paste(conf$empresa, conf$moneda_agenda, conf$fecha, conf$cuenta_origen_id, sep = "\x1f"))
     for (g in grupos) {
       cg   <- conf[g, , drop = FALSE]
       rows <- ph[as.character(ph$id) %in% cg$agenda_item_id & ph$ledger %in% "AP" &
@@ -567,7 +588,7 @@ btr_confirmar <- function(shared, prep, conf, ahora = Sys.time()) {
       # event "subir_reporte_banco" is written below); .ph_confirmar_ap()
       # still logs its own "confirmar_pago" for the client, as from the Agenda.
       .parte <- evento_parte_de("subir_reporte_banco", "archivos_pago", user, home)
-      .ph_confirmar_ap(shared, cg$empresa[1], cg$moneda_agenda[1], rows, NA_character_, as.Date(cg$fecha[1]), .parte,
+      .ph_confirmar_ap(shared, cg$empresa[1], cg$moneda_agenda[1], rows, cg$cuenta_origen_id[1], as.Date(cg$fecha[1]), .parte,
                        .ph_fallido = fallido, .link_counter = function(x) if (missing(x)) 0L else invisible(NULL),
                        extra = cg[, c("agenda_item_id", "clave_rastreo", "autorizacion", "respuesta_id")])
       ya <- tryCatch(shared$bancos_confirmados(), error = function(e) NULL)
@@ -636,7 +657,12 @@ btr_confirmar <- function(shared, prep, conf, ahora = Sys.time()) {
     ag <- ag[ag$ledger %in% "AP", , drop = FALSE]
     prov <- tryCatch(shared$proveedores_db(), error = function(e) NULL)
     amap <- tryCatch(shared$parte_alias_map_db(), error = function(e) NULL)
-    prep <- btr_preparar(rep, gen, ag, prov, amap, reg)
+    # T104: the account catalog, to resolve each payment's origin account.
+    ctas <- tryCatch(if (is.function(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas(client_id = cid),
+                     error = function(e) NULL)
+    if (!is.data.frame(ctas)) { showNotification(tr("comun.reintentar"), type = "error", duration = 8); return() }
+    bnk  <- load_ctas_bancos(client_id = cid)   # only the bank's name; it never stops (empty if unreadable)
+    prep <- btr_preparar(rep, gen, ag, prov, amap, reg, ctas = ctas, bancos = bnk)
     prep$archivo <- as.character(a$name[1]); prep$lote_archivo <- rep$lote$archivo %||% NA_character_
     prep$problemas <- nrow(rep$problemas)
     prep_rv(prep)

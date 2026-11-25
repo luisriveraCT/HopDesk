@@ -21,6 +21,11 @@ ok <- function(label, expr) {
 }
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 for (f in c("R/monedas.R", "R/ppl_generator.R", "R/pagos_layouts.R", "R/bancos_respuesta.R")) source(f)
+suppressMessages(source("R/i18n.R"))
+source("tests/helpers/cuenta_origen_t104.R")
+# T104: with no account catalog nothing may be confirmed; these cases are
+# about matching, so they all run with the catalog (its 0201 account).
+prep <- function(...) btr_preparar(..., ctas = CTAS_T104, bancos = BANCOS_T104)
 for (e in parse("R/pagos_generados_persistence.R", keep.source = FALSE, encoding = "UTF-8"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(as.character(e[[2]]), "parse_pago_beneficiarios"))
     eval(e, globalenv())
@@ -45,7 +50,7 @@ AG <- data.frame(id = c("A1", "A2", "B1", "B2"), Empresa = "NCS", Moneda = "MXN"
                  Importe = c(100, 200, 500, 600), stringsAsFactors = FALSE)
 
 # ── 1 · Path A ──────────────────────────────────────────────────────────────
-pa <- btr_preparar(reporte("pagos_NCS_24112026_001.txt",
+pa <- prep(reporte("pagos_NCS_24112026_001.txt",
                            pago(3, "012180000000000001", "UNO", 100),
                            pago(4, "012180000000000002", "DOS", 200),
                            pago(5, "012180000000000003", "TRES", 300)), G, AG, registradas = "aut:0000000000004")
@@ -56,17 +61,17 @@ ok("1 · \"confirmar\" llega marcado, elegible y con SU fila de la Agenda (A1)",
 ok("1 · subido antes -> \"ya_registrado\", no elegible", f$estado[2] == "ya_registrado" && !f$elegible[2])
 ok("1 · su fila ya no está pendiente (A9) -> \"ya_confirmado\", no elegible", f$estado[3] == "ya_confirmado" && !f$elegible[3])
 G0 <- G; G0$beneficiarios <- as.character(jsonlite::toJSON(list(ben("012180000000000001", "UNO", 100)), auto_unbox = TRUE))
-f0 <- btr_preparar(reporte("pagos_NCS_24112026_001.txt", pago(3, "012180000000000001", "UNO", 100)), G0, AG)$filas
+f0 <- prep(reporte("pagos_NCS_24112026_001.txt", pago(3, "012180000000000001", "UNO", 100)), G0, AG)$filas
 ok("1 · un archivo de antes de 2b (sin fila de Agenda) -> \"sin_agenda\", nunca solo", f0$estado == "sin_agenda" && !f0$elegible)
 # The currency: the report's must be the Agenda row's (A1 is MXN).
 con_divisa <- function(d) { p <- pago(3, "012180000000000001", "UNO", 100); p$divisa <- d; p }
-fz <- btr_preparar(reporte("pagos_NCS_24112026_001.txt", con_divisa("ZZZ")), G, AG)$filas
+fz <- prep(reporte("pagos_NCS_24112026_001.txt", con_divisa("ZZZ")), G, AG)$filas
 ok("1 · divisa que no se reconoce (NA) -> \"moneda_distinta\", bloqueada y sin marcar",
    is.na(fz$moneda) && fz$estado == "moneda_distinta" && !fz$elegible && !fz$marcado)
-fu <- btr_preparar(reporte("pagos_NCS_24112026_001.txt", con_divisa("USD")), G, AG)$filas
+fu <- prep(reporte("pagos_NCS_24112026_001.txt", con_divisa("USD")), G, AG)$filas
 ok("1 · USD en el reporte contra una fila MXN -> \"moneda_distinta\", bloqueada",
    fu$moneda == "USD" && fu$estado == "moneda_distinta" && !fu$elegible)
-fm <- btr_preparar(reporte("pagos_NCS_24112026_001.txt", con_divisa("MN")), G, AG)$filas
+fm <- prep(reporte("pagos_NCS_24112026_001.txt", con_divisa("MN")), G, AG)$filas
 ok("1 · contraprueba: MN (= MXN) contra la fila MXN se confirma, con la moneda de la fila",
    fm$estado == "confirmar" && fm$elegible && fm$moneda_agenda == "MXN")
 
@@ -78,7 +83,7 @@ ok("2 · cuentas de la Agenda: por nombre exacto (B1) y por código (B2); sin pr
    identical(btr_agenda_cuentas(AG, prov), c(NA, NA, "014180000000000005", "014180000000000006")))
 amap <- data.frame(Parte = "UNO SA", alias = "SIETE", Empresa = "", stringsAsFactors = FALSE)
 ok("2 · el vínculo guardado Parte -> alias manda", btr_agenda_cuentas(AG[1, ], prov, amap) == "014180000000000007")
-pb <- btr_preparar(reporte("pagos_24112026_001NCS", pago(7, "014180000000000005", "X", 500), pago(8, "014180000000000006", "Y", 999)),
+pb <- prep(reporte("pagos_24112026_001NCS", pago(7, "014180000000000005", "X", 500), pago(8, "014180000000000006", "Y", 999)),
                    G, AG, prov)
 ok("2 · lote externo -> camino B", pb$camino == "B" && is.null(pb$generado))
 ok("2 · \"sugerido\": elegible pero NO marcado (lo marca el usuario)",

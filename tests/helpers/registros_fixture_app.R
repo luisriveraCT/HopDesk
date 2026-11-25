@@ -138,6 +138,8 @@ assign("log_action", function(user, module, action, description = "", target_id 
 # would write -- the confirmations (.ph_confirmar_ap) and the report's
 # record (modificar_respuestas_banco) -- recorded in #registro, no S3.
 t93 <- identical(Sys.getenv("REG_T93"), "1")
+assign("load_ctas_bancos", function(...) data.frame(id = "BB", nombre = "BanBajío", stringsAsFactors = FALSE),
+       envir = globalenv())   # T104: the account's bank, for its name
 if (t93) {
   almacen$pagos <- dplyr::bind_rows(tibble::tibble(
     id = "p-t93", ts = hace(0, 1), user = "luis", client_id = "fixture", empresa = "NETWORKS CARGO", moneda = "MXN",
@@ -204,7 +206,12 @@ server <- function(input, output, session) {
     # T93: what the upload reads besides pagos_generados
     bancos_confirmados  = reactiveVal(data.frame(confirmacion_id = character(), respuesta_id = character())),
     proveedores_db      = reactiveVal(NULL),
-    parte_alias_map_db  = reactiveVal(NULL)
+    parte_alias_map_db  = reactiveVal(NULL),
+    # T104: the account catalog -- the upload resolves each payment's origin
+    # account (the batch's 073543010201) and Actividad shows it masked.
+    ctas_cuentas        = reactiveVal(data.frame(id = "CT-NC", banco_id = "BB", Empresa = "NETWORKS CARGO",
+      razon_social = "", rfc = "", Moneda = "MXN", alias = "NCBB", cuenta = "73543010201", clabe_interbancaria = "",
+      is_ppl_default = TRUE, saldo_inicial = 0, activa = TRUE, stringsAsFactors = FALSE))
   )
   auditLogViewerServer("act", shared, mode = "own_client")
   auditLogViewerServer("glo", shared, mode = "multi_client",
