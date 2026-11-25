@@ -29,6 +29,24 @@ ok("its safe_load_pagar_hoy() answers with the shared Agenda, not NULL",
 AVISOS <- character()
 showNotification <- function(ui, ...) { AVISOS <<- c(AVISOS, paste(as.character(ui), collapse = "")); invisible("id") }
 showModal <- function(...) invisible(NULL); removeModal <- function(...) invisible(NULL)
+
+# T104 contraprueba, first (it changes nothing): without choosing the origin
+# account nothing is confirmed, and the user is told why.
+sin <- NULL
+invisible(tryCatch(testServer(app, {
+  session$flushReact()
+  antes <- nrow(AGENDA())
+  do.call(session$setInputs, setNames(list("MXN", as.character(Sys.Date())),
+                                      c(paste0("ph-bal_cur_", EMP), paste0("ph-conf_fecha_ap_", EMP))))
+  do.call(session$setInputs, setNames(list(list(nonce = 1)), paste0("ph-do_confirm_ap_", EMP)))
+  session$flushReact()
+  sin <<- list(reg = registro(), antes = antes, despues = nrow(AGENDA()))
+}), error = function(e) NULL))
+ok("T104: without the origin account it confirms nothing, the Agenda stays, and the user is told",
+   is.list(sin) && !any(grepl("^confirmados AP: ", sin$reg)) && sin$despues == sin$antes &&
+     tr("tablas.agenda.confirmar.sin_cuenta_servidor") %in% AVISOS)
+AVISOS <- character()
+
 res <- NULL   # testServer() does not return its expression's value: set from inside
 err <- tryCatch({
   testServer(app, {
