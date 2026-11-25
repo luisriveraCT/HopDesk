@@ -148,6 +148,10 @@ ui <- bslib::page_navbar(
     tema_head(),   # theme tokens (www/hd_temas.css) + <html data-hd-tema>, R/tema_registro.R
     # T88-1b: the loading overlay on the app page too, in <head> so it paints before the first frame (www/overlay_init.js)
     tags$head(tags$script(src = "overlay_init.js?v=10", `data-pagina` = "app")),
+    # T107: every button answers the instant it is clicked (www/hd_botones.js;
+    # hd_boton(), hd_boton_listo() and HD_BOTONES_SIN_ESPERA in R/ui_components.R).
+    tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "hd_botones.css?v=1"),
+              tags$script(src = "hd_botones.js?v=1")),
     # Brand tokens (navy, gold, Fraunces) and Panorama, each under its root class.
     tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=2"),   # TEMA 6-5: --hd-sube-tinta
     tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=3"),   # TEMA 6-5: colours by variable; 6-10: gold as text = acento-texto

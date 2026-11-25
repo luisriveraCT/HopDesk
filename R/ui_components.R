@@ -1697,3 +1697,49 @@ hd_numero_revisar <- function(x, campo, min = NA, max = NA, entero = FALSE) {
   }
   list(ok = TRUE, valor = v, aviso = NULL)
 }
+
+# ── Botones que responden al instante (T107) ──────────────────────────────────
+# www/hd_botones.js holds EVERY actionButton / actionLink the instant it is
+# clicked (pressed, a spinner, disabled: no double click) and releases it when
+# the server has answered (its first shiny:idle). Released to NEUTRAL: a check
+# or a cross only when the server says so -- never inferred (a req() that
+# stops, or a silent failure, says nothing, and a check there would lie):
+#   - hd_boton_listo(session, id, ok = TRUE / FALSE) below;
+#   - a Shiny error notification while the button works -> cross.
+# A plain actionButton() gets all of this without any change. hd_boton() is
+# for the ones that must say how they wait:
+#   espera = "auto"      as an actionButton (the default);
+#            "servidor"  held until hd_boton_listo() (work that ends after the
+#                        idle: a callr job, a long background read); never
+#                        more than 60 s;
+#            "no"        never held (opens or closes something, navigates,
+#                        toggles a view) -- add it to HD_BOTONES_SIN_ESPERA
+#                        with its reason, or tests/test_t107_botones.R fails.
+# A tags$button that sets an input (onclick -> Shiny.setInputValue) is not an
+# actionButton: it must carry data-hd-espera itself (hd_espera_attr()).
+hd_boton <- function(inputId, label, ..., espera = c("auto", "servidor", "no")) {
+  espera <- match.arg(espera)
+  if (identical(espera, "auto")) shiny::actionButton(inputId, label, ...)
+  else shiny::actionButton(inputId, label, ..., `data-hd-espera` = espera)
+}
+
+# The attribute for a tags$button of our own: tags$button(..., hd_espera_attr()).
+hd_espera_attr <- function(espera = c("auto", "servidor", "no")) {
+  list(`data-hd-espera` = match.arg(espera))
+}
+
+# The server's own word on a held button: ok = TRUE a check, FALSE a cross,
+# NA just releases it. `id` as in the UI of this module (it is namespaced here).
+hd_boton_listo <- function(session, id, ok = TRUE) {
+  session$sendCustomMessage("hd-boton", list(id = session$ns(id), ok = if (isTRUE(ok)) TRUE else if (identical(ok, FALSE)) FALSE else NULL))
+  invisible(NULL)
+}
+
+# The buttons that are never held, and why (tests/test_t107_botones.R: each
+# id here exists in the code and has a reason; each espera = "no" is here).
+# archivo = where it is; pantalla = its id in docs/diseno/pantallas.tsv (T97),
+# when it has one.
+HD_BOTONES_SIN_ESPERA <- data.frame(
+  id = character(0), archivo = character(0), pantalla = character(0), razon = character(0),
+  stringsAsFactors = FALSE)
+

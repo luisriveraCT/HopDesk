@@ -1,0 +1,48 @@
+/* hd_botones.css (T107) -- the look of a button while it works, and of the
+   server's own ok / error mark. Classes set by www/hd_botones.js. Colours
+   from the theme's tokens only (R/tema_registro.R). The width never changes:
+   the label goes transparent and the spinner (or the mark) sits on top. */
+
+.hd-btn-ocupado, .hd-btn-ok, .hd-btn-error { position: relative; }
+
+/* the spinner's ink: the button's own text colour, per kind */
+.hd-btn-ocupado { --hd-btn-tinta: var(--hd-texto); }
+.btn-primary.hd-btn-ocupado, .btn-success.hd-btn-ocupado, .btn-danger.hd-btn-ocupado,
+.btn-info.hd-btn-ocupado, .btn-dark.hd-btn-ocupado { --hd-btn-tinta: var(--hd-primario-texto); }
+
+/* pressed: it took the click */
+.hd-btn-ocupado {
+  color: transparent !important;
+  cursor: progress !important;
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px var(--hd-borde-fuerte) !important;
+  opacity: 1 !important;           /* disabled must not read as "not allowed" here */
+}
+.hd-btn-ocupado > *, .hd-btn-ok > *, .hd-btn-error > * { visibility: hidden; }
+.hd-btn-ocupado::after {
+  content: "";
+  position: absolute; left: 50%; top: 50%;
+  width: 1em; height: 1em; margin: -.5em 0 0 -.5em;
+  border: 2px solid var(--hd-btn-tinta);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: hd-btn-gira .7s linear infinite;
+}
+@keyframes hd-btn-gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .hd-btn-ocupado::after { animation: none; border-right-color: var(--hd-btn-tinta); width: .5em; height: .5em; margin: -.25em 0 0 -.25em; }
+}
+
+/* a link that works: no second click */
+.hd-btn-inerte { pointer-events: none; }
+
+/* the server's word: a check or a cross, briefly, in the label's place */
+.hd-btn-ok, .hd-btn-error { color: transparent !important; }
+.hd-btn-ok::after, .hd-btn-error::after {
+  position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+  text-align: center; font-weight: 700; line-height: 1;
+}
+.hd-btn-ok::after    { content: "\2713"; color: var(--hd-exito); }
+.hd-btn-error::after { content: "\2715"; color: var(--hd-peligro); }
+.btn-primary.hd-btn-ok::after, .btn-success.hd-btn-ok::after { color: var(--hd-primario-texto); }
+.btn-primary.hd-btn-error::after, .btn-danger.hd-btn-error::after { color: var(--hd-primario-texto); }
