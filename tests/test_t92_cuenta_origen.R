@@ -73,6 +73,13 @@ andar <- function(e) {
   if (is.name(f) && as.character(f) %in% c(".log_pago_generado", "generate_ppl")) {
     sr <- attr(e, "srcref"); llamadas[[length(llamadas) + 1L]] <<- list(f = as.character(f), e = e)
   }
+  # T84 B2: the file is generated through the layouts' registry,
+  # layout_llamar(lay, "generar", rows, origen, ...): the origin is its 4th
+  # argument. Recorded as "generar" with the call shifted so that argument
+  # sits where generate_ppl() had it (2nd).
+  if (is.name(f) && identical(as.character(f), "layout_llamar") && length(e) >= 3L && identical(e[[3]], "generar")) {
+    llamadas[[length(llamadas) + 1L]] <<- list(f = "generar", e = e[-c(2L, 3L)])
+  }
   for (k in seq_along(e)[-1]) { a <- e[[k]]; if (!missing(a) && is.call(a)) andar(a) }
 }
 for (e in ex) andar(e)
@@ -83,10 +90,12 @@ logs <- which(fs == ".log_pago_generado")
 ok("3 three paths log a payment file (individual, ZIP, ZIP without the supplier's account)", length(logs) == 3L)
 arg <- function(cl, pos, nombre) { a <- as.list(cl)[-1]; if (!is.null(names(a)) && nombre %in% names(a)) a[[nombre]] else a[[pos]] }
 iguales <- vapply(logs, function(i) {
-  sig <- which(fs == "generate_ppl" & seq_along(fs) > i)[1]
+  sig <- which(fs %in% c("generate_ppl", "generar") & seq_along(fs) > i)[1]
   !is.na(sig) && identical(deparse(arg(llamadas[[i]]$e, 4L, "cuenta_origen")), deparse(arg(llamadas[[sig]]$e, 2L, "cuenta_origen")))
 }, NA)
 ok("3 in each, the account logged is the same expression generate_ppl() writes as the origin", all(iguales))
+ok("3 and the files are generated through the layouts' registry (T84 B2), never generate_ppl() directly",
+   sum(fs == "generar") == 3L && !any(fs == "generate_ppl"))
 
 # ── 4. The lock ──────────────────────────────────────────────────────────
 for (e in parse("R/pagar_hoy_module.R", keep.source = FALSE, encoding = "UTF-8"))
