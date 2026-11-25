@@ -2163,7 +2163,7 @@ server <- function(input, output, session) {
       tags$span(nivel_nombre(tier), style = sprintf(
         "font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
          background:%s; border:1px solid color-mix(in srgb, var(--hd-barra-texto) 35%%, transparent); padding:2px 7px; border-radius:20px;",
-        tier_color
+        nivel_fondo(tier_color)   # TEMA 6-6: the tier colour mixed with the theme (data rule, R/tema_registro.R)
       )),
       client_pill,
       ver_como_ui

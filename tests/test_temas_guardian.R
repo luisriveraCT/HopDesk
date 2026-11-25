@@ -665,6 +665,26 @@ ok("the head script's closed list is exactly the registry's themes",
 ok("the head script falls back to the default for anything not in the list, and stores per client",
    grepl("function ok(t){return L.indexOf(t)>=0?t:D;}", js, fixed = TRUE) &&
      grepl("'hd-tema:'+m.cliente", js, fixed = TRUE) && grepl("addCustomMessageHandler('hdTema'", js, fixed = TRUE))
+# TEMA 6-6: a tier's colour is data, and its badge (white text) mixes it with
+# the theme's encabezado (nivel_fondo()). Every tier reads at 4.5:1 in every
+# theme, and no badge paints the bare tier colour.
+reg_niv <- new.env(); sys.source("R/tier_registry.R", envir = reg_niv)
+for (tt in names(tema$HD_TEMAS)) {
+  textos <- unique(c(tema$tema_color("barra-texto", tt), tema$tema_color("texto-inverso", tt)))
+  r <- vapply(names(reg_niv$TIER_REGISTRY), function(n) {
+    f <- tema$nivel_fondo_hex(reg_niv$nivel_color(n), tt)
+    min(vapply(textos, function(x) tema$tema_contraste(x, f), numeric(1))) }, numeric(1))
+  ok(sprintf("%s: every tier badge reads at 4.5:1 with its colour at %d%% (lowest %s %.2f)",
+             tt, tema$.NIVEL_MEZCLA, names(which.min(r)), min(r)), min(r) >= 4.5)
+}
+ok("nivel_fondo() is a color-mix of the tier colour with the theme's encabezado",
+   identical(tema$nivel_fondo("#6610f2"), sprintf("color-mix(in srgb, #6610f2 %d%%, var(--hd-encabezado))", tema$.NIVEL_MEZCLA)))
+insignias <- c(grep("tier_color", leer("app.R"), value = TRUE, fixed = TRUE),
+               grep(".tier_color(", leer("R/tiers_module.R"), value = TRUE, fixed = TRUE))
+insignias <- insignias[!grepl("<-\\s*(nivel_color|function)", insignias)]
+ok(sprintf("every tier badge paints nivel_fondo(), never the bare tier colour (%d uses)", length(insignias)),
+   length(insignias) >= 5L && all(grepl("nivel_fondo(", insignias, fixed = TRUE)))
+
 ok("every theme says whether it is offered (ofrecer TRUE/FALSE); the default one is",
    all(vapply(tema$HD_TEMAS, function(t) is.logical(t$ofrecer) && length(t$ofrecer) == 1L && !is.na(t$ofrecer), logical(1))) &&
      isTRUE(tema$HD_TEMAS[[tema$HD_TEMA_OMISION]]$ofrecer))

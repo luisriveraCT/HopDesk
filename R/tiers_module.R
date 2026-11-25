@@ -327,7 +327,7 @@ tiersUI <- function(id) {
           div(class = "d-flex align-items-center gap-2 mt-1",
               tags$span(
                 style = sprintf("font-size:.65rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; background:%s; border:1px solid color-mix(in srgb, var(--hd-texto-inverso) 30%%, transparent); padding:2px 8px; border-radius:20px;",
-                                .tier_color(tier)),
+                                nivel_fondo(.tier_color(tier))),
                 nivel_nombre(tier)),
               tags$span(style = "font-size:.75rem; opacity:.6;",
                         paste0("@", row$username %||% "")))
@@ -451,7 +451,7 @@ tiersUI <- function(id) {
   div(
     class = "card border-0 shadow-sm h-100",
     div(class = "card-header py-2 px-3",
-        style = sprintf("background:%s; color:var(--hd-texto-inverso);", .tier_color(tier_key)),
+        style = sprintf("background:%s; color:var(--hd-texto-inverso);", nivel_fondo(.tier_color(tier_key))),
         tags$span(class = "fw-bold small", tier_label)),
     div(class = "card-body p-0 tiers-cfg-body", div(perm_rows))
   )
@@ -1498,7 +1498,7 @@ tiersServer <- function(id, shared) {
           tags$strong(dname), tags$span(class = "text-muted ms-2", paste0("@", uname)),
           tags$span(
             class = "badge ms-2",
-            style = sprintf("background:%s; color:var(--hd-texto-inverso);", .tier_color(tier)),
+            style = sprintf("background:%s; color:var(--hd-texto-inverso);", nivel_fondo(.tier_color(tier))),
             nivel_nombre(tier))
         ),
         extra_warning,
@@ -4387,7 +4387,7 @@ tiersServer <- function(id, shared) {
               class = "card-header d-flex align-items-center justify-content-center gap-2 py-2 px-3",
               style = sprintf(
                 "background:%s; color:var(--hd-texto-inverso); border-radius:8px 8px 0 0;",
-                .tier_color(sel_tier)
+                nivel_fondo(.tier_color(sel_tier))
               ),
               if (has_prev)
                 actionButton(ns("btn_tier_prev"), icon("chevron-left"),
