@@ -574,6 +574,7 @@
   "tablas.datos_sap.aviso.error_ledger": "SAP {ledger} : {error}",
   "tablas.datos_sap.aviso.respaldo": "SAP no disponible — {ledger} mostrando datos del {fecha}",
   "tablas.datos_sap.aviso.actualizados": "Datos actualizados.",
+  "tablas.datos_sap.aviso.foto_nueva": "Datos del ERP actualizados ({hora}).",
   "tablas.datos_sap.aviso.no_guardado": "Los datos del ERP ({ledger}) se ven en pantalla, pero no se pudieron guardar: vuelve a refrescar en unos minutos.",
   "tablas.manual.aviso.documento_obligatorio": "El campo Documento es obligatorio.",
   "tablas.manual.aviso.no_guardada": "No se pudieron guardar los cambios.",

@@ -40,7 +40,7 @@
 
 ACTUALIZAR_ERP_ARCHIVOS <- c(
   "R/i18n.R", "R/monedas.R", "R/tier_registry.R", "R/persistence.R", "R/offline_queue.R",
-  "R/secrets_encryption.R", "R/data_pipeline.R", "R/app_audit.R", "R/auth.R", "R/sap_api.R")
+  "R/secrets_encryption.R", "R/data_pipeline.R", "R/app_audit.R", "R/auth.R", "R/sync_bus.R", "R/sap_api.R")
 
 .LOCK_KEY <- "erp_actualizacion_lock.rds"
 .LOCK_TTL_HORAS <- 2
@@ -230,6 +230,9 @@ erp_libro <- function(libro, cmap, cid, a) {
     stop(structure(class = c("foto_no_guardada", "error", "condition"),
                    list(message = sprintf("%s: la foto leída de vuelta no es la de esta corrida", libro), call = NULL)))
   erp_decir("  %s guardado: %s filas, comprobado en S3", libro, .miles(nrow(res)))
+  # F2: the open sessions re-read it on their next poll (8 s), unless the signal failed.
+  erp_decir(if (isTRUE(r$avisado)) "  %s: las sesiones abiertas lo verán en segundos"
+            else "  %s: AVISO, no se pudo avisar a las sesiones abiertas: que recarguen la página", libro)
   r
 }
 
@@ -331,8 +334,6 @@ erp_main <- function(args = commandArgs(trailingOnly = TRUE)) {
     erp_decir("%s en %.0f s · bitácora: %s",
               if (codigo == 0L) (if (a$prueba) "Prueba terminada" else "Listo") else sprintf("Terminó con código %d", codigo),
               (proc.time() - t0)[["elapsed"]], bitacora)
-    if (!a$prueba && codigo == 0L)
-      erp_decir("Las sesiones ya abiertas en la app ven los datos nuevos al recargar la página.")
     invisible(codigo)
   }, message = al_log, warning = function(w) {
     writeLines(.sin_url(paste("[warning]", conditionMessage(w))), con); flush(con); invokeRestart("muffleWarning")

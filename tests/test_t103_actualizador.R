@@ -211,6 +211,8 @@ emp <- dplyr::bind_rows(emp, tibble::tibble(id = c("e1", "e2"), account_code = c
                                             razon_social = c("EMPRESA FICTICIA NORTE SA", "EMPRESA FICTICIA CENTRO SA"),
                                             nombre_corto = unname(NOMBRES[c("NG", "NT")]), activa = TRUE, deleted = FALSE))
 .mem[[paste0(CID, "/empresas.rds")]] <- emp
+.mem[[paste0(CID, "/sync_versions.rds")]] <- list(moves_db = 7L)   # F2: another table's version, to keep
+assign(".sync_versions", list(), envir = .GlobalEnv)   # the script is a fresh process (sections 2-8 bumped here)
 configurar(NG = list(AR = 700, AP = 30, modo = "ok"), NT = list(AR = 40, AP = 0, modo = "ok"))
 correr <- function(...) { salida <- utils::capture.output(codigo <- erp_main(c(...))); s3_memoria_reinstalar(); list(codigo = codigo, salida = salida) }
 x <- correr("--cliente", CID, "--usuario", "operador.ficticio", "--produccion")
@@ -229,6 +231,10 @@ ok("11.6 erp_actualizado es C en el catálogo (T87)", identical(t87_clase_accion
 bit <- unlist(lapply(list.files(getOption("hopdesk.erp_logs_dir"), full.names = TRUE), readLines, warn = FALSE))
 ok("11.7 ni la consola ni la bitácora muestran la contraseña ni la URL del ERP",
    !any(grepl(CLAVE, c(x$salida, bit), fixed = TRUE)) && !any(grepl("127.0.0.1", c(x$salida, bit), fixed = TRUE)))
+sv <- .mem[[paste0(CID, "/sync_versions.rds")]]
+ok("11.14 F2: la corrida avisa a las sesiones (una señal por libro) y lo dice", identical(sv$erp_foto_db, 2L) &&
+     sum(grepl("lo verán en segundos", x$salida, fixed = TRUE)) == 2L)
+ok("11.15 F2: sin borrar la versión de otra tabla del sello", identical(sv$moves_db, 7L))
 
 .mem[[paste0(CID, "/erp_actualizacion_lock.rds")]] <- list(token = "otro", usuario = "otra.persona", inicio = Sys.time())
 antes <- list(snap("AR"), snap("AP"))

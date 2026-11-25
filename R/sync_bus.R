@@ -56,6 +56,33 @@ bump_sync_version <- function(name, client_id = NULL) {
     warning("[sync_bus] bump_sync_version called for unregistered key: ", name)
     return(invisible(FALSE))
   }
+  # T103 (F2): the stamp is ONE file holding every table's version, and this
+  # used to upload this process's whole list as it stood. A process that had
+  # not merged S3's lately -- a fresh one (a script, a job, an app that saves
+  # or replays its offline queue before its first 8 s poll) or a worker
+  # between polls -- wrote back older numbers for the tables it had not seen
+  # move: those versions went back in S3 and the bumps behind them were never
+  # seen by anyone else; from a fresh process its own name restarted at 1 too.
+  # Now S3's stamp is merged first (strict read, the larger number per name)
+  # and only then incremented and uploaded. A read that fails is never an
+  # empty stamp (T72's rule): the bump stays in this process's memory (its
+  # own sessions see it) and nothing is uploaded -- FALSE, as for a failed
+  # write. Fixtures that take this file without R/persistence.R (no strict
+  # reader) keep the old path.
+  if (exists(".s3_leer_para_escribir", mode = "function")) {
+    en_s3 <- tryCatch(.s3_leer_para_escribir(S3_KEYS$sync_versions, client_id), error = function(e) e)
+    if (inherits(en_s3, "error")) {
+      .GlobalEnv$.sync_versions[[name]] <- (.GlobalEnv$.sync_versions[[name]] %||% 0L) + 1L
+      message("[sync_bus] version stamp not read, so not written (", name, "): ", conditionMessage(en_s3))
+      return(invisible(FALSE))
+    }
+    if (is.list(en_s3))
+      for (nm in names(en_s3)) {
+        v <- suppressWarnings(as.integer(en_s3[[nm]]))
+        if (length(v) == 1L && !is.na(v) && v > (.GlobalEnv$.sync_versions[[nm]] %||% 0L))
+          .GlobalEnv$.sync_versions[[nm]] <- v
+      }
+  }
   .GlobalEnv$.sync_versions[[name]] <-
     (.GlobalEnv$.sync_versions[[name]] %||% 0L) + 1L
 

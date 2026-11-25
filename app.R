@@ -1738,6 +1738,8 @@ server <- function(input, output, session) {
     # Invitaciones re-read their own lists when another session changed them.
     usuarios_db       = reactiveVal(0),
     invitaciones_db   = reactiveVal(0),
+    # T103 F2: same kind of signal -- an ERP snapshot was saved elsewhere.
+    erp_foto_db       = reactiveVal(0),
     visible_initials  = visible_initials,
     company_map       = company_map_rv,
     ctas_cuentas           = ctas_cuentas,
@@ -1943,6 +1945,7 @@ server <- function(input, output, session) {
   # and usuarios / pending_invites must never be replayed from a local copy.
   register_synced("usuarios_db",     SENAL_USUARIOS,     function(client_id = NULL) as.numeric(Sys.time()))
   register_synced("invitaciones_db", SENAL_INVITACIONES, function(client_id = NULL) as.numeric(Sys.time()))
+  register_synced("erp_foto_db",     SENAL_FOTO_ERP,     function(client_id = NULL) as.numeric(Sys.time()))   # T103 F2
 
   setup_sync_bus(session, shared, poll_ms = 8000,
                  active_client_rv = effective_client_id)
@@ -2324,6 +2327,43 @@ server <- function(input, output, session) {
     message(sprintf("[SAP] Cross-session cache written at t+%.1fs (session #%d)",
                     (proc.time() - .t_session)[["elapsed"]], .sn))
   }
+
+  # ── T103 F2: an ERP snapshot saved elsewhere ─────────────────────────────────
+  # scripts/actualizar_erp.R (a machine inside the client's VPN) or another
+  # session's Refrescar saved a new snapshot and bumped erp_foto_db
+  # (avisar_foto_erp(), R/sap_api.R). An open session used to keep its seeded
+  # data until F5: its own Refrescar cannot reach SAP from the hosted app and
+  # falls back to what it already holds. Here it re-reads both snapshots:
+  #   - T69b/M6 first: a tier that may not see sap_data reads nothing;
+  #   - not for staff at home (no client) nor while this session is fetching
+  #     (load_sap_data brings its own);
+  #   - strict reads: one that fails changes nothing (never an empty copy);
+  #     a ledger whose file does not exist keeps what the session has;
+  #   - sap_data is written only if it changed -- the echo of this session's
+  #     own save, or a repeated signal, recomputes nothing (T102's tables
+  #     downstream decide the rest).
+  observeEvent(shared$erp_foto_db(), {
+    if (!isTRUE(tryCatch(nivel_reactivo_permitido(tier_efectivo(), "sap_data"), error = function(e) FALSE))) return()
+    if (isTRUE(current_user_info()$is_staff) && is.null(jump_client_id())) return()
+    if (.sap_running) return()
+    cid <- tryCatch(effective_client_id(), error = function(e) NULL)
+    if (is.null(cid) || !nzchar(cid)) return()
+    r <- foto_erp_releer(cid, crudo(sap_data)())   # R/sap_api.R: strict reads, identical()
+    if (!isTRUE(r$leida)) {
+      message(sprintf("[SAP] snapshot signal: not read, session keeps its data (%s)", r$error))
+      return()
+    }
+    if (!isTRUE(r$cambio)) return()
+    sap_data(r$datos)
+    info <- crudo(sap_snapshot_info)()
+    for (l in names(r$info)) info[[l]] <- r$info[[l]]
+    sap_snapshot_info(info)
+    .sap_cache_set(cid, r$datos$AR, r$datos$AP)
+    horas <- lapply(r$info, `[[`, "ts")
+    hora  <- if (length(horas)) format(max(do.call(c, unname(horas))), "%H:%M", tz = (input$client_tz %||% "America/Mexico_City")) else ""
+    showNotification(tr("tablas.datos_sap.aviso.foto_nueva", hora = hora), type = "message", duration = 5)
+    message(sprintf("[SAP] snapshot signal: session #%d re-read the ERP snapshot", .sn))
+  }, ignoreInit = TRUE)
 
   # ── Phase 1: SAP snapshot seed (fast path) ───────────────────────────────────
   # Fires once on the first Shiny tick after the browser connects.

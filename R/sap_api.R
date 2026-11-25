@@ -539,6 +539,46 @@ fetch_ap <- function(initials, client_id = NULL) {
 
 .sap_resumen <- new.env(parent = emptyenv())
 
+# ── T103 F2: the snapshot's signal on the sync bus ──────────────────────────
+# The snapshot is two keys feeding two session reactives (sap_data and
+# sap_snapshot_info), so it travels as a signal, the T83 way (usuarios_db):
+# the app registers "erp_foto_db" with SENAL_FOTO_ERP and re-reads both
+# snapshots on a bump (app.R). Sent after every SAVED snapshot, from the app
+# or from scripts/actualizar_erp.R -- outside the app the name is registered
+# here first, so the bump is not refused. bump_sync_version() merges S3's
+# stamp before writing (T103 F2), so a fresh process neither erases other
+# tables' versions nor restarts this one. Never makes the save fail.
+SENAL_FOTO_ERP <- "senal:foto_erp"
+avisar_foto_erp <- function(client_id) {
+  if (!exists("bump_sync_version", mode = "function") || !exists("register_synced", mode = "function"))
+    return(invisible(FALSE))
+  if (!"erp_foto_db" %in% names(get0(".SYNC_REGISTRY", ifnotfound = list())))
+    register_synced("erp_foto_db", SENAL_FOTO_ERP, function(client_id = NULL) as.numeric(Sys.time()))
+  ok <- tryCatch(isTRUE(bump_sync_version("erp_foto_db", client_id = client_id)), error = function(e) {
+    message("[SAP] snapshot signal not sent: ", conditionMessage(e)); FALSE })
+  invisible(ok)
+}
+
+# What a session does with the signal (app.R's observer, after its gates):
+# re-read both snapshots strictly and say whether its data changed.
+# `actual`: the session's list(AR, AP). Returns list(leida, cambio, datos,
+# info): leida FALSE = a read failed, keep everything (never an empty copy);
+# a ledger whose file does not exist keeps the session's; cambio FALSE = the
+# same data (the echo of its own save), write nothing; info = the saved_at
+# of each ledger read, for sap_snapshot_info.
+foto_erp_releer <- function(client_id, actual) {
+  leer <- function(l) .s3_leer_para_escribir(
+    if (l == "AR") S3_KEYS_CRITICAL$sap_snap_ar else S3_KEYS_CRITICAL$sap_snap_ap, client_id)
+  fotos <- tryCatch(list(AR = leer("AR"), AP = leer("AP")), error = function(e) e)
+  if (inherits(fotos, "error"))
+    return(list(leida = FALSE, cambio = FALSE, error = conditionMessage(fotos)))
+  datos <- list(AR = fotos$AR$data %||% actual$AR, AP = fotos$AP$data %||% actual$AP)
+  info  <- Filter(Negate(is.null), lapply(list(AR = fotos$AR, AP = fotos$AP), function(f)
+    if (is.null(f$saved_at)) NULL else list(ts = f$saved_at, is_live = FALSE)))
+  list(leida = TRUE, cambio = !(identical(actual$AR, datos$AR) && identical(actual$AP, datos$AP)),
+       datos = datos, info = info)
+}
+
 sap_ultimo_resumen <- function(ledger) .sap_resumen[[toupper(ledger)]]
 
 # The URL a company would use, "" when it has no credentials at all.
@@ -724,7 +764,8 @@ fetch_all_companies <- function(ledger = c("AR","AP"), cmap, client_id = NULL,
     if (isTRUE(exigir_guardado)) stop(guardado)
     return(combined)
   }
-  resumen(guardado = TRUE, filas = nrow(combined))
+  # F2: open sessions re-read the snapshot (only after a save that worked).
+  resumen(guardado = TRUE, filas = nrow(combined), avisado = avisar_foto_erp(client_id))
   combined
 }
 
