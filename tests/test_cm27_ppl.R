@@ -102,7 +102,9 @@ ok("pagarHoyServer: 12 sites take hoy() (2 downloads' names and dates, 2 propose
    lengths(regmatches(txt, gregexpr("hoy()", txt, fixed = TRUE))) == 12L + 0L &&
      lengths(regmatches(txt, gregexpr("value = hoy()", txt, fixed = TRUE))) == 2L &&
      lengths(regmatches(txt, gregexpr("error = function(e) hoy()", txt, fixed = TRUE))) == 2L &&
-     lengths(regmatches(txt, gregexpr("generate_ppl\\([^)]*hoy\\(\\)", txt))) == 3L)
+     # T84 B2: the three files are generated through the layouts' registry,
+     # layout_llamar(lay, "generar", rows, origen, hoy(), ...): hoy() stays in each.
+     lengths(regmatches(txt, gregexpr("layout_llamar\\([^)]*\"generar\"[^)]*hoy\\(\\)", txt))) == 3L)
 
 if (is.na(tz_antes)) Sys.unsetenv("TZ") else Sys.setenv(TZ = tz_antes)
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
