@@ -2359,9 +2359,9 @@ server <- function(input, output, session) {
     for (l in names(r$info)) info[[l]] <- r$info[[l]]
     sap_snapshot_info(info)
     .sap_cache_set(cid, r$datos$AR, r$datos$AP)
-    horas <- lapply(r$info, `[[`, "ts")
-    hora  <- if (length(horas)) format(max(do.call(c, unname(horas))), "%H:%M", tz = (input$client_tz %||% "America/Mexico_City")) else ""
-    showNotification(tr("tablas.datos_sap.aviso.foto_nueva", hora = hora), type = "message", duration = 5)
+    # No time in the notice (CM27: a time shown carries the user's zone): the
+    # companies' "Última actualización" tooltip shows it, from sap_snapshot_info.
+    showNotification(tr("tablas.datos_sap.aviso.foto_nueva"), type = "message", duration = 5)
     message(sprintf("[SAP] snapshot signal: session #%d re-read the ERP snapshot", .sn))
   }, ignoreInit = TRUE)
 

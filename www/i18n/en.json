@@ -574,7 +574,7 @@
   "tablas.datos_sap.aviso.error_ledger": "SAP {ledger}: {error}",
   "tablas.datos_sap.aviso.respaldo": "SAP unavailable — {ledger} showing data from {fecha}",
   "tablas.datos_sap.aviso.actualizados": "Data updated.",
-  "tablas.datos_sap.aviso.foto_nueva": "ERP data updated ({hora}).",
+  "tablas.datos_sap.aviso.foto_nueva": "New ERP data arrived.",
   "tablas.datos_sap.aviso.no_guardado": "The ERP data ({ledger}) is on screen, but it could not be saved: refresh again in a few minutes.",
   "tablas.manual.aviso.documento_obligatorio": "The Document field is required.",
   "tablas.manual.aviso.no_guardada": "The changes could not be saved.",

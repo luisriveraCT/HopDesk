@@ -55,7 +55,7 @@ iguales <- list(
   # T103 (new, no "before"): their approved Spanish, so a change to them is seen too.
   list(es("tablas.datos_sap.aviso.no_guardado", ledger = ledger_name),
        paste0("Los datos del ERP (", ledger_name, ") se ven en pantalla, pero no se pudieron guardar: vuelve a refrescar en unos minutos.")),
-  list(es("tablas.datos_sap.aviso.foto_nueva", hora = "09:30"), "Datos del ERP actualizados (09:30)."))
+  list(es("tablas.datos_sap.aviso.foto_nueva"), "Llegaron datos nuevos del ERP."))
 dif <- avisos_distintos(iguales)
 ok(sprintf("el español de los %d textos es idéntico al de antes", length(iguales)),
    { for (p in dif) message("  ahora: ", p[[1]], "\n  antes: ", p[[2]]); !length(dif) && length(iguales) == length(claves) })

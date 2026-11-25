@@ -132,7 +132,7 @@ ok("5.4 staff en casa y una carga en curso salen antes de leer",
    pos("is.null(jump_client_id())") < pos("foto_erp_releer(") && pos(".sap_running") < pos("foto_erp_releer("))
 ok("5.5 sin cambio no escribe sap_data", pos("if (!isTRUE(r$cambio)) return()") < pos("sap_data(r$datos)"))
 ok("5.6 ignoreInit: la sesión no relee al arrancar (la Fase 1 ya sembró)", any(grepl("}, ignoreInit = TRUE)", cuerpo, fixed = TRUE)))
-ok("5.7 el aviso existe en los dos idiomas", nzchar(tr("tablas.datos_sap.aviso.foto_nueva", hora = "10:00")) &&
+ok("5.7 el aviso existe en los dos idiomas", nzchar(tr("tablas.datos_sap.aviso.foto_nueva")) &&
      "tablas.datos_sap.aviso.foto_nueva" %in% names(jsonlite::fromJSON("www/i18n/en.json")))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
