@@ -95,6 +95,22 @@ carga_terminada <- function() dentro() && isTRUE(tryCatch(ev(
 PESTANAS <- c(PAN = "Panorama", CAL = "Calendario", VEN = "Vencidos", PH = "Agenda de Hoy", BNC = "Bancos",
               IC = "Intercompany", PSV = "Pasivos", FC = "Pronósticos", RPT = "Reporte", GRUPO = "Grupo",
               REQ = "Requisiciones")
+# Tabs forced open when the user's menu does not show them (TEMA 6-10).
+.FORZADAS <- "REQ"
+# Bootstrap's own tab show, nested tabs included (the same as the Marca
+# measurement, tests/test_tema_marca_paleta_chromote.R). Defined after ev().
+MOSTRAR_JS <- "function(v){
+  var a = document.querySelector(\"a[data-bs-toggle='tab'][data-value='\" + v + \"'], a[data-toggle='tab'][data-value='\" + v + \"']\");
+  if (!a) return false;
+  var cadena = [], p = a;
+  while (p) { var pane = p.closest && p.closest('.tab-pane'); if (!pane) break;
+    var l = document.querySelector(\"a[data-bs-toggle='tab'][href='#\" + pane.id + \"'], a[data-bs-toggle='tab'][data-bs-target='#\" + pane.id + \"']\");
+    if (!l) break; cadena.unshift(l); p = l; }
+  cadena.push(a);
+  cadena.forEach(function(x){ bootstrap.Tab.getOrCreateInstance(x).show(); });
+  return true; }"
+mostrar_pestana <- function(v) isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS, jsonlite::toJSON(v, auto_unbox = TRUE))),
+                                               error = function(e) FALSE))
 
 # CAMBIO ESPERADO (TEMA 6-10, Luis 2026-11-24: Panorama follows the chosen
 # theme). These views hold .hd-marca elements, which under Clásico now take
@@ -301,8 +317,17 @@ recorrer <- function(raiz, etiqueta, quien) {
     menu(TRUE); Sys.sleep(1)   # the collapse animates; offsetParent is null until it opens
     visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
       return !!a && a.offsetParent !== null; })()", v)), error = function(x) FALSE))
-    if (!visible) next
-    ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
+    # A tab the user does not see is NOT COVERED, never skipped in silence
+    # (2026-11-25: Requisiciones was never measured and nothing said so).
+    # Requisiciones is forced open (Bootstrap's own tab show, as the Marca
+    # measurement does): the dev test users do not see it, and T6-10 must
+    # measure it.
+    if (!visible && v %in% .FORZADAS) {
+      if (!mostrar_pestana(v)) { menu(FALSE); no_cubierta(etiqueta, quien, PESTANAS[[v]], "the tab could not be forced open"); next }
+      cat(sprintf("      | [%s · %s] %s: not in this user's menu, forced open\n", etiqueta, quien, PESTANAS[[v]]))
+    } else if (!visible) {
+      menu(FALSE); no_cubierta(etiqueta, quien, PESTANAS[[v]], "not in this user's menu"); next
+    } else ev(sprintf("document.querySelector(\".nav-link[data-value='%s']\").click(); true", v))
     Sys.sleep(1); menu(FALSE)
     Sys.sleep(7)   # data drawn (R takes its time on a busy machine)
     quieta <- poll_until(function() identical(tryCatch(as.integer(ev(RECALCULANDO_JS)), error = function(x) NA_integer_), 0L),
@@ -460,7 +485,10 @@ recorrer <- function(raiz, etiqueta, quien) {
       captura_marca(etiqueta, sprintf("%s_%s_%s", etiqueta, quien, clave))
     }
     menu(TRUE); Sys.sleep(0.5)
-    ev("document.querySelector(\".nav-link[data-value='REQ']\").click(); true")
+    if (isTRUE(tryCatch(ev("(function(){ var a = document.querySelector(\".nav-link[data-value='REQ']\");
+          return !!a && a.offsetParent !== null; })()"), error = function(x) FALSE)))
+      ev("document.querySelector(\".nav-link[data-value='REQ']\").click(); true")
+    else mostrar_pestana("REQ")
     Sys.sleep(1); menu(FALSE)
     Sys.sleep(5)
     nueva <- isTRUE(tryCatch(ev("(function(){ var b = document.getElementById('req-nueva');
