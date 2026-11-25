@@ -31,7 +31,10 @@ test_that("opcion_fila is optional in class E only, and only the listed tables h
   permitidas <- c(
     # T21b (580453e): Descargar todos los pagos picks, per payment without an
     # account, whether it goes into a _002 file.
-    descargar_pagos = "T21b"
+    descargar_pagos = "T21b",
+    # T93: the BajíoNet report's preview (Archivos de pago) picks, per
+    # payment, whether it is confirmed (confirmar / omitir).
+    respuesta_banco = "T93"
   )
   for (tabla in names(hd_registro))
     expect_identical("opcion_fila" %in% hd_piezas_de(tabla), tabla %in% names(permitidas), info = tabla)
