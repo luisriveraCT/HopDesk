@@ -52,6 +52,9 @@ hijo <- function(quitar = "", bs_theme = FALSE, lib = NULL) {
     # The weekly mails' colours (R/avisos_correos.R): built from the registry on first use.
     'cc <- tryCatch(CORREO_COLORES, error = function(e) NULL)',
     'cat("COLORES=", is.list(cc) && identical(cc$marino, tema_color("primario", "marca")) && identical(cc$fondo, tema_color("lino", "marca")), "\\n", sep = "")',
+    # TEMA 6-9: correo_tema() lives in R/tema_registro.R; the job has it, and
+    # with no client it answers Clásico without reading anything.
+    'cat("CTEMA=", tryCatch(correo_tema(NULL), error = function(e) "error"), "\\n", sep = "")',
     if (bs_theme) 'invisible(tryCatch(hd_bs_theme(), error = function(e) NULL))' else '',
     'cat("BSLIB=", "bslib" %in% loadedNamespaces(), "\\n", sep = "")',
     # Last: asking for bslib loads it where it is installed.
@@ -61,7 +64,7 @@ hijo <- function(quitar = "", bs_theme = FALSE, lib = NULL) {
   out <- suppressWarnings(system2(rs, c("--vanilla", shQuote(f)), stdout = TRUE, stderr = TRUE))
   val <- function(k) sub(paste0("^", k, "="), "", grep(paste0("^", k, "="), out, value = TRUE)[1])
   list(carga = val("CARGA"), marca = val("MARCA"), correo = val("CORREO"), bslib = val("BSLIB"),
-       colores = val("COLORES"), instalado = val("BSLIB_INSTALADO"))
+       colores = val("COLORES"), instalado = val("BSLIB_INSTALADO"), ctema = val("CTEMA"))
 }
 
 # The CI-like library (the integrator's condition): a folder with a link to
@@ -119,6 +122,11 @@ ok("2: tema_tokens(\"marca\") resolves in the job (Marca's primario)",
 ok("3: email_invite_html() builds in the job, painted (no {{rol}} left, Clásico's acento)", identical(r$correo, "TRUE"))
 ok("4: bslib is never loaded on the job's path", identical(r$bslib, "FALSE"))
 ok("5: CORREO_COLORES (the weekly mails) is built in the job, from the registry (Marca)", identical(r$colores, "TRUE"))
+arch <- local({ e <- new.env(); for (x in parse("scripts/avisos_job.R", keep.source = FALSE))
+  if (is.call(x) && identical(x[[1]], as.name("<-")) && identical(as.character(x[[2]]), "AVISOS_JOB_ARCHIVOS")) eval(x, e); e$AVISOS_JOB_ARCHIVOS })
+ok("7: AVISOS_JOB_ARCHIVOS loads R/tema_registro.R before R/avisos_correos.R (correo_tema() lives there, TEMA 6-9)",
+   isTRUE(match("R/tema_registro.R", arch) < match("R/avisos_correos.R", arch)))
+ok("7: correo_tema() answers in the job (no client: Clásico, nothing read)", identical(r$ctema, "clasico"))
 
 n_dplyr <- length(list.files(find.package("dplyr"), recursive = TRUE))
 l <- lib_ci()
@@ -126,14 +134,14 @@ quedan <- character()
 ci <- tryCatch(hijo(lib = l$dir), finally = quedan <- lib_ci_borrar(l))
 ok(sprintf("6: in a CI-like library (%d job packages + an absent bslib) bslib cannot be loaded", length(l$paquetes)),
    isTRUE(l$falso) && identical(ci$instalado, "FALSE"))
-ok("6: ...and there the job loads, builds a painted mail and CORREO_COLORES",
-   identical(ci$carga, "ok") && identical(ci$correo, "TRUE") && identical(ci$colores, "TRUE"))
+ok("6: ...and there the job loads, builds a painted mail and CORREO_COLORES, and has correo_tema()",
+   identical(ci$carga, "ok") && identical(ci$correo, "TRUE") && identical(ci$colores, "TRUE") && identical(ci$ctema, "clasico"))
 ok("6: the CI-like library is gone and the real packages are untouched (only the links were removed)",
    !length(quedan) && !dir.exists(l$dir) && length(list.files(find.package("dplyr"), recursive = TRUE)) == n_dplyr)
 
 sin <- hijo(quitar = "R/tema_registro.R")
-ok("contraprueba: without R/tema_registro.R the job's mail cannot be built",
-   identical(sin$correo, "FALSE") && identical(sin$marca, "error"))
+ok("contraprueba: without R/tema_registro.R the job's mail cannot be built, nor its theme chosen",
+   identical(sin$correo, "FALSE") && identical(sin$marca, "error") && identical(sin$ctema, "error"))
 bs <- hijo(bs_theme = TRUE)
 ok("contraprueba: hd_bs_theme() (it needs bslib) in the same child is caught by check 4",
    identical(bs$bslib, "TRUE"))
