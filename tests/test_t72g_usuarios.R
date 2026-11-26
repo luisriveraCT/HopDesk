@@ -138,6 +138,8 @@ inv <- reiniciar()
 r <- activar_invitacion(inv, buenos)
 audit_key <- function() grep("^acme/app_audit", ls(.mem), value = TRUE)
 ok("5 control: right after the activation, the row is only queued (nothing in S3 yet)", !length(audit_key()))
+# T114b: wall clock on purpose -- a deadline for the queued write to land,
+# not a speed check.
 t0 <- Sys.time()
 while (!length(audit_key()) && difftime(Sys.time(), t0, units = "secs") < 15) { later::run_now(1) }
 fila_audit <- function() { k <- audit_key(); if (!length(k)) return(NULL); d <- get(k[1], envir = .mem)

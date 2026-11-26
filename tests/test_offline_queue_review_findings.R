@@ -97,6 +97,8 @@ cat("\n-- Part R1: seq-collision race -- now fixed via .queue_with_client_lock()
   held <- dir.create(.queue_lock_dir(cid), showWarnings = FALSE)
   ok("R1b setup: manually acquired the lock directory for this client", isTRUE(held))
 
+  # T114b: wall clock on purpose -- this checks a WAIT (Sys.sleep while the
+  # lock is held), which costs no CPU: only the clock sees it.
   t0 <- Sys.time()
   err <- tryCatch({ .queue_with_client_lock(cid, function() "should never run", max_wait = 0.3, poll = 0.05); "no error" },
                   error = function(e) conditionMessage(e))
@@ -131,6 +133,8 @@ cat("\n-- Part R1: seq-collision race -- now fixed via .queue_with_client_lock()
   old_time <- Sys.time() - (.QUEUE_LOCK_STALE_SECS + 5)
   Sys.setFileTime(.queue_lock_dir(cid), old_time)
 
+  # T114b: wall clock on purpose -- this checks there was NO wait (no sleeping
+  # out max_wait = 5 s); a sleep costs no CPU, only the clock would see it.
   t0 <- Sys.time()
   result <- .queue_with_client_lock(cid, function() "reclaimed-and-ran", max_wait = 5, poll = 0.05)
   elapsed <- as.numeric(difftime(Sys.time(), t0, units = "secs"))

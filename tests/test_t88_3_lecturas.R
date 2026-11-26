@@ -26,6 +26,8 @@ k_no  <- paste0(CID, "/no_existe.rds")
 k_403 <- paste0(CID, "/prohibido.rds")
 k_red <- paste0(CID, "/red.rds")
 k_ok  <- paste0(CID, "/si.rds")
+# T114b: wall clock on purpose -- "no wait" means no retry sleep, which costs
+# no CPU: only the clock sees it (a1, a6 below).
 leer <- function(k) { t0 <- proc.time()[["elapsed"]]; r <- .s3_read_raw_with_retry(k, B); r$seg <- proc.time()[["elapsed"]] - t0; r }
 
 # ── (a) ──────────────────────────────────────────────────────────────────────
