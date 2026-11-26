@@ -526,6 +526,7 @@ source("R/adjuntos_s3.R")
 source("R/adjuntos_registro.R")    # T106: the attachments layer -- what can have documents
 source("R/adjuntos_almacen.R")     # T106: where their bytes live (S3 today)
 source("R/adjuntos_documentos.R")  # T106: the documents table
+source("R/adjuntos_cfdi.R")        # T106 2a: what a CFDI says (fiscal UUID), read when attached
 source("R/adjuntos_pasivo_ui.R")   # T106: "Documentos" in a liability's detail
 source("R/requisiciones_persistence.R")
 source("R/pasivos_capabilities.R")

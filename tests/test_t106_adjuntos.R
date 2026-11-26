@@ -27,7 +27,7 @@ ok <- function(label, expr, detalle = NULL) {
 }
 source("tests/helpers/s3_memoria.R")
 for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/app_audit.R", "R/adjuntos_s3.R",
-            "R/adjuntos_registro.R", "R/adjuntos_almacen.R", "R/adjuntos_documentos.R"))
+            "R/adjuntos_registro.R", "R/adjuntos_almacen.R", "R/adjuntos_documentos.R", "R/adjuntos_cfdi.R"))
   suppressMessages(sys.source(f, envir = globalenv()))
 s3_memoria_reinstalar()
 q <- function(expr) invisible(suppressWarnings(suppressMessages(expr)))

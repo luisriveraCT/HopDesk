@@ -25,7 +25,7 @@ suppressPackageStartupMessages(library(shiny))
 source("tests/helpers/s3_memoria.R")
 source("tests/helpers/server_usuarios_archivos.R")
 cargar_server_usuarios()
-for (f in c("R/adjuntos_s3.R", "R/adjuntos_registro.R", "R/adjuntos_almacen.R", "R/adjuntos_documentos.R",
+for (f in c("R/adjuntos_s3.R", "R/adjuntos_registro.R", "R/adjuntos_almacen.R", "R/adjuntos_documentos.R", "R/adjuntos_cfdi.R",
             "R/adjuntos_pasivo_ui.R")) suppressMessages(sys.source(f, envir = globalenv()))
 s3_memoria_reinstalar()
 

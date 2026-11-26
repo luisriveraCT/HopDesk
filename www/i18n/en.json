@@ -1821,6 +1821,8 @@
   "comun.adjuntos.tipo_doc.orden_compra": "Purchase order",
   "comun.adjuntos.tipo_doc.tabla_amortizacion": "Amortization schedule",
   "comun.adjuntos.tipo_doc.otro": "Other",
+  "comun.adjuntos.error_cfdi_repetido": "This CFDI is already attached here (same UUID).",
+  "comun.adjuntos.cfdi_resumen": "CFDI {uuid} · {emisor} · {total}",
   "requisiciones.evento.estatus": "moved to “{etapa}”",
   "requisiciones.historial.creada": "created the requisition",
   "requisiciones.historial.editada": "edited the details",

@@ -60,6 +60,7 @@ ADJDOC_MAX_XML  <- 5 * 1024^2
   columnas     = integer(),
   encabezado   = logical(),
   refs         = character(),   # JSON of alternate keys, "{}" when none
+  ref_uuid     = character(),   # T106 2a: a CFDI's fiscal UUID (upper case), NA otherwise -- searched without opening refs
   almacen      = character(),
   llave        = character(),
   comprimido   = character(),   # "no" today (R/adjuntos_almacen.R)
@@ -229,8 +230,10 @@ adjdoc_preparar_pegado <- function(texto) .adjdoc_traducir(tabla_pegada_preparar
 # to bytes S3 lacks. Returns the document's id.
 .adjdoc_guardar <- function(cid, entidad, entidad_id, tipo_doc, fila, bytes, mime, accion, por, home) {
   e <- .adjdoc_revisar(cid, entidad, entidad_id, tipo_doc)
-  if (.adjdoc_vivos(.adjdoc_leer(cid), entidad, entidad_id, fila$clase) >= .adjdoc_tope(e, fila$clase))
+  actual <- .adjdoc_leer(cid)
+  if (.adjdoc_vivos(actual, entidad, entidad_id, fila$clase) >= .adjdoc_tope(e, fila$clase))
     .adjdoc_tope_error(e, fila$clase)
+  .adjdoc_uuid_repetido(actual, entidad, entidad_id, fila$ref_uuid)
   id <- uuid::UUIDgenerate()
   llave <- adjdoc_llave(cid, entidad, entidad_id, id, fila$ext)
   almacen_guardar(ADJ_ALMACEN_ACTUAL, llave, bytes, mime)
@@ -241,12 +244,14 @@ adjdoc_preparar_pegado <- function(texto) .adjdoc_traducir(tabla_pegada_preparar
     ancho = as.integer(fila$ancho %||% NA_integer_), alto = as.integer(fila$alto %||% NA_integer_),
     filas = as.integer(fila$filas %||% NA_integer_), columnas = as.integer(fila$columnas %||% NA_integer_),
     encabezado = if (is.null(fila$encabezado)) NA else isTRUE(fila$encabezado),
-    refs = "{}", almacen = ADJ_ALMACEN_ACTUAL, llave = llave, comprimido = "no",
+    refs = fila$refs %||% "{}", ref_uuid = fila$ref_uuid %||% NA_character_,
+    almacen = ADJ_ALMACEN_ACTUAL, llave = llave, comprimido = "no",
     creado_por = por, creado = as.POSIXct(Sys.time(), tz = "UTC"))
   desc <- fila$titulo %||% fila$nombre %||% ""
   if (identical(accion, "pegar_tabla_documento"))
     modificar_tabla(ADJDOC_KEY, cid, .schema_adjuntos_documentos, function(df) {
       if (.adjdoc_vivos(df, entidad, entidad_id, fila$clase) >= .adjdoc_tope(e, fila$clase)) .adjdoc_tope_error(e, fila$clase)
+      .adjdoc_uuid_repetido(df, entidad, entidad_id, fila$ref_uuid)
       dplyr::bind_rows(df, nueva)
     }, evento = list(usuario = por, modulo = "adjuntos", accion = "pegar_tabla_documento", descripcion = desc,
                      target_id = id, metadata = list(entidad = entidad, entidad_id = entidad_id, tipo_doc = tipo_doc),
@@ -254,6 +259,7 @@ adjdoc_preparar_pegado <- function(texto) .adjdoc_traducir(tabla_pegada_preparar
   else
     modificar_tabla(ADJDOC_KEY, cid, .schema_adjuntos_documentos, function(df) {
       if (.adjdoc_vivos(df, entidad, entidad_id, fila$clase) >= .adjdoc_tope(e, fila$clase)) .adjdoc_tope_error(e, fila$clase)
+      .adjdoc_uuid_repetido(df, entidad, entidad_id, fila$ref_uuid)
       dplyr::bind_rows(df, nueva)
     }, evento = list(usuario = por, modulo = "adjuntos", accion = "adjuntar_documento", descripcion = desc,
                      target_id = id, metadata = list(entidad = entidad, entidad_id = entidad_id, tipo_doc = tipo_doc),
@@ -261,16 +267,35 @@ adjdoc_preparar_pegado <- function(texto) .adjdoc_traducir(tabla_pegada_preparar
   id
 }
 
+# T106 2a: the same CFDI (fiscal UUID) twice on one entity is refused; on
+# another entity it is allowed (a CFDI may back a liability and its invoice).
+.adjdoc_uuid_repetido <- function(df, entidad, entidad_id, uuid) {
+  if (is.null(uuid) || is.na(uuid)) return(invisible(FALSE))
+  hay <- df$entidad %in% entidad & df$entidad_id %in% entidad_id & df$ref_uuid %in% uuid & is.na(df$papelera_en)
+  if (any(hay)) .adjdoc_error("comun.adjuntos.error_cfdi_repetido")
+  invisible(FALSE)
+}
+
 # A prepared file (adjdoc_preparar()). A CSV becomes a table (canonical CSV).
+# T106 2a: an XML that is a stamped CFDI keeps its fiscal fields in refs and
+# its UUID in ref_uuid, and is filed as "cfdi" when the entity takes that kind.
 documento_adjuntar <- function(client_id, entidad, entidad_id, preparado, tipo_doc, por, home = NULL) {
   cid <- .adjdoc_cid(client_id)
+  refs <- "{}"; ref_uuid <- NA_character_
+  if (identical(preparado$ext, "xml")) {
+    cfdi <- tryCatch(adjdoc_leer_cfdi(preparado$bytes), error = function(e) NULL)
+    if (!is.null(cfdi)) {
+      refs <- adjdoc_refs_cfdi(cfdi); ref_uuid <- cfdi$uuid
+      if ("cfdi" %in% adj_entidad(entidad)$tipos_doc) tipo_doc <- "cfdi"
+    }
+  }
   if (identical(preparado$clase, "tabla"))
     return(documento_tabla_agregar(cid, entidad, entidad_id, preparado, titulo = preparado$nombre,
                                    encabezado = isTRUE(preparado$encabezado_sugerido), tipo_doc = tipo_doc,
                                    por = por, home = home, accion = "adjuntar_documento"))
   .adjdoc_guardar(cid, entidad, entidad_id, tipo_doc,
                   list(clase = "archivo", ext = preparado$ext, nombre = preparado$nombre,
-                       ancho = preparado$ancho, alto = preparado$alto),
+                       ancho = preparado$ancho, alto = preparado$alto, refs = refs, ref_uuid = ref_uuid),
                   preparado$bytes, preparado$mime, "adjuntar_documento", por, home)
 }
 

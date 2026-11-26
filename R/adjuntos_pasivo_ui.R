@@ -40,6 +40,16 @@ adjuntos_pasivo_ui <- function() {
     htmltools::tags$script(htmltools::HTML("if (window.Shiny && Shiny.shinyapp && Shiny.shinyapp.isConnected && Shiny.shinyapp.isConnected()) Shiny.setInputValue('pdoc_abierto', false, {priority: 'event'});")))
 }
 
+# T106 2a: a CFDI's card says which one it is -- its UUID's first block, the
+# issuer's RFC and the total in its currency (monto_moneda, never "$").
+.adjdoc_cfdi_resumen <- function(r) {
+  if (is.null(r$ref_uuid) || is.na(r$ref_uuid)) return(NULL)
+  x <- tryCatch(jsonlite::fromJSON(r$refs %||% "{}"), error = function(e) list())
+  total <- if (is.numeric(x$total) && !is.na(x$total)) monto_moneda(x$total, x$moneda %||% NA_character_) else ""
+  htmltools::tags$span(class = "hdreq-ev-tam d-block",
+    tr("comun.adjuntos.cfdi_resumen", uuid = substr(r$ref_uuid, 1L, 8L), emisor = x$rfc_emisor %||% "", total = total))
+}
+
 setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
   ENT <- "pasivo"
   abierto  <- shiny::reactiveVal(FALSE)
@@ -201,7 +211,8 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
             onclick = sprintf("Shiny.setInputValue('pdoc_descargar_id', %s, {priority: 'event'})", jsonlite::toJSON(r$id, auto_unbox = TRUE)),
             htmltools::tags$span(class = "hdreq-ev-tipo", if (identical(r$clase, "tabla")) tr("comun.adjuntos.tabla.tipo") else toupper(r$ext)),
             htmltools::tags$span(class = "hdreq-ev-nombre", nombre),
-            htmltools::tags$span(class = "hdreq-ev-tam", tr(paste0("comun.adjuntos.tipo_doc.", r$tipo_doc)))),
+            htmltools::tags$span(class = "hdreq-ev-tam", tr(paste0("comun.adjuntos.tipo_doc.", r$tipo_doc))),
+            .adjdoc_cfdi_resumen(r)),
           if (quitar) htmltools::tags$button(type = "button", class = "btn btn-sm btn-link text-danger p-0 hdreq-quitar",
             title = tr("comun.adjuntos.quitar"),
             onclick = sprintf("Shiny.setInputValue('pdoc_quitar', %s, {priority: 'event'})", jsonlite::toJSON(r$id, auto_unbox = TRUE)),

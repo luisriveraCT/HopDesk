@@ -1821,6 +1821,8 @@
   "comun.adjuntos.tipo_doc.orden_compra": "Orden de compra",
   "comun.adjuntos.tipo_doc.tabla_amortizacion": "Tabla de amortización",
   "comun.adjuntos.tipo_doc.otro": "Otro",
+  "comun.adjuntos.error_cfdi_repetido": "Este CFDI ya está adjunto aquí (mismo UUID).",
+  "comun.adjuntos.cfdi_resumen": "CFDI {uuid} · {emisor} · {total}",
   "requisiciones.evento.estatus": "pasó a «{etapa}»",
   "requisiciones.historial.creada": "creó la requisición",
   "requisiciones.historial.editada": "editó los datos",
