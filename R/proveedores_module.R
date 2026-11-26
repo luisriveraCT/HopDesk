@@ -226,6 +226,13 @@ proveedoresServer <- function(id, shared) {
     .puede_ver_escritura <- reactive(isTRUE(tryCatch(puede(shared$usuario(), "can_manage_proveedores"),
                                                      error = function(e) FALSE)))
     observe({
+      # T112: only once this UI is in the page, and again each time it is
+      # drawn anew (ui_pintada, sent by proveedoresUI()). The server runs with
+      # Ajustes whether or not this section is open: before, show/hideTab went
+      # to a tabset not yet there (staff at home: "There is no tabsetPanel ...
+      # 'prov_mod-prov_tabs'" in the console) and, drawn later, the tab
+      # Importar Excel stayed visible to whoever may not write.
+      req(input$ui_pintada)
       ok <- .puede_ver_escritura()
       shinyjs::toggle("cat_new", condition = ok)
       shinyjs::toggleClass("catalogo_wrap", "prov-solo-lectura", condition = !ok)
