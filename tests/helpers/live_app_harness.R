@@ -38,7 +38,13 @@
 # shadow a fixture that serves ANOTHER repo's (VEN_RAIZ, comparing against
 # master). Nothing is copied or linked, so nothing has to be deleted (the
 # real www/ is only read). `www = NULL`: the old behavior.
-start_bg_app <- function(app_code, port, timeout_s = 20, www = file.path(getwd(), "www")) {
+#
+# `peticion_s` (T108): how long each probe of "/" may take. It was 2 s: on a
+# loaded machine (batteries running) the first GET / of a real app takes
+# > 10 s, so every probe gave up before the answer and the app "never became
+# reachable" although it was up. A refused connection (not listening yet)
+# still fails at once; only a slow answer is waited for.
+start_bg_app <- function(app_code, port, timeout_s = 20, www = file.path(getwd(), "www"), peticion_s = 30) {
   tmp <- tempfile(fileext = ".R")
   writeLines(app_code, tmp)
 
@@ -67,7 +73,7 @@ start_bg_app <- function(app_code, port, timeout_s = 20, www = file.path(getwd()
            paste(readLines(proc$get_error_file(), warn = FALSE), collapse = "\n"))
     }
     resp <- tryCatch(
-      curl::curl_fetch_memory(sprintf("http://127.0.0.1:%d/", port), handle = curl::new_handle(TIMEOUT = 2)),
+      curl::curl_fetch_memory(sprintf("http://127.0.0.1:%d/", port), handle = curl::new_handle(TIMEOUT = peticion_s)),
       error = function(e) NULL
     )
     if (!is.null(resp) && resp$status_code < 500) { ok <- TRUE; break }
