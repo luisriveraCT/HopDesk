@@ -116,10 +116,12 @@ grande <- AP[rep(1:7, length.out = n), ]
 grande$Parte <- paste(grande$Parte, sample(0:1999, n, TRUE) %/% 1000)   # ~14 distinct names
 grande$Parte[seq(1, n, by = 9)] <- paste("PROVEEDOR", sample(1:3000, length(seq(1, n, by = 9)), TRUE))
 grande$Documento <- as.character(seq_len(n))
-t_sin <- system.time(apply_ic_filter(grande, "exclude", "Código de proveedor", build_ic_fullcodes(REG, "AP"), character(),
-                                     cmap = CMAP_T90, empresas = NULL))[["elapsed"]]
-t_con <- system.time(apply_ic_filter(grande, "exclude", "Código de proveedor", build_ic_fullcodes(REG, "AP"), character(),
-                                     cmap = CMAP_T90, empresas = EMP))[["elapsed"]]
+# T114b: CPU time (user + sys), not wall clock: the work, not the wait for a
+# loaded machine.
+t_sin <- sum(system.time(apply_ic_filter(grande, "exclude", "Código de proveedor", build_ic_fullcodes(REG, "AP"), character(),
+                                     cmap = CMAP_T90, empresas = NULL))[c("user.self", "sys.self")])
+t_con <- sum(system.time(apply_ic_filter(grande, "exclude", "Código de proveedor", build_ic_fullcodes(REG, "AP"), character(),
+                                     cmap = CMAP_T90, empresas = EMP))[c("user.self", "sys.self")])
 cat(sprintf("   100k filas: sin identidad %.2f s, con identidad %.2f s\n", t_sin, t_con))
 ok("con identidad, 100k filas en menos de 5 s (se normaliza por Parte/RFC distintos, no por fila)", t_con < 5)
 

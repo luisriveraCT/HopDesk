@@ -249,7 +249,9 @@ test_that("5,000 rows build quickly", {
   big <- data.frame(id = sprintf("r%05d", 1:n), Empresa = "NTS", Parte = paste("Proveedor", 1:n),
                     Importe = round(runif(n, -1e5, 1e6), 2), Vence = Sys.Date() + (1:n %% 90),
                     Moneda = sample(c("MXN", "USD"), n, TRUE), stringsAsFactors = FALSE)
-  t <- system.time(f <- hd_filas(big, cols))[["elapsed"]]
+  # T114b: CPU time (user + sys), not wall clock: the work, not the wait for
+  # a loaded machine.
+  t <- sum(system.time(f <- hd_filas(big, cols))[c("user.self", "sys.self")])
   cat(sprintf("\n  hd_filas(5,000 rows): %.3f s\n", t))
   expect_length(f$ids, n)
   expect_lt(t, 1)

@@ -253,7 +253,9 @@ if (nzchar(datos) && file.exists(datos)) {
 
 # ── Benchmark ────────────────────────────────────────────────────────────────
 cat("\n== benchmark (seconds, median of 3) ==\n")
-mide <- function(f, P, L) median(vapply(1:3, function(i) system.time(f(P, L, fx = FX))[["elapsed"]], 0))
+# T114b: CPU time (user + sys), not wall clock: the work, not the wait for a
+# loaded machine.
+mide <- function(f, P, L) median(vapply(1:3, function(i) sum(system.time(f(P, L, fx = FX))[c("user.self", "sys.self")]), 0))
 for (n in c(100L, 450L, 900L)) {
   P <- generar(n); P$estado <- "provisional"
   v <- mide(.provisiones_fila_por_fila, P, LL); w <- mide(nueva, P, LL)

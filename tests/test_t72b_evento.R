@@ -174,7 +174,9 @@ otra <- bind_rows(otra[-(1:10), ], tibble(id = "nuevo", fecha = as.Date("2026-11
 # calls (Windows' clock ticks every 10 ms).
 base_op <- function(a, b) { ia <- match(b$id, a$id); s <- 0L
   for (cl in setdiff(names(b), "id")) s <- s + sum(a[[cl]][ia] != b[[cl]], na.rm = TRUE); s }
-t_ms <- function(f) min(vapply(1:3, function(i) system.time(for (j in 1:10) f())[["elapsed"]], 1)) * 100
+# T114b: CPU time (user + sys) for both, the difference and its base: the
+# work, not the wait for a loaded machine.
+t_ms <- function(f) min(vapply(1:3, function(i) sum(system.time(for (j in 1:10) f())[c("user.self", "sys.self")]), 1)) * 100
 dd <- if (!is.null(dif)) dif("bancos_movimientos.rds", grande, otra)   # also the warm-up
 ok("10a the difference of 50 000 rows counts 1 new, 500 changed, 10 removed",
    !is.null(dd) && identical(unname(dd$n), c(1L, 500L, 10L)))
