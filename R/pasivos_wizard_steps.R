@@ -402,7 +402,10 @@ pasivos_step_ui_recurrencia <- function(draft, errors = list()) {
 }
 
 # ── Step 4: Términos del crédito (financiero) ─────────────────────────────────
-pasivos_step_ui_terminos <- function(draft, errors = list()) {
+# T115: convencion_omision -- the client's day-count convention, the one a
+# NEW liability starts on (a saved one shows its own).
+pasivos_step_ui_terminos <- function(draft, errors = list(), convencion_omision = PASIVOS_CONVENCION_OMISION) {
+  conv_sel <- if (pasivos_convencion_valida(draft$convencion_dias)) draft$convencion_dias else convencion_omision
   flavor   <- draft$flavor %||% "credito_simple"
   is_puro  <- identical(flavor, "arrendamiento_puro")
   tt       <- draft$tasa_tipo %||% "fija"
@@ -486,6 +489,14 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
                 "Selecciona Fija/SOFR/TIIE28/PRIME para convertirla."
               ),
 
+            # ── T115: the day-count convention (as the contract says) ──────
+            shiny::div(class = "mb-3",
+              shiny::selectInput("pwiz_convencion_dias", tr("tablas.pasivos.convencion.titulo"),
+                choices = stats::setNames(PASIVOS_CONVENCIONES,
+                  vapply(PASIVOS_CONVENCIONES, function(k) tr(paste0("tablas.pasivos.convencion.opcion.", k)), character(1))),
+                selected = conv_sel, width = "100%"),
+              shiny::tags$small(class = "text-muted d-block", tr("tablas.pasivos.convencion.ayuda"))),
+
             # ── Fija: dual annual ↔ per-period inputs ───────────────────────
             shiny::conditionalPanel(
               condition = "input.pwiz_tasa_tipo === 'fija'",
@@ -515,7 +526,7 @@ pasivos_step_ui_terminos <- function(draft, errors = list()) {
                                           ta <- draft$tasa_actual %||% NA_real_
                                           f  <- draft$frecuencia_pago %||% "mensual"
                                           p  <- switch(f, mensual=12L, anual=1L, semanal=52L, diaria=365L, 12L)
-                                          if (!is.na(ta)) round(((1 + ta/100)^(1/p) - 1) * 100, 3) else NA_real_
+                                          if (!is.na(ta)) round(.wiz_tasa_periodo(ta, p, conv_sel), 3) else NA_real_
                                         },
                                         min = 0, step = 0.001)
                   )

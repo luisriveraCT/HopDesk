@@ -158,8 +158,13 @@ test_that("the wizard's preview: the rate just fetched, variable, Act/360 (no lo
             metodo_amortizacion = "francesa", periodo_gracia = 0L)
   v <- pasivos_vista_amortizacion(d)
   expect_equal(v$interes[1], 1e7 * 0.115 * 31 / 360, tolerance = 1e-6)
-  expect_equal(tr("tablas.pasivos.tasa_var.fila", base = "9.000", pb = "250", nominal = "11.500", ear = "12.304"),
+  # T115: the basis is the liability's convention (a variable one without
+  # its own keeps Act/360): the same text, with the convention passed in.
+  expect_equal(tr("tablas.pasivos.tasa_var.fila", base = "9.000", pb = "250", nominal = "11.500",
+                  convencion = tr("tablas.pasivos.convencion.corto.act_360"), ear = "12.304"),
                "9.000 % + 250 pb = 11.500 % nominal anual, base Actual/360 (EAR 12.304 %)")
+  expect_equal(pasivos_ear_convencion(11.5, 12, pasivos_convencion(list(tasa_tipo = "variable_tiie28"))),
+               pasivos_ear_act360(11.5, 12))
 })
 
 test_that("T78: a variable rate shows its nominal (index + spread) and its Act/360 EAR; the XIRR agrees", {

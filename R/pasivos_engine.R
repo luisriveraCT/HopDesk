@@ -282,6 +282,84 @@ pasivos_recurrencia_fechas <- function(liability, hasta) {
   .ym_date(new_yr, new_mo, dia_pago)
 }
 
+# ── T115: day-count conventions ───────────────────────────────────────────────
+# How a financiero's period interest comes from its annual rate t:
+#   efectiva  t is EFFECTIVE annual: every period pays (1 + t)^(1/m) - 1,
+#             whatever its days -- what every fixed rate did before T115;
+#   30_360    nominal, 30E/360: months of 30 days, / 360;
+#   act_360   nominal, real days / 360 -- what every variable rate did before;
+#   act_365   nominal, real days / 365;
+#   act_act   nominal, ISDA: each piece of the period over its year's 365/366.
+# The days run from payment date to payment date as scheduled (the calculated
+# date; a payment moved by a holiday is T116's).
+# A liability keeps its own (convencion_dias); NA = the one it had before
+# T115, by its rate type (pasivos_convencion()): nothing saved changes. The
+# client's default (group_config$convencion_dias) is copied into a NEW
+# liability by the wizard, never read live -- changing it moves no saved
+# liability, and the variable rates' refresh rewrites nothing for it.
+PASIVOS_CONVENCIONES <- c("efectiva", "30_360", "act_360", "act_365", "act_act")
+PASIVOS_CONVENCION_OMISION <- "act_360"   # a client that never chose one
+
+pasivos_convencion_valida <- function(x)
+  is.character(x) && length(x) == 1L && !is.na(x) && x %in% PASIVOS_CONVENCIONES
+
+pasivos_convencion <- function(liability) {
+  cv <- if ("convencion_dias" %in% names(liability)) as.character(liability$convencion_dias[1]) else NA_character_
+  if (pasivos_convencion_valida(cv)) return(cv)
+  tipo <- if ("tasa_tipo" %in% names(liability)) as.character(liability$tasa_tipo[1]) else NA_character_
+  if (!is.na(tipo) && startsWith(tipo, "variable_")) "act_360" else "efectiva"
+}
+
+# The client's default for a new liability (group_config$convencion_dias).
+pasivos_convencion_cliente <- function(x) if (pasivos_convencion_valida(x)) x else PASIVOS_CONVENCION_OMISION
+
+# The days of the period (desde, hasta] the convention counts: 30E/360 counts
+# months of 30; NA for efectiva (its periods have no days).
+pasivos_dias_periodo <- function(conv, desde, hasta) {
+  desde <- as.Date(desde); hasta <- as.Date(hasta)
+  if (identical(conv, "efectiva")) return(NA_real_)
+  if (identical(conv, "30_360")) {
+    p <- function(d, f) as.integer(format(d, f))
+    return(360 * (p(hasta, "%Y") - p(desde, "%Y")) + 30 * (p(hasta, "%m") - p(desde, "%m")) +
+             (min(p(hasta, "%d"), 30L) - min(p(desde, "%d"), 30L)))
+  }
+  as.numeric(hasta - desde)
+}
+
+# Act/Act ISDA: each piece of (desde, hasta] over the days of its own year.
+.pasivos_fraccion_act_act <- function(desde, hasta) {
+  if (hasta <= desde) return(0)
+  enero <- function(a) as.Date(sprintf("%d-01-01", a))
+  anos <- as.integer(format(desde, "%Y")):as.integer(format(hasta, "%Y"))
+  sum(vapply(anos, function(a) {
+    ini <- max(desde, enero(a)); fin <- min(hasta, enero(a + 1L))
+    max(0, as.numeric(fin - ini)) / as.numeric(enero(a + 1L) - enero(a))
+  }, numeric(1)))
+}
+
+# A period's rates, annual rate t as a fraction (0.0875), m periods a year:
+# r for the level payment, f what the balance pays as interest from desde to
+# hasta. The operations keep the pre-T115 order for efectiva and act_360, so
+# a saved liability gives exactly the same figures.
+pasivos_tasas_convencion <- function(conv, t, m, desde, hasta) {
+  switch(conv,
+    efectiva = { r <- (1 + t)^(1 / m) - 1; list(r = r, f = r) },
+    act_360  = list(r = t / m, f = t * as.numeric(as.Date(hasta) - as.Date(desde)) / 360),
+    act_365  = list(r = t / m, f = t * as.numeric(as.Date(hasta) - as.Date(desde)) / 365),
+    `30_360` = list(r = t / m, f = t * pasivos_dias_periodo("30_360", desde, hasta) / 360),
+    act_act  = list(r = t / m, f = t * .pasivos_fraccion_act_act(as.Date(desde), as.Date(hasta))),
+    stop("[pasivos] unknown convencion_dias: ", conv))
+}
+
+# The EAR (%) of a nominal annual rate (%) paid m times a year, by the
+# convention: Act/360 as T78 (365/360 per year); efectiva is already the EAR.
+pasivos_ear_convencion <- function(nominal, m, conv) {
+  switch(conv,
+    efectiva = nominal,
+    act_360  = pasivos_ear_act360(nominal, m),
+    100 * ((1 + nominal / 100 / m)^m - 1))
+}
+
 # Periods per year for a given payment frequency.
 .periods_per_year <- function(frecuencia) {
   switch(frecuencia,
@@ -411,13 +489,15 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
   #     f = t * days of the period / 360, r = t / m. The index is the one in
   #     force on the payment date (client's estimates); none -> the rate
   #     captured on the day, the same convention.
+  # T115: by the liability's day-count convention (pasivos_convencion(): its
+  # own, or NA = the one before T115 -- efectiva for fixed, act_360 for
+  # variable -- so the figures of a saved liability do not change).
   es_variable <- startsWith(tasa_tipo, "variable_")
+  convencion  <- pasivos_convencion(liability)
   variable_na_warned <- FALSE
   .tasas_periodo <- function(fecha_k, fecha_prev) {
-    if (!es_variable) {
-      r <- (1 + tasa / 100)^(1 / ppy) - 1
-      return(list(r = r, f = r))
-    }
+    if (!es_variable)
+      return(pasivos_tasas_convencion(convencion, tasa / 100, ppy, fecha_prev, fecha_k))
     est <- if (!isTRUE(usar_indice)) tasa else
       tryCatch(forecasting_get_estimate(pasivos_metrica_tasa(tasa_tipo), fecha_k, client_id = client_id),
                error = function(e) NA_real_)
@@ -429,8 +509,7 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
       est <- tasa
     }
     t <- (est + spread_bps / 100) / 100
-    dias <- as.numeric(as.Date(fecha_k) - as.Date(fecha_prev))
-    list(r = t / ppy, f = t * dias / 360)
+    pasivos_tasas_convencion(convencion, t, ppy, fecha_prev, fecha_k)
   }
 
   # ── Build regular schedule ─────────────────────────────────────────────────
@@ -445,6 +524,7 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
     tp      <- .tasas_periodo(fecha_k, fecha_prev)
     r_k     <- tp$r
     f_k     <- tp$f
+    dias_k  <- pasivos_dias_periodo(convencion, fecha_prev, fecha_k)   # T115: the table's Días
     fecha_prev <- fecha_k
 
     if (k <= pg) {
@@ -500,7 +580,9 @@ pasivos_generate_schedule <- function(liability, today = hoy_en(), client_id = p
       saldo_post = saldo_post,
       origin     = origin_k,
       historico  = fecha_k < today,
-      re_amortized = FALSE
+      re_amortized = FALSE,
+      dias       = dias_k,          # T115: days the convention counts (NA: efectiva)
+      tasa_periodo = f_k * 100      # T115: the rate this period paid, %
     )
     saldo <- saldo_post
   }

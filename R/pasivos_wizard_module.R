@@ -42,6 +42,7 @@ pasivos_liability_to_draft <- function(row) {
     tasa_actual            = r$tasa_actual[1],
     tasa_tipo              = r$tasa_tipo[1] %||% "fija",
     tasa_spread            = r$tasa_spread[1] %||% 0,
+    convencion_dias        = pasivos_convencion(r),   # T115: its own, or the one it had before (same figures)
     tasa_estimate_method   = r$tasa_estimate_method[1] %||% "",
     plazo_meses            = r$plazo_meses[1],
     dia_pago               = r$dia_pago[1],
@@ -189,6 +190,8 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
                                  (draft$tasa_tipo %||% "fija") else NA_character_,
     tasa_spread              = if (identical(cat, "financiero"))
                                  (draft$tasa_spread %||% 0) else NA_real_,
+    convencion_dias          = if (identical(cat, "financiero") && pasivos_convencion_valida(draft$convencion_dias))
+                                 draft$convencion_dias else NA_character_,   # T115
     tasa_estimate_method     = draft$tasa_estimate_method %||% NA_character_,
     fecha_inicio             = fi,
     fecha_vence              = fv,
@@ -697,6 +700,8 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
       }
       d$fecha_inicio        <- tryCatch(as.Date(input$pwiz_fecha_inicio %||% NA),
                                          error = function(e) as.Date(NA))
+      cv <- input$pwiz_convencion_dias %||% d$convencion_dias              # T115
+      d$convencion_dias     <- if (pasivos_convencion_valida(cv)) cv else NA_character_
       d$plazo_meses         <- as.integer(input$pwiz_plazo_meses %||% NA_integer_)
       d$frecuencia_pago     <- input$pwiz_frecuencia_pago %||% "mensual"
       # Collect dia_pago and mes_pago based on frequency
@@ -773,6 +778,13 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
   if (is.null(liab)) return(NULL)
   tryCatch(pasivos_costeo(liab, hoy = hoy_cliente(), usar_indice = FALSE), error = function(e) NULL)
 }
+
+# T115: annual <-> per-period rate (%) by the day-count convention: efectiva
+# compounds, the nominal ones (30/360, Act/360, Act/365, Act/Act) divide.
+.wiz_tasa_periodo <- function(anual, ppy, conv)
+  if (identical(conv, "efectiva")) ((1 + anual / 100)^(1 / ppy) - 1) * 100 else anual / ppy
+.wiz_tasa_anual <- function(periodo, ppy, conv)
+  if (identical(conv, "efectiva")) ((1 + periodo / 100)^ppy - 1) * 100 else periodo * ppy
 
 # Whether any currency still has less to pay than its whole term (a payment
 # already behind): then the "por pagar" lines are worth showing.
@@ -859,14 +871,20 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
       ppy_rev    <- switch(freq, mensual=12L, anual=1L, semanal=52L, diaria=365L, 12L)
       periodo_nombre <- switch(freq,
         mensual="mensual", anual="anual", semanal="semanal", diaria="diario", "período")
-      tasa_periodo_rev <- round(((1 + tasa_anual/100)^(1/ppy_rev) - 1) * 100, 3)
+      # T115: by the draft's day-count convention (as the engine will compute).
+      conv_rev <- pasivos_convencion(list(convencion_dias = draft$convencion_dias %||% NA_character_, tasa_tipo = tipo_t))
+      tasa_periodo_rev <- round(.wiz_tasa_periodo(tasa_anual, ppy_rev, conv_rev), 3)
       if (!identical(tipo_t, "fija")) {
         ref_lbl <- switch(tipo_t, variable_sofr = "SOFR", variable_prime = "PRIME", "TIIE28")
         tr("tablas.pasivos.tasa_var.revision", indice = ref_lbl, base = sprintf("%.3f", tasa_base),
            pb = sprintf("%.0f", spread_bps), nominal = sprintf("%.3f", tasa_anual),
-           ear = sprintf("%.3f", pasivos_ear_act360(tasa_anual, ppy_rev)))
-      } else {
+           convencion = tr(paste0("tablas.pasivos.convencion.corto.", conv_rev)),
+           ear = sprintf("%.3f", pasivos_ear_convencion(tasa_anual, ppy_rev, conv_rev)))
+      } else if (identical(conv_rev, "efectiva")) {
         sprintf("%.3f%% anual (%.3f%% %s)", tasa_anual, tasa_periodo_rev, periodo_nombre)
+      } else {
+        tr("tablas.pasivos.convencion.resumen", tasa = sprintf("%.3f", tasa_anual),
+           convencion = tr(paste0("tablas.pasivos.convencion.corto.", conv_rev)))
       }
     }
     metodo_label <- switch(draft$metodo_amortizacion %||% "",
@@ -1012,6 +1030,8 @@ pasivos_vista_amortizacion <- function(draft, completa = FALSE, provs = NULL, li
     impuestos  = if ("impuestos" %in% names(futuras)) as.numeric(futuras$impuestos) else 0,
     total_pago = if ("total_pago" %in% names(futuras)) as.numeric(futuras$total_pago) else as.numeric(futuras$total %||% 0),
     saldo   = as.numeric(futuras$.saldo),
+    dias    = if ("dias" %in% names(futuras)) as.numeric(futuras$dias) else NA_real_,                 # T115
+    tasa_periodo = if ("tasa_periodo" %in% names(futuras)) as.numeric(futuras$tasa_periodo) else NA_real_,
     estado  = ifelse(futuras$periodo %in% occ_pagadas, "pagada",
                      ifelse(isTRUE_safe(futuras$historico), "pasada", "por_pagar")),
     moneda  = mon,
@@ -1043,6 +1063,7 @@ pasivos_vista_provisiones <- function(draft) {
 .wiz_vacia_amort <- data.frame(id = character(), periodo = integer(), fecha = as.Date(character()),
                                capital = numeric(), interes = numeric(), cargos = numeric(), total = numeric(),
                                impuestos = numeric(), total_pago = numeric(), saldo = numeric(),
+                               dias = numeric(), tasa_periodo = numeric(),
                                estado = character(), moneda = character(), stringsAsFactors = FALSE)
 .wiz_vacia_prov  <- data.frame(id = character(), fecha = as.Date(character()), monto = numeric(),
                                impuestos = numeric(), moneda = character(), stringsAsFactors = FALSE)
@@ -1077,6 +1098,8 @@ pasivos_vista_provisiones <- function(draft) {
     columnas = list(
       col_numero("periodo", "tablas.pasivos.amort.periodo"),
       col_fecha("fecha",    "tablas.pasivos.amort.fecha"),
+      col_numero("dias",    "tablas.pasivos.amort.dias"),                                   # T115
+      col_numero("tasa_periodo", "tablas.pasivos.amort.tasa_periodo", decimales = 4L, opcional = TRUE, visible = FALSE),
       col_dinero("capital", "tablas.pasivos.amort.capital", moneda = "moneda", sumar = TRUE),
       col_dinero("interes", "tablas.pasivos.amort.interes", moneda = "moneda", sumar = TRUE),
       col_dinero("cargos",  "tablas.pasivos.amort.cargos",  moneda = "moneda", sumar = TRUE, opcional = TRUE, visible = FALSE),
@@ -1152,6 +1175,16 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
 
   # Blur-based cross-update: fires only when user LEAVES the field (tab/click away).
   # Server-side hd_numero_update calls do NOT trigger blur, so no feedback loop.
+  # T115: annual <-> per period by the chosen day-count convention
+  # (efectiva compounds; the nominal ones divide).
+  .conv_wiz <- function() {
+    cv <- input$pwiz_convencion_dias %||% wiz$draft$convencion_dias
+    if (pasivos_convencion_valida(cv)) cv else "efectiva"
+  }
+  .conv_var <- function() {   # a variable rate without one: Act/360, as before T115
+    cv <- input$pwiz_convencion_dias %||% wiz$draft$convencion_dias
+    if (pasivos_convencion_valida(cv)) cv else "act_360"
+  }
   shiny::observeEvent(input$pwiz_tasa_anual_blur, {
     last_tasa_touched("anual")
     freq  <- input$pwiz_frecuencia_pago %||% "mensual"
@@ -1159,7 +1192,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     anual <- input$pwiz_tasa_anual_blur
     if (!is.null(anual) && !is.na(anual))
       hd_numero_update(session, "pwiz_tasa_periodo",
-                                value = round(((1 + anual/100)^(1/ppy) - 1) * 100, 3))
+                                value = round(.wiz_tasa_periodo(anual, ppy, .conv_wiz()), 3))
   }, ignoreInit = TRUE)
 
   shiny::observeEvent(input$pwiz_tasa_periodo_blur, {
@@ -1169,7 +1202,15 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     period <- input$pwiz_tasa_periodo_blur
     if (!is.null(period) && !is.na(period))
       hd_numero_update(session, "pwiz_tasa_anual",
-                                value = round(((1 + period/100)^ppy - 1) * 100, 3))
+                                value = round(.wiz_tasa_anual(period, ppy, .conv_wiz()), 3))
+  }, ignoreInit = TRUE)
+
+  # The annual rate stays; the per-period one follows a new convention.
+  shiny::observeEvent(input$pwiz_convencion_dias, {
+    anual <- input$pwiz_tasa_anual
+    if (!is.null(anual) && !is.na(anual))
+      hd_numero_update(session, "pwiz_tasa_periodo",
+        value = round(.wiz_tasa_periodo(anual, .periods_per_year(input$pwiz_frecuencia_pago %||% "mensual"), .conv_wiz()), 3))
   }, ignoreInit = TRUE)
 
   shiny::observeEvent(input$pwiz_frecuencia_pago, {
@@ -1181,12 +1222,12 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
       anual <- input$pwiz_tasa_anual
       if (!is.null(anual) && !is.na(anual))
         hd_numero_update(session, "pwiz_tasa_periodo",
-                                  value = round(((1 + anual/100)^(1/ppy) - 1) * 100, 3))
+                                  value = round(.wiz_tasa_periodo(anual, ppy, .conv_wiz()), 3))
     } else {
       period <- input$pwiz_tasa_periodo
       if (!is.null(period) && !is.na(period))
         hd_numero_update(session, "pwiz_tasa_anual",
-                                  value = round(((1 + period/100)^ppy - 1) * 100, 3))
+                                  value = round(.wiz_tasa_anual(period, ppy, .conv_wiz()), 3))
     }
   }, ignoreInit = TRUE)
 
@@ -1288,7 +1329,8 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
         if (is_sel) shiny::tags$span(class = "me-1", "►") else NULL,
         shiny::tags$strong(sprintf("%s %s: ", tipo_lbl, format(date_val, "%d/%m/%Y"))),
         tr("tablas.pasivos.tasa_var.fila", base = sprintf("%.3f", base), pb = sprintf("%.0f", spread_bps),
-           nominal = sprintf("%.3f", total_ann), ear = sprintf("%.3f", pasivos_ear_act360(total_ann, ppy)))
+           nominal = sprintf("%.3f", total_ann), convencion = tr(paste0("tablas.pasivos.convencion.corto.", .conv_var())),
+           ear = sprintf("%.3f", pasivos_ear_convencion(total_ann, ppy, .conv_var())))
       )
     }
 
@@ -1432,7 +1474,9 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
                                               existing_subcats, errs, base = base_moneda(),
                                               primero = monedas_primero()),
       recurrencia = pasivos_step_ui_recurrencia(wiz$draft, errs),
-      terminos    = pasivos_step_ui_terminos(wiz$draft, errs),
+      terminos    = pasivos_step_ui_terminos(wiz$draft, errs,
+                      convencion_omision = pasivos_convencion_cliente(shiny::isolate(tryCatch(
+                        shared$group_config()$convencion_dias, error = function(e) NULL)))),   # T115
       cargos      = pasivos_step_ui_cargos(wiz$draft, wiz$cargos_list, errs, base = base_moneda(),
                                            primero = monedas_primero()),
       revision    = pasivos_step_ui_revision(wiz$draft, errs),

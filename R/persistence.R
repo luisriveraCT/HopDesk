@@ -2885,8 +2885,11 @@ save_grupos <- function(df, client_id = NULL) {
   # tema: the client's theme (TEMA stage 5, R/tema_registro.R); NA = the
   # system's default. Read through tema_resolver(): anything unknown is the
   # default too, and nothing is written for it.
+  # convencion_dias (T115): the day-count convention a NEW financiero starts
+  # on (PASIVOS_CONVENCIONES); NA = PASIVOS_CONVENCION_OMISION. Copied into
+  # each liability at creation, never read live by a saved one.
   list(group_name = "", logo_raw = NULL, logo_ext = "png", moneda_base = NA_character_,
-       tema = NA_character_)
+       tema = NA_character_, convencion_dias = NA_character_)
 }
 
 load_group_config <- function(client_id = NULL) {
@@ -2914,7 +2917,7 @@ load_group_config <- function(client_id = NULL) {
 # or logo both survive. The logo is one unit, raw bytes and extension
 # together: never one session's bytes with another's extension. Fields this
 # form does not know (a later stage's) are S3's.
-.GROUP_CONFIG_UNIDADES <- list("group_name", "moneda_base", "tema", c("logo_raw", "logo_ext"))
+.GROUP_CONFIG_UNIDADES <- list("group_name", "moneda_base", "tema", "convencion_dias", c("logo_raw", "logo_ext"))
 .group_config_rebase <- function(nuevo, base, fresco) {
   nuevo <- .group_config_completar(nuevo); base <- .group_config_completar(base)
   out   <- .group_config_completar(fresco)

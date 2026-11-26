@@ -1583,6 +1583,23 @@ empresasServer <- function(id, shared) {
                 )
               )
             },
+            # T115: the day-count convention a new financiero starts on. Each
+            # liability keeps its own: changing this moves no saved one.
+            {
+              cv_act <- if (pasivos_convencion_valida(cfg$convencion_dias)) cfg$convencion_dias else ""
+              fluidRow(
+                column(8,
+                  tags$label(tr("tablas.pasivos.convencion.cliente_titulo"), class = "form-label small fw-semibold"),
+                  tags$p(class = "text-muted small mb-1", tr("tablas.pasivos.convencion.cliente_ayuda")),
+                  selectInput(ns("convencion_dias_input"), NULL, width = "100%",
+                    choices = c(stats::setNames("", tr("tablas.pasivos.convencion.cliente_omision",
+                                  convencion = tr(paste0("tablas.pasivos.convencion.opcion.", PASIVOS_CONVENCION_OMISION)))),
+                                stats::setNames(PASIVOS_CONVENCIONES, vapply(PASIVOS_CONVENCIONES, function(k)
+                                  tr(paste0("tablas.pasivos.convencion.opcion.", k)), character(1)))),
+                    selected = cv_act)
+                )
+              )
+            },
             # TEMA stage 5: the client's theme, for every user of it (screen and
             # reports). Clients see the offered themes; HopDesk staff all of
             # them. The one it has now always shows, so saving never drops it.
@@ -1644,6 +1661,17 @@ empresasServer <- function(id, shared) {
         return()
       }
       cfg$moneda_base <- if (nzchar(mb)) mb else NA_character_
+
+      # T115: "" = the default; anything else must be in the catalog (never
+      # trust the browser's value). No input (card not drawn): unchanged.
+      if (!is.null(input$convencion_dias_input)) {
+        cv <- trimws(input$convencion_dias_input)
+        if (nzchar(cv) && !pasivos_convencion_valida(cv)) {
+          showNotification(tr("tablas.pasivos.convencion.invalida"), type = "error")
+          return()
+        }
+        cfg$convencion_dias <- if (nzchar(cv)) cv else NA_character_
+      }
 
       # TEMA stage 5: "" = the system's default (NA); anything else must be in
       # the registry AND offered to this person -- or be the one the client
