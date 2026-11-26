@@ -267,7 +267,12 @@ medir_vista <- function(v) {
     cat(sprintf("      | %-16s %s%s x%d  %s\n", f$propiedad[i], f$color[i],
                 if (f$alfa[i] < 1) sprintf(" @%.2f", f$alfa[i]) else "", f$n[i], substr(f$ejemplos[i], 1, 110)))
 }
-for (v in pestanas) {
+# TEMA_SOLO=EMP,REQ measures only those tabs (a short re-check; the menu and
+# Requisiciones' two forms are still measured after them). Empty: every tab.
+SOLO <- trimws(strsplit(Sys.getenv("TEMA_SOLO"), ",", fixed = TRUE)[[1]])
+recorrer <- if (length(SOLO)) intersect(pestanas, SOLO) else pestanas
+if (length(SOLO)) cat(sprintf("      | TEMA_SOLO: only %s (the rest NOT measured in this run)\n", paste(recorrer, collapse = ", ")))
+for (v in recorrer) {
   if (!isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS, jsonlite::toJSON(v, auto_unbox = TRUE))), error = function(e) FALSE))) next
   Sys.sleep(3)
   poll_until(function() isTRUE(tryCatch(ev("document.querySelectorAll('.recalculating').length === 0"), error = function(e) TRUE)),
