@@ -139,9 +139,6 @@ hd_registro <- list(
   pronostico_subs = list(nombre = "Suscripciones de pronóstico", clase = "D", archivo = "forecasting_module.R",
     agregar = character(), quitar = character(),
     notas = c("Quitar: Seleccionar una fila abre el editor: Al marcar una fila se abre la ventana de edición de inmediato.")),
-  alertas_equipo = list(nombre = "Alertas del equipo", clase = "D", archivo = "avisos_alertas_module.R",
-    agregar = character(), quitar = character(),
-    notas = character()),
   # T68: "De quién recibo avisos" (Panorama, the ⚙ of "Lo que ha pasado"): people x kinds of notice,
   # yes/no cells (casillas_columna) with the column and group boxes, grouped by tier or job title.
   avisos_de = list(nombre = "De quién recibo avisos (Panorama)", clase = "E", archivo = "panorama_module.R",
