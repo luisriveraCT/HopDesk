@@ -1600,6 +1600,26 @@ empresasServer <- function(id, shared) {
                 )
               )
             },
+            # T116 F2: the client's countries (R/mercado.R). None chosen = the
+            # country of its base currency; shown as the placeholder.
+            {
+              elegidos <- toupper(as.character(cfg$paises %||% character()))
+              elegidos <- elegidos[mercado_pais_valido(elegidos)]
+              omision  <- mercado_paises_cliente(list(moneda_base = cfg$moneda_base))
+              fluidRow(
+                column(8,
+                  tags$label(tr("comun.mercado.paises.titulo"), class = "form-label small fw-semibold"),
+                  tags$p(class = "text-muted small mb-1", tr("comun.mercado.paises.ayuda")),
+                  selectizeInput(ns("paises_input"), NULL, multiple = TRUE,
+                                 choices  = stats::setNames(names(MERCADO_PAISES),
+                                                            vapply(names(MERCADO_PAISES), mercado_pais_nombre, character(1))),
+                                 selected = elegidos,
+                                 options  = list(placeholder = tr("comun.mercado.paises.omision",
+                                   paises = paste(vapply(omision, mercado_pais_nombre, character(1)), collapse = ", "))),
+                                 width = "100%")
+                )
+              )
+            },
             # TEMA stage 5: the client's theme, for every user of it (screen and
             # reports). Clients see the offered themes; HopDesk staff all of
             # them. The one it has now always shows, so saving never drops it.
@@ -1672,6 +1692,16 @@ empresasServer <- function(id, shared) {
         }
         cfg$convencion_dias <- if (nzchar(cv)) cv else NA_character_
       }
+
+      # T116 F2: the countries, each a registry code (never trust the
+      # browser's value). The selector is in this same card, so an empty
+      # selection (NULL) is a choice: none = the base currency's country.
+      ps <- toupper(trimws(as.character(input$paises_input %||% character())))
+      if (length(ps) && !all(mercado_pais_valido(ps))) {
+        showNotification(tr("comun.mercado.paises.invalido"), type = "error")
+        return()
+      }
+      cfg$paises <- intersect(names(MERCADO_PAISES), ps)
 
       # TEMA stage 5: "" = the system's default (NA); anything else must be in
       # the registry AND offered to this person -- or be the one the client
