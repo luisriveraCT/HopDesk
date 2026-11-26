@@ -1205,15 +1205,15 @@ empresasServer <- function(id, shared) {
             ),
             div(
               class = "d-flex gap-1",
-              tags$button(class = "btn btn-sm btn-outline-primary", title = "Editar",
+              tags$button(`data-hd-espera` = "auto", class = "btn btn-sm btn-outline-primary", title = "Editar",
                 onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})",
                                   ns("erp_edit_click"), r$id),
                 icon("pen")),
-              tags$button(class = "btn btn-sm btn-outline-secondary", title = "Probar conexión",
+              tags$button(`data-hd-espera` = "auto", class = "btn btn-sm btn-outline-secondary", title = "Probar conexión",
                 onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})",
                                   ns("erp_test_click"), r$id),
                 icon("plug")),
-              tags$button(class = "btn btn-sm btn-outline-danger", title = "Eliminar",
+              tags$button(`data-hd-espera` = "auto", class = "btn btn-sm btn-outline-danger", title = "Eliminar",
                 onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})",
                                   ns("erp_del_click"), r$id),
                 icon("trash"))
@@ -1272,7 +1272,7 @@ empresasServer <- function(id, shared) {
                   tags$span(class = "badge bg-secondary", "Eliminada"),
                   tags$div(class = "text-muted small", paste0("Eliminada: ", r$deleted_at))
                 ),
-                tags$button(class = "btn btn-sm btn-outline-success", title = "Restaurar",
+                tags$button(`data-hd-espera` = "auto", class = "btn btn-sm btn-outline-success", title = "Restaurar",
                   onclick = sprintf("Shiny.setInputValue('%s','%s',{priority:'event'})",
                                     ns("erp_restore_click"), r$id),
                   tagList(icon("rotate-left"), " Restaurar"))

@@ -725,7 +725,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
 
     output$ev_lista <- shiny::renderUI({
       dest <- ev_destino()
-      boton_quitar <- function(input_id, valor) htmltools::tags$button(type = "button",
+      boton_quitar <- function(input_id, valor) htmltools::tags$button(`data-hd-espera` = "auto", type = "button",
         class = "btn btn-sm btn-link text-danger p-0 hdreq-quitar", title = tr("requisiciones.evidencia.quitar"),
         onclick = sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})", ns(input_id),
                           jsonlite::toJSON(valor, auto_unbox = TRUE)), "✕")
@@ -754,13 +754,13 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
           e <- ev[i, ]
           cuerpo <- if (isTRUE(e$es_imagen)) {
             src <- miniatura(e$id)
-            htmltools::tags$button(type = "button", class = "hdreq-mini",
+            htmltools::tags$button(`data-hd-espera` = "no", type = "button", class = "hdreq-mini",
               title = e$nombre,
               onclick = sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})", ns("ver_imagen"),
                                 jsonlite::toJSON(e$id, auto_unbox = TRUE)),
               if (!is.null(src)) htmltools::tags$img(src = src, alt = e$nombre) else htmltools::span("⚠"))
           } else if (identical(e$tipo, "tabla")) {
-            htmltools::tags$button(type = "button", class = "hdreq-doc",
+            htmltools::tags$button(`data-hd-espera` = "no", type = "button", class = "hdreq-doc",
               onclick = sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})", ns("ver_tabla"),
                                 jsonlite::toJSON(e$id, auto_unbox = TRUE)),
               htmltools::tags$span(class = "hdreq-ev-tipo", tr("requisiciones.tabla.tipo")),
@@ -768,7 +768,7 @@ requisicionesServer <- function(id, shared, activa = NULL, abrir_provision = NUL
               htmltools::tags$span(class = "hdreq-ev-tam", tr_n("tablas.contador.tamano", e$filas - (isTRUE(e$encabezado) * 1L),
                                                              columnas = tr_n("tablas.contador.columnas", e$columnas))))
           } else {
-            htmltools::tags$button(type = "button", class = "hdreq-doc", title = tr("requisiciones.evidencia.descargar"),
+            htmltools::tags$button(`data-hd-espera` = "no", type = "button", class = "hdreq-doc", title = tr("requisiciones.evidencia.descargar"),
               onclick = sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})", ns("descargar_id"),
                                 jsonlite::toJSON(e$id, auto_unbox = TRUE)),
               htmltools::tags$span(class = "hdreq-ev-tipo", toupper(e$ext)),

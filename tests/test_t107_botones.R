@@ -2,7 +2,7 @@
 # tests/test_t107_botones.R
 #
 # T107 (2026-11-25): every button answers the instant it is clicked
-# (www/hd_botones.js; hd_boton(), hd_espera_attr(), hd_boton_listo() and
+# (www/hd_botones.js; hd_boton(), hd_boton_listo() and
 # HD_BOTONES_SIN_ESPERA in R/ui_components.R).
 #   J. the JS, in node with a fake page: held in the click's own frame
 #      (pressed, inert, aria-busy; never .disabled), released on the idle after the
@@ -11,8 +11,9 @@
 #      "servidor" and "no"; closing buttons never held; a link; a double click.
 #   G. the guardian: the JS and CSS load on the app page only; every
 #      exception has its reason and exists; a tags$button that sets an input
-#      says how it waits (ratchet per file, to migrate by batches); the old
-#      server-side guard (shinyjs::disable + on.exit(enable)) does not grow.
+#      says how it waits, as a named attribute (T107b: no exceptions left); the
+#      server-side guards (shinyjs::disable + on.exit(enable)) stay: they
+#      are the server's own defence, the JS may not be loaded (T107b).
 # Run from project root.
 # =============================================================================
 cat("=== test_t107_botones ===\n\n")
@@ -197,7 +198,7 @@ suppressMessages({ library(shiny) })
 src_ui <- new.env()
 for (e in parse("R/ui_components.R", keep.source = FALSE))
   if (is.call(e) && identical(as.character(e[[1]]), "<-") &&
-      as.character(e[[2]]) %in% c("hd_boton", "hd_espera_attr", "hd_boton_listo", "HD_BOTONES_SIN_ESPERA"))
+      as.character(e[[2]]) %in% c("hd_boton", "hd_boton_listo", "HD_BOTONES_SIN_ESPERA"))
     eval(e, src_ui)
 ok("G3 hd_boton(): 'auto' is a plain actionButton; 'servidor' and 'no' carry data-hd-espera",
    !grepl("data-hd-espera", as.character(src_ui$hd_boton("a", "A"))) &&
@@ -218,10 +219,11 @@ lista <- src_ui$HD_BOTONES_SIN_ESPERA
 ok(sprintf("G5 every exception (HD_BOTONES_SIN_ESPERA, %d) has its reason and its id exists in its file", nrow(lista)),
    all(c("id", "archivo", "pantalla", "razon") %in% names(lista)) && all(nzchar(trimws(lista$razon))) &&
      all(vapply(seq_len(nrow(lista)), function(i) any(grepl(lista$id[i], textos[[lista$archivo[i]]] %||% "", fixed = TRUE)), logical(1))))
-# every espera = "no" (hd_boton or hd_espera_attr) is in the list, by its id
+# every espera = "no" (hd_boton, or a tags$button's `data-hd-espera`) is in the list
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L) y else x
 # on the parsed code (a call spans lines): hd_boton(<id>, ..., espera = "no"),
-# and a tags$button(id = <id>, ..., hd_espera_attr("no")); <id> a literal or ns("<literal>")
+# and a tags$button(`data-hd-espera` = "no", ...): its id (a literal or ns("<literal>")),
+# or without one the input its onclick sets (ns("<input>") inside Shiny.setInputValue)
 .recorrer <- function(e, f) {
   if (is.call(e)) {
     f(e)
@@ -229,6 +231,15 @@ ok(sprintf("G5 every exception (HD_BOTONES_SIN_ESPERA, %d) has its reason and it
   } else if (is.expression(e) || is.list(e) || is.pairlist(e)) {
     for (i in seq_along(e)) { if (is.symbol(e[[i]]) && identical(as.character(e[[i]]), "")) next; .recorrer(e[[i]], f) }
   }
+}
+# the input a tags$button's onclick sets: the ns("<input>") of its Shiny.setInputValue
+.entrada <- function(cl) {
+  oc <- as.list(cl)[["onclick"]]; en <- NA_character_
+  if (!is.null(oc)) .recorrer(oc, function(x) if (is.na(en) && identical(paste(deparse(x[[1]]), collapse = ""), "ns") &&
+                                                  length(x) == 2L)
+    en <<- if (is.character(x[[2]])) x[[2]] else paste(deparse(x[[2]]), collapse = ""))
+  if (is.na(en) && !is.null(oc)) en <- substr(paste(deparse(oc), collapse = ""), 1L, 60L)
+  en
 }
 .literal <- function(x) if (is.character(x)) x[1] else if (is.call(x) && length(x) == 2L && is.character(x[[2]])) x[[2]][1] else NA_character_
 nos <- unlist(lapply(archivos, function(f) {
@@ -239,55 +250,59 @@ nos <- unlist(lapply(archivos, function(f) {
     if (cab %in% c("hd_boton") && identical(a[["espera"]], "no"))
       enc <<- c(enc, .literal(if ("inputId" %in% nm) a[["inputId"]] else a[[which(!nzchar(nm))[1]]]))
     if (cab %in% c("tags$button", "shiny::tags$button", "htmltools::tags$button") &&
-        grepl('hd_espera_attr\\("no"\\)', paste(deparse(cl, width.cutoff = 500L), collapse = " ")))
-      enc <<- c(enc, .literal(a[["id"]]))
+        identical(a[["data-hd-espera"]], "no"))
+      enc <<- c(enc, if ("id" %in% nm) .literal(a[["id"]]) else .entrada(cl))
   })
   if (length(enc)) sprintf("%s:%s", f, enc) else character(0)
 }))
 ok(sprintf("G6 every espera = \"no\" in the code is in HD_BOTONES_SIN_ESPERA, with its file (%s)", paste(nos, collapse = ", ")),
-   length(nos) == nrow(lista) && all(nos %in% sprintf("%s:%s", lista$archivo, lista$id)))
+   identical(sort(nos), sort(sprintf("%s:%s", lista$archivo, lista$id))))
 
-# The ratchets: what is still to migrate, per file. A file may go down (then
-# lower its number here); it may never go up, and a new file is a failure.
-TAGS_BUTTON_PENDIENTES <- c("app.R" = 1L, "R/empresas_module.R" = 4L, "R/pagar_hoy_module.R" = 2L,
-                            "R/panorama_module.R" = 6L, "R/panorama_publicar_module.R" = 3L,
-                            "R/requisiciones_module.R" = 4L, "R/tiers_module.R" = 4L)
-GUARDA_VIEJA_PENDIENTE <- c("R/bancos_module.R" = 5L, "R/pasivos_module.R" = 1L,
-                            "R/pasivos_table_module.R" = 1L, "R/pasivos_wizard_module.R" = 1L)
+# G7: every tags$button that sets an input says how it waits, as a NAMED
+# argument `data-hd-espera` = "auto" | "servidor" | "no" (T107b: the 24 that
+# were left are done; no exceptions). A helper returning list(...) does not
+# count: a list given to a tag becomes CHILDREN (its value showed as text).
+ESPERAS <- c("auto", "servidor", "no")
 sin_declarar <- function(f) {
-  n <- 0L; donde <- integer(0)
-  buscar <- function(e) {
-    if (is.call(e)) {
-      cab <- paste(deparse(e[[1]]), collapse = "")
-      if (cab %in% c("tags$button", "shiny::tags$button", "htmltools::tags$button")) {
-        txt <- paste(deparse(e, width.cutoff = 500L), collapse = " ")
-        if (grepl("Shiny.setInputValue", txt, fixed = TRUE) && !grepl("data-hd-espera|hd_espera_attr", txt)) n <<- n + 1L
-      }
-      for (i in seq_along(e)[-1]) {
-        if (is.symbol(e[[i]]) && identical(as.character(e[[i]]), "")) next
-        buscar(e[[i]])
-      }
-    } else if (is.expression(e) || is.list(e) || is.pairlist(e)) {
-      for (i in seq_along(e)) {
-        if (is.symbol(e[[i]]) && identical(as.character(e[[i]]), "")) next
-        buscar(e[[i]])
-      }
+  malos <- character(0)
+  for (e in tryCatch(parse(f, keep.source = FALSE), error = function(e) NULL)) .recorrer(e, function(cl) {
+    cab <- paste(deparse(cl[[1]]), collapse = "")
+    if (cab %in% c("tags$button", "shiny::tags$button", "htmltools::tags$button")) {
+      txt <- paste(deparse(cl, width.cutoff = 500L), collapse = " ")
+      v <- as.list(cl)[["data-hd-espera"]]
+      if (grepl("Shiny.setInputValue", txt, fixed = TRUE) && !(is.character(v) && v %in% ESPERAS))
+        malos <<- c(malos, sprintf("%s:%s", f, .entrada(cl)))
     }
-  }
-  for (e in tryCatch(parse(f, keep.source = FALSE), error = function(e) NULL)) buscar(e)
-  n
+  })
+  malos
 }
-n_tb <- vapply(archivos, sin_declarar, integer(1)); n_tb <- n_tb[n_tb > 0]
-de_mas <- n_tb[!names(n_tb) %in% names(TAGS_BUTTON_PENDIENTES) | n_tb > TAGS_BUTTON_PENDIENTES[names(n_tb)]]
-ok(sprintf("G7 a tags$button that sets an input says how it waits (hd_espera_attr()) -- %d still to migrate%s",
-           sum(n_tb), if (length(de_mas)) paste0("; NEW in: ", paste(names(de_mas), de_mas, sep = " ", collapse = ", "),
-                                                  " -- add hd_espera_attr() to the tags$button") else ""),
+sin <- unlist(lapply(archivos, sin_declarar))
+# the integrator's lines go in their own commit (T107b, commit 2): until then
+PENDIENTE_INTEGRADOR <- c("app.R" = 1L, "R/pagar_hoy_module.R" = 2L, "R/tiers_module.R" = 4L)
+n_sin <- table(sub(":.*$", "", sin))
+de_mas <- names(n_sin)[!names(n_sin) %in% names(PENDIENTE_INTEGRADOR) |
+                         as.integer(n_sin) > PENDIENTE_INTEGRADOR[names(n_sin)]]
+ok(sprintf("G7 every tags$button that sets an input says how it waits (a named `data-hd-espera`)%s",
+           if (length(de_mas)) paste0(" -- MISSING in: ", paste(sin[sub(":.*$", "", sin) %in% de_mas], collapse = ", ")) else ""),
    !length(de_mas))
-n_gv <- vapply(archivos, function(f) sum(grepl("on.exit\\(shinyjs::enable\\(", textos[[f]])), integer(1)); n_gv <- n_gv[n_gv > 0]
-de_mas_gv <- n_gv[!names(n_gv) %in% names(GUARDA_VIEJA_PENDIENTE) | n_gv > GUARDA_VIEJA_PENDIENTE[names(n_gv)]]
-ok(sprintf("G8 no new server-side guard (shinyjs::disable + on.exit(enable)): the click already holds the button -- %d left%s",
-           sum(n_gv), if (length(de_mas_gv)) paste0("; NEW in: ", paste(names(de_mas_gv), collapse = ", ")) else ""),
-   !length(de_mas_gv))
+# the attribute really is an attribute: rendered, not a child
+b1 <- htmltools::tags$button(`data-hd-espera` = "no", type = "button", "x")
+ok("G7b the named attribute renders as data-hd-espera, and no helper wraps it in a list",
+   grepl('data-hd-espera="no"', as.character(b1), fixed = TRUE) &&
+     !any(vapply(textos, function(l) any(grepl("hd_espera_attr", l, fixed = TRUE)), logical(1))))
+
+# G8: the server's own guard (shinyjs::disable + on.exit(enable)) STAYS (the
+# Coordinador, T107b): the JS may not be loaded yet, fail, or be bypassed by a
+# reconnect, and the server must not depend on the browser not to save twice
+# (Bancos already did once). Since d38bb87e they do not clash: .disabled is
+# the server's. Floor per file: a file may gain guards, never lose one.
+GUARDAS_SERVIDOR <- c("R/bancos_module.R" = 5L, "R/pasivos_module.R" = 1L,
+                      "R/pasivos_table_module.R" = 1L, "R/pasivos_wizard_module.R" = 1L)
+n_gv <- vapply(names(GUARDAS_SERVIDOR), function(f) sum(grepl("on.exit\\(shinyjs::enable\\(", textos[[f]] %||% character())), integer(1))
+menos <- n_gv[n_gv < GUARDAS_SERVIDOR]
+ok(sprintf("G8 the server-side guards stay (%d: shinyjs::disable + on.exit(enable))%s", sum(n_gv),
+           if (length(menos)) paste0(" -- LOST in: ", paste(names(menos), collapse = ", ")) else ""),
+   !length(menos))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

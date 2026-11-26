@@ -21,7 +21,7 @@ panoramaPublicarUI <- function(id) {
   tipo_txt <- function(t) tr(paste0("panorama.publicar.tipo.", t))
   shiny::div(class = "pan-publicar",
     shiny::div(class = "pan-publicar-cabeza",
-      shiny::tags$button(type = "button", class = "pan-boton pan-boton--claro",
+      shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-boton pan-boton--claro",
         onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("volver")),
         "← ", tr("panorama.publicar.volver")),
       shiny::div(class = "pan-kicker", tr("panorama.publicar.kicker"))),
@@ -102,7 +102,7 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
     output$tipos <- shiny::renderUI({
       t <- tipo()
       shiny::div(class = "pan-tipos", role = "radiogroup", `aria-label` = tr("panorama.publicar.tipo_ayuda"),
-        lapply(PANORAMA_TIPOS_PUBLICAR, function(x) shiny::tags$button(
+        lapply(PANORAMA_TIPOS_PUBLICAR, function(x) shiny::tags$button(`data-hd-espera` = "no",
           type = "button", role = "radio", `aria-checked` = if (x == t) "true" else "false",
           class = paste("pan-tipo", paste0("pan-tipo--", x)),
           onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("tipo"), x),
@@ -154,7 +154,7 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
             dentro <- i >= e$desde && i <= e$hasta
             omit <- i %in% e$omitidos
             estado_txt <- if (!dentro) "fuera" else if (omit) "omitido" else "incluido"
-            shiny::tags$button(
+            shiny::tags$button(`data-hd-espera` = "no",
               type = "button",
               class = paste("pan-nivel", paste0("pan-nivel--", estado_txt),
                             if (i == e$desde) "pan-nivel--desde", if (i == e$hasta) "pan-nivel--hasta",

@@ -204,7 +204,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       # Always on screen, with or without neblina (T46).
       linea_sap <- sap_al_texto(if (isTRUE(s$cargado)) s$ts, zona())
       n_nuevos <- sum(feed()$nuevo)
-      boton_publicar <- if (puede_pub()) shiny::tags$button(
+      boton_publicar <- if (puede_pub()) shiny::tags$button(`data-hd-espera` = "auto",
         type = "button", class = "pan-boton",
         onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("abrir_publicar")),
         shiny::icon("pen-to-square"), " ", tr("panorama.publicar.abrir"))
@@ -317,7 +317,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
                 tr("panorama.destacados.autor", autor = a$creado_por %||% "",
                    cuando = panorama_cuando(a$creado, tz = zona()))),
               if (!is.na(a$enlace) && nzchar(a$enlace))
-                shiny::tags$button(type = "button", class = "pan-boton",
+                shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-boton",
                   onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})",
                                     ns("ir"), htmltools::htmlEscape(a$enlace, attribute = TRUE)),
                   tr("panorama.abrir"))))
@@ -388,7 +388,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
                 if (!is.na(a$vence)) tr("panorama.solicitudes.de_vence", autor = a$creado_por %||% "",
                                         fecha = .pan_fecha_corta(a$vence, zona()))
                 else tr("panorama.solicitudes.de", autor = a$creado_por %||% ""))),
-            shiny::tags$button(type = "button", class = "pan-boton",
+            shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-boton",
               onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})",
                                 ns("hecho"), htmltools::htmlEscape(a$id, attribute = TRUE)),
               tr("panorama.solicitudes.hecho")))
@@ -446,7 +446,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
           shiny::h2(class = "pan-titulo-seccion", tr("panorama.feed.titulo")),
           # T68: "De quién recibo avisos", for whoever has at least one kind of notice.
           if (length(tryCatch(avisos_de_canales_de(usr()), error = function(e) character())))
-            shiny::tags$button(type = "button", class = "pan-feed-ajustes", title = tr("panorama.avisos_de.titulo"),
+            shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-feed-ajustes", title = tr("panorama.avisos_de.titulo"),
               onclick = sprintf("Shiny.setInputValue('%s', Math.random(), {priority: 'event'})", ns("req_avisos_abrir")),
               shiny::icon("gear"), " ", tr("panorama.avisos_de.boton")),
           shiny::div(class = "pan-meta",
@@ -490,7 +490,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
               shiny::span(class = paste0("pan-item-icono pan-icono-", a$tipo_feed), shiny::icon(icono)),
               shiny::div(class = "pan-item-texto",
                 if (is.null(enlace)) shiny::div(class = "pan-item-titulo", a$titulo)
-                else shiny::tags$button(type = "button", class = "pan-item-titulo pan-enlace",
+                else shiny::tags$button(`data-hd-espera` = "no", type = "button", class = "pan-item-titulo pan-enlace",
                   onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("ir"), enlace),
                   a$titulo),
                 shiny::div(class = "pan-meta", paste(meta, collapse = " · "))),
@@ -779,7 +779,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
                              explica = NULL, extra = NULL) {
   vacio <- is.null(totales) || !nrow(totales)
   principal <- if (vacio) monto_moneda(0, base) else monto_moneda(totales$total[1], totales$moneda[1])
-  shiny::tags$button(
+  shiny::tags$button(`data-hd-espera` = "no",
     type = "button", class = paste("pan-tarjeta pan-hoy-tarjeta", if (vacio) "pan-hoy-tarjeta--vacia"),
     onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("ir"), tab),
     shiny::div(class = "pan-etiqueta", titulo),

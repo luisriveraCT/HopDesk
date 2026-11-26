@@ -1700,7 +1700,8 @@ hd_numero_revisar <- function(x, campo, min = NA, max = NA, entero = FALSE) {
 
 # ── Botones que responden al instante (T107) ──────────────────────────────────
 # www/hd_botones.js holds EVERY actionButton / actionLink the instant it is
-# clicked (pressed, a spinner, disabled: no double click) and releases it when
+# clicked (pressed, a spinner, inert: no double click; .disabled stays the
+# server's) and releases it when
 # the server has answered (its first shiny:idle). Released to NEUTRAL: a check
 # or a cross only when the server says so -- never inferred (a req() that
 # stops, or a silent failure, says nothing, and a check there would lie):
@@ -1716,16 +1717,14 @@ hd_numero_revisar <- function(x, campo, min = NA, max = NA, entero = FALSE) {
 #                        toggles a view) -- add it to HD_BOTONES_SIN_ESPERA
 #                        with its reason, or tests/test_t107_botones.R fails.
 # A tags$button that sets an input (onclick -> Shiny.setInputValue) is not an
-# actionButton: it must carry data-hd-espera itself (hd_espera_attr()).
+# actionButton: it carries the attribute itself, as a NAMED argument:
+#   tags$button(`data-hd-espera` = "auto", type = "button", ...)
+# (T107b: not through a helper returning list(...) -- a list given to a tag
+# is flattened into CHILDREN, so its value came out as text in the button).
 hd_boton <- function(inputId, label, ..., espera = c("auto", "servidor", "no")) {
   espera <- match.arg(espera)
   if (identical(espera, "auto")) shiny::actionButton(inputId, label, ...)
   else shiny::actionButton(inputId, label, ..., `data-hd-espera` = espera)
-}
-
-# The attribute for a tags$button of our own: tags$button(..., hd_espera_attr()).
-hd_espera_attr <- function(espera = c("auto", "servidor", "no")) {
-  list(`data-hd-espera` = match.arg(espera))
 }
 
 # The server's own word on a held button: ok = TRUE a check, FALSE a cross,
@@ -1739,10 +1738,21 @@ hd_boton_listo <- function(session, id, ok = TRUE) {
 # id here exists in the code and has a reason; each espera = "no" is here).
 # archivo = where it is; pantalla = its id in docs/diseno/pantallas.tsv (T97),
 # when it has one.
+# id: the button's id, or (a tags$button without one) the input it sets.
 HD_BOTONES_SIN_ESPERA <- data.frame(
-  id = c("me_agenda_toggle"),
-  archivo = c("R/manual_entry_handlers.R"),
-  pantalla = c("cal.dia.combinado"),
-  razon = c("Interruptor en el navegador (Agregar a Agenda de hoy): cambia su propio texto y color; ningún observer responde al clic, el servidor lee me_agenda_active al guardar"),
+  id = c("me_agenda_toggle", "ir", "ir", "tipo", "nivel", "ver_imagen", "ver_tabla", "descargar_id"),
+  archivo = c("R/manual_entry_handlers.R", "R/panorama_module.R", "R/panorama_module.R",
+              "R/panorama_publicar_module.R", "R/panorama_publicar_module.R",
+              "R/requisiciones_module.R", "R/requisiciones_module.R", "R/requisiciones_module.R"),
+  pantalla = c("cal.dia.combinado", "pan", "pan", "pan.publicar", "pan.publicar",
+               "req.detalle.evidencia", "req.detalle.evidencia", "req.detalle.evidencia"),
+  razon = c("Interruptor en el navegador (Agregar a Agenda de hoy): cambia su propio texto y color; ningún observer responde al clic, el servidor lee me_agenda_active al guardar",
+            "Título de un aviso que hace de enlace: solo navega (repetirlo da lo mismo) y el giro escondería el título mientras dura",
+            "Tarjeta entera de Hoy: solo navega a su pestaña, y el giro dejaría la tarjeta en blanco",
+            "Selector de tipo (radio): fija un valor; repetirlo da lo mismo y retenerlo frenaría a quien cambia de opinión",
+            "Escala de niveles: dos clics seguidos fijan el rango desde/hasta; retener el primero perdería el segundo",
+            "Miniatura de una evidencia: abre el visor; la imagen desaparecería bajo el giro",
+            "Ficha de una tabla adjunta: abre el visor; el giro escondería la ficha",
+            "Ficha de un archivo adjunto: lo descarga (dos veces no daña nada); el giro escondería la ficha"),
   stringsAsFactors = FALSE)
 
