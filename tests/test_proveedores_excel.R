@@ -347,22 +347,41 @@ test_that("T08b: an Estatus that isn't Activo sends the row to Inactivos", {
   expect_false(any(res$inactivos$activo))
 })
 
-test_that("T08b speed: 500 rows against a 900-provider catalog classify in under 2 s", {
+test_that("T08b speed: classifying grows linearly -- 500 rows x 900 providers against 50 x 90 -- and never hangs", {
   r <- prov_leer_excel(BAJIO)
-  filas <- r$filas[rep(seq_len(nrow(r$filas)), length.out = 500), ]
-  filas$.row_num <- seq_len(500)
-  # A catalog of 900 where the file's accounts exist (the update path, the slow one).
+  # A catalog where the file's accounts exist (the update path, the slow one).
   base <- prov_clasificar(r$filas, NULL, NULL)
-  cat900 <- do.call(rbind, lapply(seq_len(900), function(i) {
-    j <- (i - 1) %% nrow(base) + 1
-    prov_fila(paste0("p-", i), paste("VIEJO", i), if (i <= nrow(base)) base$no_cuenta[j] else con_dv(sprintf("01218%012d", i)),
-              banco = base$banco[j], moneda = NA)
-  }))
-  # T114: CPU time (user + sys), not wall clock -- what grows if classifying
-  # gets slow; a loaded machine (other batteries) only makes the wall clock
-  # wait (3.8 s measured, 0.8 s of CPU).
-  t <- sum(system.time(f <- prov_clasificar(filas, cat900, NULL))[c("user.self", "sys.self")])
-  cat(sprintf("  500 filas contra 900 proveedores: %.2f s de CPU\n", t))
-  expect_lt(t, 2)
-  expect_equal(nrow(f), 500L)
+  armar <- function(nf, nc) {
+    filas <- r$filas[rep(seq_len(nrow(r$filas)), length.out = nf), ]
+    filas$.row_num <- seq_len(nf)
+    cat_ <- do.call(rbind, lapply(seq_len(nc), function(i) {
+      j <- (i - 1) %% nrow(base) + 1
+      prov_fila(paste0("p-", i), paste("VIEJO", i), if (i <= nrow(base)) base$no_cuenta[j] else con_dv(sprintf("01218%012d", i)),
+                banco = base$banco[j], moneda = NA)
+    }))
+    list(filas = filas, cat = cat_)
+  }
+  ch <- armar(50, 90); gr <- armar(500, 900)
+  # T114: the RATIO of two sizes measured in the same run, not seconds: on this
+  # laptop neither the wall clock nor CPU time is stable (other batteries, and
+  # the CPU slowing down when idle: 0.54 s of CPU at 83% load, 1.3 s idle),
+  # but both sizes suffer the same, so the ratio cancels it. The small case is
+  # repeated until it weighs >= 0.1 s of CPU (never noise), and the ratio is
+  # the median of 3 pairs.
+  cpu <- function(f, k = 1L) { st <- system.time(for (i in seq_len(k)) f()); (st[["user.self"]] + st[["sys.self"]]) / k }
+  razon_de <- function(chico, grande) {
+    invisible(chico()); invisible(grande())                        # warm-up
+    k <- 1L
+    while (cpu(chico, k) * k < 0.1 && k < 256L) k <- k * 2L
+    pares <- vapply(1:3, function(i) c(cpu(chico, k), cpu(grande)), numeric(2))
+    list(razon = stats::median(pares[2, ] / pares[1, ]), grande = max(pares[2, ]), k = k)
+  }
+  m <- razon_de(function() prov_clasificar(ch$filas, ch$cat, NULL), function() prov_clasificar(gr$filas, gr$cat, NULL))
+  cat(sprintf("  500x900 contra 50x90: razón %.1f (chico x%d; grande %.2f s de CPU)\n", m$razon, m$k, m$grande))
+  # 10x the rows and 10x the catalog: linear work gives ~10 (measured 8.0-13.9);
+  # a quadratic one (every row against every provider) ~100. 30 leaves room
+  # for noise and still catches that by ~3x.
+  expect_lt(m$razon, 30)
+  expect_lt(m$grande, 10)                                         # only a guard against something hung
+  expect_equal(nrow(prov_clasificar(gr$filas, gr$cat, NULL)), 500L)
 })

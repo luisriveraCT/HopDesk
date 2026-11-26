@@ -244,17 +244,32 @@ test_that("with 0 rows every per-row value is an empty array in the JSON", {
   expect_match(json, '"ids":[]', fixed = TRUE)
 })
 
-test_that("5,000 rows build quickly", {
-  n  <- 5000
-  big <- data.frame(id = sprintf("r%05d", 1:n), Empresa = "NTS", Parte = paste("Proveedor", 1:n),
-                    Importe = round(runif(n, -1e5, 1e6), 2), Vence = Sys.Date() + (1:n %% 90),
-                    Moneda = sample(c("MXN", "USD"), n, TRUE), stringsAsFactors = FALSE)
-  # T114b: CPU time (user + sys), not wall clock: the work, not the wait for
-  # a loaded machine.
-  t <- sum(system.time(f <- hd_filas(big, cols))[c("user.self", "sys.self")])
-  cat(sprintf("\n  hd_filas(5,000 rows): %.3f s\n", t))
-  expect_length(f$ids, n)
-  expect_lt(t, 1)
+test_that("5,000 rows build linearly (against 500) and never hang", {
+  hacer <- function(n) data.frame(id = sprintf("r%05d", 1:n), Empresa = "NTS", Parte = paste("Proveedor", 1:n),
+                                  Importe = round(runif(n, -1e5, 1e6), 2), Vence = Sys.Date() + (1:n %% 90),
+                                  Moneda = sample(c("MXN", "USD"), n, TRUE), stringsAsFactors = FALSE)
+  chico <- hacer(500); big <- hacer(5000)
+  # T114: the RATIO of two sizes measured in the same run, not seconds: on this
+  # laptop neither the wall clock nor CPU time is stable (other batteries, and
+  # the CPU slowing down when idle: 0.54 s of CPU at 83% load, 1.3 s idle),
+  # but both sizes suffer the same, so the ratio cancels it. The small case is
+  # repeated until it weighs >= 0.1 s of CPU (never noise), and the ratio is
+  # the median of 3 pairs.
+  cpu <- function(f, k = 1L) { st <- system.time(for (i in seq_len(k)) f()); (st[["user.self"]] + st[["sys.self"]]) / k }
+  razon_de <- function(chico, grande) {
+    invisible(chico()); invisible(grande())                        # warm-up
+    k <- 1L
+    while (cpu(chico, k) * k < 0.1 && k < 256L) k <- k * 2L
+    pares <- vapply(1:3, function(i) c(cpu(chico, k), cpu(grande)), numeric(2))
+    list(razon = stats::median(pares[2, ] / pares[1, ]), grande = max(pares[2, ]), k = k)
+  }
+  m <- razon_de(function() hd_filas(chico, cols), function() hd_filas(big, cols))
+  cat(sprintf("\n  hd_filas(5,000) contra hd_filas(500): razón %.1f (chico x%d; grande %.3f s de CPU)\n", m$razon, m$k, m$grande))
+  # 10x the rows: linear work gives ~10 (measured 8.0-8.7: a fixed cost per call keeps it under 10); a quadratic one
+  # ~100. 30 leaves room for noise and still catches that by ~3x.
+  expect_lt(m$razon, 30)
+  expect_lt(m$grande, 10)                                         # only a guard against something hung
+  expect_length(hd_filas(big, cols)$ids, 5000)
 })
 
 
