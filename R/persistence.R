@@ -566,7 +566,6 @@ T72_DEUDA_EVENTO <- c(
   "app.R::server" = 5L,
   "R/auth_reset.R::.reset_modificar" = 1L,
   "R/avisos.R::.s3_modificar" = 1L,
-  "R/avisos_alertas_module.R::alertas_guardar" = 1L,
   "R/avisos_archivo.R::avisos_archivar" = 2L,
   "R/avisos_datos.R::correo_historial_guardar" = 1L,
   "R/avisos_datos.R::correo_partidas_guardar" = 1L,

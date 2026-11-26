@@ -151,8 +151,9 @@ CID <- "acme"
 auth_load_usuarios <- function(client_id = NULL) data.frame(
   username = "ana", display_name = "Ana", tier = "admin", deleted = FALSE, activo = TRUE, stringsAsFactors = FALSE)
 s3_memoria_reset()
-alertas_guardar(CID, data.frame(usuario = "ana", crear = TRUE, archivo_pago = TRUE,
-                                confirmar_pago = TRUE, bancos = TRUE), por = "ana")
+# T113: nothing writes the matrix any more; seeded straight into the store.
+assign(paste0(CID, "/avisos_alertas.rds"), tibble::tibble(usuario = "ana", crear = TRUE, archivo_pago = TRUE,
+  confirmar_pago = TRUE, bancos = TRUE, actualizado_por = "ana", actualizado = as.POSIXct(Sys.time(), tz = "UTC")), envir = .mem)
 roto <- list(effective_client_id = function() stop("sin sesión"), current_user = function() stop("sin usuario"))
 sano <- list(effective_client_id = function() CID, current_user = function() "ana")
 corre <- function(expr) tryCatch({ suppressMessages(expr); "ok" }, error = function(e) conditionMessage(e))

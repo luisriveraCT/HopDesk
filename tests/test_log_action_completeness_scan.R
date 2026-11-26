@@ -586,7 +586,6 @@ DEUDA_CAMINO <- c(
     "R/avisos.R :: avisos_agregar",
     "R/avisos.R :: avisos_retirar",
     "R/avisos.R :: avisos_marcar_hecho",
-    "R/avisos_alertas_module.R :: alertas_guardar",
     "R/avisos_archivo.R :: avisos_archivar",
     "R/avisos_datos.R :: correo_semana_guardar",
     "R/avisos_datos.R :: correo_historial_guardar",

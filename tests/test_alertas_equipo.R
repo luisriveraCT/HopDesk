@@ -43,40 +43,7 @@ test_that("A. la matriz lista solo usuarios vivos del cliente, nunca staff", {
   expect_error(alertas_usuarios(""), "client_id")
 })
 
-test_that("B. guardar relee S3, conserva lo de otra sesión y rechaza ajenos", {
-  s3_memoria_reset()
-  alertas_guardar(CID, marca("ana", confirmar_pago = TRUE), por = "ana")
-  # another session saves beto meanwhile, straight to S3
-  m <- get(KEY, envir = .mem)
-  assign(KEY, dplyr::bind_rows(m, tibble::tibble(usuario = "beto", crear = TRUE, archivo_pago = FALSE,
-    confirmar_pago = FALSE, bancos = FALSE, actualizado_por = "ana",
-    actualizado = as.POSIXct(Sys.time(), tz = "UTC"))), envir = .mem)
-  alertas_guardar(CID, marca("caro", bancos = TRUE), por = "ana")
-  m <- get(KEY, envir = .mem)
-  expect_setequal(m$usuario, c("ana", "beto", "caro"))
-  expect_true(m$confirmar_pago[m$usuario == "ana"])
-
-  # all unmarked: the row goes
-  alertas_guardar(CID, marca("ana"), por = "ana")
-  expect_false("ana" %in% get(KEY, envir = .mem)$usuario)
-
-  # staff, a deleted user or another client's user is never stored
-  n <- .mem_escrituras
-  expect_error(alertas_guardar(CID, marca("staff1", crear = TRUE), por = "ana"), "no es de este cliente")
-  expect_error(alertas_guardar(CID, marca("eli", crear = TRUE), por = "ana"), "no es de este cliente")
-  expect_equal(.mem_escrituras, n)
-})
-
-test_that("B2. una lectura fallida no guarda nada (nunca es matriz vacía)", {
-  s3_memoria_reset()
-  alertas_guardar(CID, marca("ana", crear = TRUE), por = "ana")
-  antes <- get(KEY, envir = .mem); n <- .mem_escrituras
-  .mem_falla <<- KEY
-  expect_error(alertas_guardar(CID, marca("beto", bancos = TRUE), por = "ana"))
-  expect_equal(.mem_escrituras, n)
-  .mem_falla <<- character()
-  expect_identical(get(KEY, envir = .mem), antes)
-})
+# B and B2 tested alertas_guardar(), retired with the screen (T113).
 
 test_that("C. alertas_preparar (T68): another user with the action's permission, never the matrix", {
   s3_memoria_reset(); con_usuarios()

@@ -63,9 +63,6 @@ permitidos <- c(
   # CM34c: Desvincular removes that supplier's link from S3's
   # parte_alias_map.rds (the last one empties it); Vincular never reduces.
   "R/pagar_hoy_module.R" = "client_id = shared$effective_client_id(), permitir_reduccion = TRUE),",
-  # alertas_guardar() (C): unmarking every action of a user removes that
-  # user's row from avisos_alertas.rds, on S3's matrix as it is now.
-  "R/avisos_alertas_module.R" = "}, permitir_reduccion = TRUE)",
   # avisos_archivar() (D): the monthly archive removes from avisos.rds only
   # the avisos it already wrote to avisos/archivo/AAAA-MM.rds and read back.
   "R/avisos_archivo.R" = "}, permitir_reduccion = TRUE)",
