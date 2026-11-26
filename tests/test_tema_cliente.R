@@ -99,7 +99,7 @@ ok("2f the logo's bytes never go into the log",
 
 # ── 3. The real Guardar of Empresas ──────────────────────────────────────────
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/empresas_module.R"))
+            "R/pasivos_engine.R", "R/empresas_module.R"))   # T115: the convention selector
   suppressMessages(source(f, encoding = "UTF-8"))
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 PERMISO <- TRUE

@@ -43,8 +43,13 @@ for (e in parse(text = paste(src, collapse = "\n"), keep.source = FALSE)) eval(e
 test_that("sin impuestos: calendario y provisiones idénticos a los de antes de la T63", {
   for (d in list(credito, renta)) {
     l <- liab(d)
-    if (identical(d$categoria, "financiero"))
-      expect_identical(pasivos_generate_schedule(l, today = HOY), antes$pasivos_generate_schedule(l, today = HOY))
+    if (identical(d$categoria, "financiero")) {
+      # T115 added two columns (dias, tasa_periodo) and nothing else: the
+      # columns that already existed must be identical.
+      s1 <- pasivos_generate_schedule(l, today = HOY); s0 <- antes$pasivos_generate_schedule(l, today = HOY)
+      expect_identical(setdiff(names(s1), names(s0)), c("dias", "tasa_periodo"))
+      expect_identical(s1[, names(s0)], s0)
+    }
     p1 <- pasivos_generate_provisions(l, window_start = HOY); p0 <- antes$pasivos_generate_provisions(l, window_start = HOY)
     expect_identical(sin_ruido(p1), sin_ruido(p0))
     expect_true(all(is.na(p1$componente_iva)))
