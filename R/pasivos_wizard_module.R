@@ -1330,14 +1330,19 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   })
 
   # ── Step content ───────────────────────────────────────────────────────────
+  # T111: the step is drawn again only when the step, the draft or its
+  # errors change -- never by the sync bus (company_map, the liabilities):
+  # a redraw paints every field from the draft, and the nested rows (taxes,
+  # cargos) from the browser's cache, so what was typed since the last
+  # Siguiente was lost. The choices are read without a dependency.
   output$pwiz_step_content <- shiny::renderUI({
-    empresa_choices <- tryCatch(sort(names(shared$company_map())),
-                                error = function(e) character(0))
-    existing_subcats <- tryCatch({
+    empresa_choices <- shiny::isolate(tryCatch(sort(names(shared$company_map())),
+                                error = function(e) character(0)))
+    existing_subcats <- shiny::isolate(tryCatch({
       liabs <- shared$pasivos_liabilities_db()
       sort(unique(liabs$subcategoria[!is.na(liabs$subcategoria) &
                                        nzchar(liabs$subcategoria %||% "")]))
-    }, error = function(e) character())
+    }, error = function(e) character()))
     errs <- wiz$validation_errors %||% list()
 
     switch(wiz$step_id,
@@ -1488,8 +1493,8 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     ))
   })
 
-  shiny::observeEvent(input$pwiz_add_cargo, ignoreInit = TRUE, {
-    cl <- wiz$cargos_list
+  # The cargo rows as typed (the list itself only changes on add / remove).
+  .wiz_cargos_escritos <- function(cl = wiz$cargos_list) {
     for (i in seq_along(cl)) {
       cl[[i]]$desc   <- input[[paste0("pwiz_cargo_desc_",   i)]] %||% cl[[i]]$desc
       cl[[i]]$monto  <- input[[paste0("pwiz_cargo_monto_",  i)]] %||% cl[[i]]$monto
@@ -1497,6 +1502,11 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
       cl[[i]]$fecha  <- tryCatch(as.Date(input[[paste0("pwiz_cargo_fecha_", i)]]),
                                  error = function(e) cl[[i]]$fecha)
     }
+    cl
+  }
+
+  shiny::observeEvent(input$pwiz_add_cargo, ignoreInit = TRUE, {
+    cl <- .wiz_cargos_escritos()
     wiz$cargos_list <- c(cl, list(list(desc = "", monto = 0,
                                        moneda = base_moneda(), fecha = Sys.Date())))
   })
@@ -1508,14 +1518,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
         idx <- i
         shiny::observeEvent(input[[paste0("pwiz_cargo_rm_", idx)]],
                             ignoreInit = TRUE, once = TRUE, {
-          lst <- wiz$cargos_list
-          for (j in seq_along(lst)) {
-            lst[[j]]$desc   <- input[[paste0("pwiz_cargo_desc_",   j)]] %||% lst[[j]]$desc
-            lst[[j]]$monto  <- input[[paste0("pwiz_cargo_monto_",  j)]] %||% lst[[j]]$monto
-            lst[[j]]$moneda <- input[[paste0("pwiz_cargo_moneda_", j)]] %||% lst[[j]]$moneda
-            lst[[j]]$fecha  <- tryCatch(as.Date(input[[paste0("pwiz_cargo_fecha_", j)]]),
-                                        error = function(e) lst[[j]]$fecha)
-          }
+          lst <- .wiz_cargos_escritos()
           if (idx <= length(lst)) wiz$cargos_list <- lst[-idx]
         })
       })
@@ -1702,8 +1705,24 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   })
 
   # ── Navigation ─────────────────────────────────────────────────────────────
+  # T111: leaving a step -- Siguiente, Atrás, a step's name, Guardar -- keeps
+  # what was typed in it, BEFORE anything is drawn again: the draft (every
+  # field), and the tax and cargo rows, which are nested outputs the browser
+  # repaints from its cache (for a new liability, the empty row "+ Agregar"
+  # made: the IVA typed in it was dropped). Atrás and a step's name used to
+  # leave without reading the step at all.
+  .wiz_guardar_paso <- function(leer_paso = TRUE) {
+    paso <- wiz$step_id
+    if (identical(paso, "cargos")) {
+      wiz$impuestos_list <- .wiz_leer_impuestos(input, length(wiz$impuestos_list), wiz$draft$categoria, todas = TRUE)
+      wiz$cargos_list    <- .wiz_cargos_escritos()
+    }
+    if (leer_paso) wiz$draft <- tryCatch(.wiz_collect_step(input, paso, wiz), error = function(e) wiz$draft)
+  }
+
   shiny::observeEvent(input$pwiz_next, ignoreInit = TRUE, {
     wiz$validation_errors <- list()
+    .wiz_guardar_paso(leer_paso = FALSE)
     wiz$draft <- .wiz_collect_step(input, wiz$step_id, wiz)
 
     # Validate current step before advancing
@@ -1731,6 +1750,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
 
   shiny::observeEvent(input$pwiz_back, ignoreInit = TRUE, {
     wiz$validation_errors <- list()
+    .wiz_guardar_paso()
     steps   <- .wiz_steps_for(wiz$draft$categoria)
     cur_idx <- match(wiz$step_id, steps$ids) %||% 1L
     if (cur_idx > 1L) wiz$step_id <- steps$ids[cur_idx - 1L]
@@ -1743,6 +1763,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     tgt_idx <- match(target, steps$ids)
     if (!is.na(tgt_idx) && tgt_idx < cur_idx) {
       wiz$validation_errors <- list()
+      .wiz_guardar_paso()
       wiz$step_id <- target
     }
   })
@@ -1752,6 +1773,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     shinyjs::disable("pwiz_save")
     on.exit(shinyjs::enable("pwiz_save"), add = TRUE)
 
+    .wiz_guardar_paso(leer_paso = FALSE)
     wiz$draft <- .wiz_collect_step(input, wiz$step_id, wiz)
     user <- tryCatch(shared$current_user(), error = function(e) "system")
     res <- tryCatch(
