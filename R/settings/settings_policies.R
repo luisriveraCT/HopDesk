@@ -792,13 +792,11 @@ settings_policies_observer <- function(input, output, session, shared) {
                            unit = input$pol_param_unit %||% "naturales"),
       list()
     )
-    hcache <- list()
-    if (type == "skip_holidays") {
-      ctry <- toupper(params$country %||% "MX")
-      if (nzchar(ctry))
-        hcache[[ctry]] <- tryCatch(
-          get_holidays(ctry), error = function(e) as.Date(character()))
-    }
+    # T116: with the staff's holiday overrides, as the policy saves it.
+    hcache <- if (type == "skip_holidays")
+      festivos_cache(list(list(params = params)),
+                     tryCatch(shared$holiday_overrides_db(), error = function(e) NULL))
+    else list()
     .policy_cal_preview_render(
       type     = type,
       params   = params,

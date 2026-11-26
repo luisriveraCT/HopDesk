@@ -86,5 +86,28 @@ ok("6.4 el asistente de Pasivos arma la caché con festivos_cache() de las misma
      grepl("policies_for_liability = politicas_pasivo,", asis, fixed = TRUE) &&
      !grepl("holidays <- tryCatch(shared$holiday_overrides_db()", asis, fixed = TRUE))
 
+cat("== 7. La ventana del día y la vista previa usan los ajustes manuales ==\n")
+suppressMessages(source("R/i18n.R"))
+DIA <- Sys.getenv("T116_DIA", "R/dia_module.R")
+for (e in parse(DIA, keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name("dia_aviso_politicas"))) eval(e, globalenv())
+pp7  <- data.frame(parte = "ACEROS FICTICIOS", is_interco = FALSE, policy_order = 1L, policy_id = "FES", stringsAsFactors = FALSE)
+cat7 <- data.frame(id = "FES", type = "skip_holidays", roll_direction = "forward", stringsAsFactors = FALSE)
+cat7$params <- list(list(country = "MX"))
+sin_aj <- dia_aviso_politicas(D("2027-11-02"), "ACEROS FICTICIOS", pp7, cat7)
+ok("7.1 sin ajustes: el 2 nov 2027 rompe la política, que lo pone el 03/11/2027",
+   length(sin_aj) == 1L && grepl("03/11/2027", sin_aj, fixed = TRUE))
+ok("7.2 con el ajuste que quita el 2 nov: no hay nada que avisar (la fecha que guarda la política)",
+   is.null(dia_aviso_politicas(D("2027-11-02"), "ACEROS FICTICIOS", pp7, cat7, overrides = ov)))
+dia_src <- paste(readLines(DIA, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+ok("7.3 la ventana del día le pasa holiday_overrides_db() al aviso",
+   grepl("tryCatch\\(shared\\$policy_catalog_db\\(\\), error = function\\(e\\) NULL\\),\\s*tryCatch\\(shared\\$holiday_overrides_db\\(\\)",
+         dia_src, perl = TRUE))
+pol_src <- paste(readLines(Sys.getenv("T116_POLITICAS", "R/settings/settings_policies.R"), warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+ok("7.4 la vista previa de una política arma su caché con festivos_cache() y los ajustes",
+   grepl("festivos_cache(list(list(params = params)),", pol_src, fixed = TRUE) &&
+     grepl("tryCatch(shared$holiday_overrides_db(), error = function(e) NULL))", pol_src, fixed = TRUE) &&
+     !grepl("get_holidays(ctry), error", pol_src, fixed = TRUE))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

@@ -155,7 +155,9 @@ dia_acciones <- function(dia_siguiente) {
 # The payment-policy hint for the date chosen in "Mover" (Detalle's old
 # move_to_hint_ui), as the table's notice line: which counterparts' policies
 # that date breaks, and where the policy would put it. NULL: nothing to say.
-dia_aviso_politicas <- function(fecha, partes, pp, catalog) {
+# `overrides`: the staff's holiday overrides (holiday_overrides_db), so the
+# hint gives the date the policy saves (T116).
+dia_aviso_politicas <- function(fecha, partes, pp, catalog, overrides = NULL) {
   fecha <- tryCatch(as.Date(fecha), error = function(e) as.Date(NA))
   if (!length(fecha) || is.na(fecha) || is.null(pp) || !nrow(pp) || is.null(catalog) || !nrow(catalog)) return(NULL)
   fuera <- Filter(Negate(is.null), lapply(unique(partes), function(p) {
@@ -168,7 +170,8 @@ dia_aviso_politicas <- function(fecha, partes, pp, catalog) {
       list(type = r$type[[1]], params = r$params[[1]] %||% list(), roll_direction = r$roll_direction[[1]] %||% "forward")
     }))
     if (!length(pols)) return(NULL)
-    pol <- tryCatch(as.Date(compose_policies(fecha, pols, list())), error = function(e) as.Date(NA))
+    pol <- tryCatch(as.Date(compose_policies(fecha, pols, festivos_cache(pols, overrides))),
+                    error = function(e) as.Date(NA))
     if (is.na(pol) || pol == fecha) return(NULL)
     tr("tablas.dia.politica_parte", parte = p, fecha = format(pol, "%d/%m/%Y"))
   }))
@@ -259,7 +262,8 @@ dia_server <- function(input, output, session, ctx, ledger, shared, manejadores)
     if (is.null(c) || is.null(fecha_mover())) return(NULL)
     dia_aviso_politicas(fecha_mover(), c$detail$Parte,
                         tryCatch(shared$partner_policies_db(), error = function(e) NULL),
-                        tryCatch(shared$policy_catalog_db(), error = function(e) NULL))
+                        tryCatch(shared$policy_catalog_db(), error = function(e) NULL),
+                        tryCatch(shared$holiday_overrides_db(), error = function(e) NULL))
   })
   # Sending to the Agenda needs can_register_payments: without it, no ＋
   # (row or group) and no Agregar buttons (.dia_agregar checks it again).
