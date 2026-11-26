@@ -44,17 +44,20 @@
   }
 }
 
-# ── US observed holiday (Sat → Fri, Sun → Mon) ────────────────────────────────
+# ── US observed holiday, the Federal Reserve's rule (T116) ───────────────────
+# A holiday on Sunday is observed on Monday. One on Saturday is NOT moved to
+# Friday: the Fed (and so Fedwire and the banks) opens that Friday -- unlike
+# the federal government's offices. The Saturday stays (a weekend day anyway).
 .us_observed <- function(date) {
   wd <- lubridate::wday(as.Date(date), week_start = 1L)
-  if (wd == 6L) as.Date(date) - 1L       # Saturday → Friday
-  else if (wd == 7L) as.Date(date) + 1L  # Sunday   → Monday
+  if (wd == 7L) as.Date(date) + 1L  # Sunday -> Monday
   else as.Date(date)
 }
 
 # ── Holiday presets ────────────────────────────────────────────────────────────
 # Returns a sorted Date vector of banking-calendar holidays.
-# Supported: "MX" (Mexico LFT + CNBV), "US" (federal), "FR" (France)
+# Supported: "MX" (Mexico: the banks' calendar, CNBV), "US" (Federal Reserve),
+# "FR" (France)
 # Works for any year range, not just 2025–2027.
 
 # overrides: optional data.frame with cols date (Date), country (chr), action ("add"|"remove")
@@ -76,7 +79,12 @@ get_holidays <- function(country = "MX", years = NULL, overrides = NULL) {
           easter - 3L,                             # Jueves Santo (CNBV)
           easter - 2L,                             # Viernes Santo (LFT + CNBV)
           as.Date(sprintf("%d-09-16", y)),         # Independencia
+          # 1 oct, transmisión del Poder Ejecutivo (LFT art. 74 VII): cada
+          # seis años desde 2024 (T116)
+          if (y >= 2024L && (y - 2024L) %% 6L == 0L) as.Date(sprintf("%d-10-01", y)),
+          as.Date(sprintf("%d-11-02", y)),         # Día de Muertos (CNBV, T116)
           .nth_weekday(y, 11L,  3L, 1L),          # 3er lunes nov — Revolución
+          as.Date(sprintf("%d-12-12", y)),         # Virgen de Guadalupe (CNBV, T116)
           as.Date(sprintf("%d-12-25", y))          # Navidad
         )
       },

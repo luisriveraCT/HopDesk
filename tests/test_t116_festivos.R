@@ -1,0 +1,74 @@
+# =============================================================================
+# tests/test_t116_festivos.R
+# T116 fase 1: get_holidays() = the banks' calendar.
+#   1  MX 2026: exactly the CNBV's non-working days (2 nov and 12 dic were
+#      missing)
+#   2  1 oct, transmisión del Poder Ejecutivo: every six years from 2024
+#   3  US, the Federal Reserve's rule: Saturday is NOT moved to Friday;
+#      Sunday -> Monday
+#   4  a skip_holidays policy now moves a 2 nov 2027 due date
+#   5  guardian: a policy date ALREADY saved is not rewritten by the
+#      auto-apply when the calendar changes (.policy_moves_sumar)
+#
+# Counter-test: T116_MOTOR=<old policy_engine.R> makes 1-4 fail.
+# Run from project root:  Rscript tests/test_t116_festivos.R
+# =============================================================================
+cat("=== test_t116_festivos ===\n\n")
+.pass <- 0L; .fail <- 0L
+ok <- function(label, expr, detalle = NULL) {
+  r <- tryCatch(isTRUE(expr), error = function(e) { message("  error: ", conditionMessage(e)); FALSE })
+  if (r) { .pass <<- .pass + 1L; cat(" PASS:", label, "\n") }
+  else   { .fail <<- .fail + 1L; cat(" FAIL:", label, "\n"); if (!is.null(detalle)) cat("       ", detalle, "\n") }
+}
+suppressPackageStartupMessages({ library(dplyr); library(shiny) })
+`%||%` <- function(a, b) if (is.null(a)) b else a
+source(Sys.getenv("T116_MOTOR", "R/policy_engine.R"))
+suppressMessages(source("R/settings/settings_companies.R", local = FALSE))
+for (e in parse("R/data_pipeline.R", keep.source = FALSE))
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% c(".politica_doc_unica", ".politica_doc"))
+    eval(e, globalenv())
+D <- function(...) as.Date(c(...))
+
+cat("== 1. MX 2026 = calendario CNBV ==\n")
+cnbv26 <- D("2026-01-01", "2026-02-02", "2026-03-16", "2026-04-02", "2026-04-03", "2026-05-01",
+            "2026-09-16", "2026-11-02", "2026-11-16", "2026-12-12", "2026-12-25")
+mx26 <- get_holidays("MX", 2026)
+ok("1.1 los 11 días inhábiles de 2026, ni uno más", identical(sort(mx26), cnbv26),
+   paste("sobran:", paste(format(mx26[!mx26 %in% cnbv26]), collapse = " "),
+         "| faltan:", paste(format(cnbv26[!cnbv26 %in% mx26]), collapse = " ")))
+ok("1.2 2 nov y 12 dic en 2025 y 2027 también",
+   all(D("2025-11-02", "2025-12-12", "2027-11-02", "2027-12-12") %in% get_holidays("MX", 2025:2027)))
+
+cat("== 2. 1 oct, cambio de Ejecutivo ==\n")
+mx_oct <- function(y) as.Date(sprintf("%d-10-01", y)) %in% get_holidays("MX", y)
+ok("2.1 2024, 2030 y 2036 sí", mx_oct(2024) && mx_oct(2030) && mx_oct(2036))
+ok("2.2 2025, 2026, 2027 y 2018 no (antes de 2024 era 1 dic)", !mx_oct(2025) && !mx_oct(2026) && !mx_oct(2027) && !mx_oct(2018))
+
+cat("== 3. US, regla de la Fed ==\n")
+us <- get_holidays("US", 2022:2027)
+ok("3.1 4 jul 2026 cae en sábado: el viernes 3 la Fed abre", !D("2026-07-03") %in% us)
+ok("3.2 Juneteenth 2027 cae en sábado: el viernes 18 la Fed abre", !D("2027-06-18") %in% us)
+ok("3.3 en domingo se observa el lunes (25 dic 2022 -> 26; 1 ene 2023 -> 2)", all(D("2022-12-26", "2023-01-02") %in% us))
+ok("3.4 entre semana, el mismo día (Thanksgiving 2026, 4 jul 2025)", all(D("2026-11-26", "2025-07-04") %in% us))
+
+cat("== 4. Una política de festivos ==\n")
+p_sk <- list(type = "skip_holidays", params = list(country = "MX"), roll_direction = "forward")
+hc <- list(MX = get_holidays("MX", 2027))
+ok("4.1 un vencimiento el martes 2 nov 2027 se recorre al 3", identical(compose_policies(D("2027-11-02"), list(p_sk), hc), D("2027-11-03")))
+ok("4.2 el lunes 13 dic 2027 no se mueve (el 12 es domingo)", identical(compose_policies(D("2027-12-13"), list(p_sk), hc), D("2027-12-13")))
+
+cat("== 5. Lo guardado no se reescribe ==\n")
+fact <- tibble::tibble(Empresa = "NTS", Moneda = "MXN", Documento = "9001", Parte = "PROVEEDOR FICTICIO",
+                       FechaVenc_Original = D("2027-11-02"), fecha_factura = D("2027-10-03"))
+pp  <- tibble::tibble(parte = "PROVEEDOR FICTICIO", policy_id = "pol-1", policy_order = 1L, ledger = "AP", is_interco = FALSE)
+cat_df <- tibble::tibble(id = "pol-1", type = "skip_holidays", params = list(list(country = "MX")), roll_direction = "forward")
+nuevo <- compute_policy_moves(fact, pp, cat_df, ledger = "AP", applied_by = "auto")
+ok("5.1 calculada hoy: 3 nov 2027", identical(nuevo$FechaVenc_Politica, D("2027-11-03")))
+guardada <- nuevo; guardada$FechaVenc_Politica <- D("2027-11-02"); guardada$applied_by <- "auto"
+r <- .policy_moves_sumar(guardada, nuevo, fact |> dplyr::mutate(ledger = "AP"))
+ok("5.2 la fila guardada antes (2 nov) se queda: una sola fila y su fecha",
+   nrow(r) == 1L && identical(r$FechaVenc_Politica, D("2027-11-02")))
+
+cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
+if (.fail > 0L) quit(status = 1L)
