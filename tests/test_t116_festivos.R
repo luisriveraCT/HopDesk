@@ -128,5 +128,22 @@ ok("8.3 fechas mal capturadas (1900, 9999, NA) no rompen nada ni inflan la cach�
      is.null(.festivos_anios(D("1900-05-01", NA))) &&
      identical(calc8(c("1900-05-01", "9999-12-31", "2028-05-01"))[3], D("2028-05-02")))
 
+cat("== 9. El país de la política, normalizado como la caché ==\n")
+ov9 <- tibble::tibble(id = "o9", country = "MX", date = D("2027-09-16"), action = "remove",
+                      description = "ajuste ficticio", created_by = "staff.ficticio", created_at = Sys.time())
+cat_mx <- tibble::tibble(id = c("pol-a", "pol-b"), type = "skip_holidays",
+                         params = list(list(country = "mx "), list(country = "MX")), roll_direction = "forward")
+f9 <- tibble::tibble(Empresa = "NTS", Moneda = "MXN", Documento = c("A", "B"), Parte = c("PARTE A", "PARTE B"),
+                     FechaVenc_Original = D("2028-11-02", "2027-09-16"), fecha_factura = D("2028-10-01", "2027-08-16"))
+pp9 <- tibble::tibble(parte = c("PARTE A", "PARTE B"), policy_id = c("pol-a", "pol-a"), policy_order = 1L,
+                      ledger = "AP", is_interco = FALSE)
+r9 <- compute_policy_moves(f9, pp9, cat_mx, overrides_df = ov9, ledger = "AP", applied_by = "auto")
+r9 <- r9$FechaVenc_Politica[match(c("A", "B"), r9$Documento)]
+ok("9.1 «mx »: una factura de 2028 encuentra los festivos de 2028 (2 nov 2028 -> 3)", identical(r9[1], D("2028-11-03")))
+ok("9.2 «mx »: respeta el ajuste manual (16 sep 2027 quitado: no se mueve; sin el ajuste iría al 17)", identical(r9[2], D("2027-09-16")))
+ok("9.3 un país vacío o NA no rompe: sin festivos",
+   identical(.get_policy_holidays(list(params = list(country = NA)), list()), as.Date(character())) &&
+     identical(.get_policy_holidays(list(params = list(country = "  ")), list()), as.Date(character())))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

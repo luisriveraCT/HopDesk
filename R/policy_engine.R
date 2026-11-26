@@ -312,8 +312,9 @@ apply_skip_holidays_policy <- function(date, params = list(),
 )
 
 .get_policy_holidays <- function(pol, holidays_cache) {
-  country <- pol$params$country
-  if (is.null(country) || !nzchar(country)) return(as.Date(character()))
+  # Normalized as festivos_cache() keys it (T116): "mx" or "MX " finds "MX".
+  country <- toupper(trimws(as.character(pol$params$country %||% "")[1]))
+  if (is.na(country) || !nzchar(country)) return(as.Date(character()))
   hc <- holidays_cache[[country]]
   if (!is.null(hc)) hc else tryCatch(get_holidays(country), error = function(e) as.Date(character()))
 }
