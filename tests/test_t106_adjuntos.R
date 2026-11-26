@@ -60,7 +60,7 @@ for (caso in list(list("1.5 un .exe renombrado a .pdf", c(txt("MZ"), as.raw(rep(
   ok(paste(caso[[1]], "se rechaza"), inherits(err(prep(caso[[2]], caso[[3]])), "adjdoc_error"))
 ok("1.12 una imagen pegada que no es imagen se rechaza", inherits(err(prep(pdf, "pdf", origen = "pegado")), "adjdoc_error"))
 ok("1.13 los errores salen en palabras de adjuntos, no de requisiciones",
-   identical(err(prep(c(txt("MZ"), as.raw(rep(0, 60))), "pdf"))$clave, "adjuntos.error_tipo"))
+   identical(err(prep(c(txt("MZ"), as.raw(rep(0, 60))), "pdf"))$clave, "comun.adjuntos.error_tipo"))
 
 cat("== 2. CSV canónico ==\n")
 celdas <- matrix(c("Concepto", "Monto", "Renta, oficina \"A\"", "=1+1", "línea\ndos", "-150.00", "ñandú", ""), ncol = 2, byrow = TRUE)
@@ -132,7 +132,10 @@ ok("6.4 cada llave guardada vive bajo <cliente>/adjuntos/pasivo/<id>/",
    all(startsWith(q(.adjdoc_leer(CID))$llave, paste0(CID, "/adjuntos/pasivo/"))))
 
 cat("== 7. Registro (T72 / T87) ==\n")
-acciones <- tryCatch(.audit_pending[[CID]]$action, error = function(e) character())
+# The rows may still be queued, or already flushed to the client's log chunk
+# (later::later, ~2 s): look in both.
+acciones <- c(tryCatch(.audit_pending[[CID]]$action, error = function(e) character()),
+              tryCatch(.mem[[.audit_current_key(CID)]]$action, error = function(e) character()))
 ok("7.1 las cuatro acciones quedaron en el registro del cliente",
    all(c("adjuntar_documento", "pegar_tabla_documento", "papelera_documento", "restaurar_documento") %in% acciones),
    paste(unique(acciones), collapse = ", "))
@@ -157,8 +160,8 @@ cat("== 9. Red de S3 y registro ==\n")
 ok("9.1 adjuntos_documentos.rds solo crece (.S3_SOLO_CRECEN)", ADJDOC_KEY %in% .S3_SOLO_CRECEN())
 ok("9.2 cada tipo de documento de una entidad está en el catálogo y tiene texto en es y en",
    all(vapply(ADJ_ENTIDADES, function(e) all(e$tipos_doc %in% ADJ_TIPOS_DOC), logical(1))) &&
-     all(paste0("adjuntos.tipo_doc.", ADJ_TIPOS_DOC) %in% names(jsonlite::fromJSON("www/i18n/es.json"))) &&
-     all(paste0("adjuntos.tipo_doc.", ADJ_TIPOS_DOC) %in% names(jsonlite::fromJSON("www/i18n/en.json"))))
+     all(paste0("comun.adjuntos.tipo_doc.", ADJ_TIPOS_DOC) %in% names(jsonlite::fromJSON("www/i18n/es.json"))) &&
+     all(paste0("comun.adjuntos.tipo_doc.", ADJ_TIPOS_DOC) %in% names(jsonlite::fromJSON("www/i18n/en.json"))))
 ok("9.3 la función existe() real de pasivo está definida", exists(".adj_pasivo_existe", mode = "function"))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))

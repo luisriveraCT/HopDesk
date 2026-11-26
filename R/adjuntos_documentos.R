@@ -112,11 +112,11 @@ ADJDOC_MAX_XML  <- 5 * 1024^2
 # A CSV text into a character matrix (every cell as text; nothing converted).
 .adjdoc_csv_leer <- function(txt) {
   txt <- sub("(\r?\n)+$", "", gsub("\r\n?", "\n", txt))
-  if (!nzchar(gsub("[[:space:],]", "", txt))) .adjdoc_error("adjuntos.tabla.error_vacia")
+  if (!nzchar(gsub("[[:space:],]", "", txt))) .adjdoc_error("comun.adjuntos.tabla.error_vacia")
   df <- tryCatch(utils::read.csv(text = txt, header = FALSE, colClasses = "character", quote = "\"",
                                  na.strings = character(0), check.names = FALSE, strip.white = FALSE,
                                  blank.lines.skip = FALSE, fill = TRUE, encoding = "UTF-8"),
-                 error = function(e) .adjdoc_error("adjuntos.tabla.error_csv"))
+                 error = function(e) .adjdoc_error("comun.adjuntos.tabla.error_csv"))
   m <- as.matrix(df); dimnames(m) <- NULL
   m[is.na(m)] <- ""
   Encoding(m) <- "UTF-8"
@@ -155,17 +155,17 @@ adjdoc_csv_escribir <- function(celdas) {
 
 # Requisiciones' validation errors, in the attachments' own words (theirs
 # name a requisition and its file types).
-.ADJDOC_DE_REQ <- c("requisiciones.evidencia.error_leer" = "adjuntos.error_leer",
-                    "requisiciones.evidencia.error_tamano" = "adjuntos.error_tamano",
-                    "requisiciones.evidencia.error_tipo" = "adjuntos.error_tipo",
-                    "requisiciones.evidencia.error_imagen" = "adjuntos.error_imagen",
-                    "requisiciones.tabla.error_vacia" = "adjuntos.tabla.error_vacia",
-                    "requisiciones.tabla.error_grande" = "adjuntos.tabla.error_grande")
+.ADJDOC_DE_REQ <- c("requisiciones.evidencia.error_leer" = "comun.adjuntos.error_leer",
+                    "requisiciones.evidencia.error_tamano" = "comun.adjuntos.error_tamano",
+                    "requisiciones.evidencia.error_tipo" = "comun.adjuntos.error_tipo",
+                    "requisiciones.evidencia.error_imagen" = "comun.adjuntos.error_imagen",
+                    "requisiciones.tabla.error_vacia" = "comun.adjuntos.tabla.error_vacia",
+                    "requisiciones.tabla.error_grande" = "comun.adjuntos.tabla.error_grande")
 .adjdoc_traducir <- function(expr, mb = ADJ_MAX_ARCHIVO / 1024^2) {
   tryCatch(expr, req_error = function(e) {
     k <- unname(.ADJDOC_DE_REQ[e$clave])
-    if (is.na(k)) .adjdoc_error("adjuntos.error_leer")
-    if (identical(k, "adjuntos.error_tamano")) .adjdoc_error(k, mb = mb)
+    if (is.na(k)) .adjdoc_error("comun.adjuntos.error_leer")
+    if (identical(k, "comun.adjuntos.error_tamano")) .adjdoc_error(k, mb = mb)
     .adjdoc_error(k)
   })
 }
@@ -176,28 +176,28 @@ adjdoc_csv_escribir <- function(celdas) {
 adjdoc_preparar <- function(ruta, nombre, origen = c("archivo", "pegado")) {
   origen <- match.arg(origen)
   tam <- suppressWarnings(file.info(ruta)$size)
-  if (is.na(tam)) .adjdoc_error("adjuntos.error_leer")
-  if (tam == 0) .adjdoc_error("adjuntos.error_tipo")
-  if (tam > ADJ_MAX_ARCHIVO) .adjdoc_error("adjuntos.error_tamano", mb = ADJ_MAX_ARCHIVO / 1024^2)
+  if (is.na(tam)) .adjdoc_error("comun.adjuntos.error_leer")
+  if (tam == 0) .adjdoc_error("comun.adjuntos.error_tipo")
+  if (tam > ADJ_MAX_ARCHIVO) .adjdoc_error("comun.adjuntos.error_tamano", mb = ADJ_MAX_ARCHIVO / 1024^2)
   if (!is.na(adjunto_tipo_por_bytes(readBin(ruta, "raw", n = tam)))) {
     p <- .adjdoc_traducir(adjunto_preparar(ruta, nombre, origen),
                           mb = (if (origen == "pegado") ADJ_MAX_PEGADO else ADJ_MAX_ARCHIVO) / 1024^2)
     return(list(clase = "archivo", ext = p$ext, mime = unname(ADJDOC_EXT[p$ext]), bytes = p$bytes,
                 tamano = p$tamano, ancho = p$ancho, alto = p$alto, nombre = p$nombre))
   }
-  if (origen == "pegado") .adjdoc_error("adjuntos.error_tipo")
+  if (origen == "pegado") .adjdoc_error("comun.adjuntos.error_tipo")
   txt <- .adjdoc_texto(readBin(ruta, "raw", n = tam))
-  if (is.null(txt)) .adjdoc_error("adjuntos.error_tipo")
+  if (is.null(txt)) .adjdoc_error("comun.adjuntos.error_tipo")
   tipo <- .adjdoc_tipo_texto(txt)
-  if (is.na(tipo)) .adjdoc_error("adjuntos.error_tipo")
+  if (is.na(tipo)) .adjdoc_error("comun.adjuntos.error_tipo")
   nom <- .adj_nombre_limpio(nombre)
   if (tipo == "xml") {
-    if (tam > ADJDOC_MAX_XML) .adjdoc_error("adjuntos.error_tamano", mb = ADJDOC_MAX_XML / 1024^2)
+    if (tam > ADJDOC_MAX_XML) .adjdoc_error("comun.adjuntos.error_tamano", mb = ADJDOC_MAX_XML / 1024^2)
     bytes <- charToRaw(enc2utf8(txt))
     return(list(clase = "archivo", ext = "xml", mime = unname(ADJDOC_EXT["xml"]), bytes = bytes,
                 tamano = length(bytes), ancho = NA_integer_, alto = NA_integer_, nombre = nom))
   }
-  if (nchar(txt) > TABLA_MAX_TEXTO) .adjdoc_error("adjuntos.tabla.error_grande")
+  if (nchar(txt) > TABLA_MAX_TEXTO) .adjdoc_error("comun.adjuntos.tabla.error_grande")
   c(list(clase = "tabla", nombre = nom), .adjdoc_tabla_desde_matriz(.adjdoc_csv_leer(txt)))
 }
 
@@ -213,15 +213,15 @@ adjdoc_preparar_pegado <- function(texto) .adjdoc_traducir(tabla_pegada_preparar
 
 .adjdoc_tope <- function(e, clase) if (identical(clase, "tabla")) e$max_tablas else e$max_vivos
 .adjdoc_tope_error <- function(e, clase)
-  .adjdoc_error(if (identical(clase, "tabla")) "adjuntos.error_limite_tablas" else "adjuntos.error_limite", n = .adjdoc_tope(e, clase))
+  .adjdoc_error(if (identical(clase, "tabla")) "comun.adjuntos.error_limite_tablas" else "comun.adjuntos.error_limite", n = .adjdoc_tope(e, clase))
 
 .adjdoc_revisar <- function(cid, entidad, entidad_id, tipo_doc) {
   e <- adj_entidad(entidad)
   if (!is.character(entidad_id) || length(entidad_id) != 1L || !grepl(.ADJDOC_ID_OK, entidad_id))
     stop("[adjuntos] id inválido", call. = FALSE)
   if (!isTRUE(do.call(get(e$existe, mode = "function"), list(cid, entidad_id))))
-    .adjdoc_error("adjuntos.error_no_existe")
-  if (!tipo_doc %in% e$tipos_doc) .adjdoc_error("adjuntos.error_tipo_doc")
+    .adjdoc_error("comun.adjuntos.error_no_existe")
+  if (!tipo_doc %in% e$tipos_doc) .adjdoc_error("comun.adjuntos.error_tipo_doc")
   e
 }
 
@@ -280,7 +280,7 @@ documento_tabla_agregar <- function(client_id, entidad, entidad_id, preparada, t
   cid <- .adjdoc_cid(client_id)
   celdas <- preparada$celdas
   if (!is.matrix(celdas) || !nrow(celdas) || nrow(celdas) > TABLA_MAX_FILAS || ncol(celdas) > TABLA_MAX_COLS)
-    .adjdoc_error("adjuntos.tabla.error_vacia")
+    .adjdoc_error("comun.adjuntos.tabla.error_vacia")
   t <- trimws(as.character(titulo %||% ""))[1]
   if (is.na(t) || !nzchar(t)) t <- NA_character_ else if (nchar(t) > 200L) t <- substr(t, 1L, 200L)
   .adjdoc_guardar(cid, entidad, entidad_id, tipo_doc,
@@ -299,7 +299,7 @@ documentos_de <- function(client_id, entidad, entidad_id, incluir_papelera = FAL
 
 .adjdoc_fila <- function(df, id) {
   i <- which(df$id %in% id)
-  if (length(i) != 1L) .adjdoc_error("adjuntos.error_no_existe")
+  if (length(i) != 1L) .adjdoc_error("comun.adjuntos.error_no_existe")
   i
 }
 

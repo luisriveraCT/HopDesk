@@ -30,7 +30,7 @@ adjuntos_pasivo_ui <- function() {
       htmltools::tags$script(src = "requisiciones_paste.js?v=2")),
     htmltools::tags$details(class = "mt-3 pdoc",
       ontoggle = "Shiny.setInputValue('pdoc_abierto', this.open, {priority: 'event'})",
-      htmltools::tags$summary(class = "fw-semibold", tr("adjuntos.titulo")),
+      htmltools::tags$summary(class = "fw-semibold", tr("comun.adjuntos.titulo")),
       shiny::uiOutput("pdoc_cuerpo")),
     htmltools::tags$script("if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue('pdoc_abierto', false, {priority: 'event'});"))
 }
@@ -72,7 +72,7 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
   escribir <- function(f, ok_msg) {
     r <- tryCatch(f(), error = function(e) e)
     if (inherits(r, "error")) {
-      msg <- if (inherits(r, "adjdoc_error")) conditionMessage(r) else tr("adjuntos.error_guardar", error = conditionMessage(r))
+      msg <- if (inherits(r, "adjdoc_error")) conditionMessage(r) else tr("comun.adjuntos.error_guardar", error = conditionMessage(r))
       shiny::showNotification(msg, type = "error", duration = NULL)
       return(NULL)
     }
@@ -84,17 +84,17 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
   output$pdoc_cuerpo <- shiny::renderUI({
     if (!abierto()) return(NULL)
     id <- id_actual()
-    if (is.null(id)) return(htmltools::div(class = "text-muted small", tr("adjuntos.guardar_primero")))
+    if (is.null(id)) return(htmltools::div(class = "text-muted small", tr("comun.adjuntos.guardar_primero")))
     if (!adj_puede_ver(usr_vivo(), ENT)) return(NULL)
     e <- adj_entidad(ENT)
     htmltools::tagList(
       if (adj_puede_editar(usr_vivo(), ENT)) htmltools::div(class = "hdreq-evidencia",
-        shiny::selectInput("pdoc_tipo", tr("adjuntos.tipo_doc_campo"), width = "260px",
-          choices = stats::setNames(e$tipos_doc, vapply(e$tipos_doc, function(t) tr(paste0("adjuntos.tipo_doc.", t)), ""))),
+        shiny::selectInput("pdoc_tipo", tr("comun.adjuntos.tipo_doc_campo"), width = "260px",
+          choices = stats::setNames(e$tipos_doc, vapply(e$tipos_doc, function(t) tr(paste0("comun.adjuntos.tipo_doc.", t)), ""))),
         htmltools::div(id = "pdoc_zona", class = "hdreq-zona", tabindex = "0",
-          htmltools::div(class = "hdreq-zona-texto", tr("adjuntos.zona")),
+          htmltools::div(class = "hdreq-zona-texto", tr("comun.adjuntos.zona")),
           shiny::fileInput("pdoc_archivo", NULL, multiple = TRUE, width = "100%",
-                           buttonLabel = tr("adjuntos.elegir"), placeholder = "",
+                           buttonLabel = tr("comun.adjuntos.elegir"), placeholder = "",
                            accept = c(".pdf", ".png", ".jpg", ".jpeg", ".webp", ".xlsx", ".csv", ".xml"))),
         shiny::uiOutput("pdoc_pegado")),
       shiny::uiOutput("pdoc_lista"),
@@ -122,8 +122,8 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
     for (i in seq_len(nrow(f))) {
       p <- tryCatch(adjdoc_preparar(f$datapath[i], f$name[i], origen), error = function(e) e)
       if (inherits(p, "error")) {
-        msg <- if (inherits(p, "adjdoc_error")) conditionMessage(p) else tr("adjuntos.error_leer")
-        shiny::showNotification(tr("adjuntos.no_agregado", nombre = .adj_nombre_limpio(f$name[i]), motivo = msg),
+        msg <- if (inherits(p, "adjdoc_error")) conditionMessage(p) else tr("comun.adjuntos.error_leer")
+        shiny::showNotification(tr("comun.adjuntos.no_agregado", nombre = .adj_nombre_limpio(f$name[i]), motivo = msg),
                                 type = "error", duration = 8)
         next
       }
@@ -131,7 +131,7 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
         pegado_enc(isTRUE(p$encabezado_sugerido)); pegado(p); next
       }
       escribir(function() documento_adjuntar(c, ENT, id, p, tipo_sel(), yo(), home = casa()),
-               tr("adjuntos.agregado", nombre = p$nombre))
+               tr("comun.adjuntos.agregado", nombre = p$nombre))
     }
     unlink(f$datapath)
   })
@@ -140,7 +140,7 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
     if (!editar_o_avisa()) return()
     p <- tryCatch(adjdoc_preparar_pegado(input$pdoc_pegado_texto$texto %||% ""), error = function(e) e)
     if (inherits(p, "error")) {
-      shiny::showNotification(if (inherits(p, "adjdoc_error")) conditionMessage(p) else tr("adjuntos.tabla.error_vacia"), type = "warning")
+      shiny::showNotification(if (inherits(p, "adjdoc_error")) conditionMessage(p) else tr("comun.adjuntos.tabla.error_vacia"), type = "warning")
       return()
     }
     pegado_enc(isTRUE(p$encabezado_sugerido)); pegado(p)
@@ -159,9 +159,9 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
     p <- pegado(); if (is.null(p)) return(NULL)
     htmltools::div(class = "hdreq-pegado",
       htmltools::div(class = "hdreq-pegado-cab",
-        shiny::textInput("pdoc_pegado_titulo", NULL, value = p$nombre %||% "", placeholder = tr("adjuntos.tabla.titulo"), width = "100%"),
-        shiny::actionButton("pdoc_pegado_agregar", tr("adjuntos.tabla.agregar"), class = "btn btn-primary btn-sm"),
-        shiny::actionButton("pdoc_pegado_descartar", tr("adjuntos.tabla.descartar"), class = "btn btn-outline-secondary btn-sm")),
+        shiny::textInput("pdoc_pegado_titulo", NULL, value = p$nombre %||% "", placeholder = tr("comun.adjuntos.tabla.titulo"), width = "100%"),
+        shiny::actionButton("pdoc_pegado_agregar", tr("comun.adjuntos.tabla.agregar"), class = "btn btn-primary btn-sm"),
+        shiny::actionButton("pdoc_pegado_descartar", tr("comun.adjuntos.tabla.descartar"), class = "btn btn-outline-secondary btn-sm")),
       hd_table_ui("pdoc_tabla", alto = "220px"))
   })
   shiny::observeEvent(input$pdoc_pegado_descartar, pegado(NULL))
@@ -171,28 +171,28 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
     acc <- if (is.null(p$nombre)) "pegar_tabla_documento" else "adjuntar_documento"
     ok <- escribir(function() documento_tabla_agregar(c, ENT, id, p, input$pdoc_pegado_titulo %||% "", pegado_enc(),
                                                        tipo_sel(), yo(), home = casa(), accion = acc),
-                   tr("adjuntos.tabla.agregada"))
+                   tr("comun.adjuntos.tabla.agregada"))
     if (!is.null(ok)) pegado(NULL)
   })
 
   output$pdoc_lista <- shiny::renderUI({
     d <- docs()
-    if (identical(d, "error")) return(htmltools::div(class = "alert alert-warning py-1 small", tr("adjuntos.error_leer_lista")))
+    if (identical(d, "error")) return(htmltools::div(class = "alert alert-warning py-1 small", tr("comun.adjuntos.error_leer_lista")))
     if (is.null(d)) return(NULL)
-    if (!nrow(d)) return(htmltools::div(class = "text-muted small", tr("adjuntos.ninguno")))
+    if (!nrow(d)) return(htmltools::div(class = "text-muted small", tr("comun.adjuntos.ninguno")))
     quitar <- adj_puede_editar(usr_vivo(), ENT)
     htmltools::div(class = "hdreq-ev-galeria",
       lapply(seq_len(nrow(d)), function(i) {
         r <- d[i, ]
-        nombre <- if (identical(r$clase, "tabla")) (if (!is.na(r$titulo)) r$titulo else tr("adjuntos.tabla.sin_titulo")) else r$nombre
+        nombre <- if (identical(r$clase, "tabla")) (if (!is.na(r$titulo)) r$titulo else tr("comun.adjuntos.tabla.sin_titulo")) else r$nombre
         htmltools::div(class = "hdreq-ev-item",
-          htmltools::tags$button(type = "button", class = "hdreq-doc", title = tr("adjuntos.descargar"),
+          htmltools::tags$button(type = "button", class = "hdreq-doc", title = tr("comun.adjuntos.descargar"),
             onclick = sprintf("Shiny.setInputValue('pdoc_descargar_id', %s, {priority: 'event'})", jsonlite::toJSON(r$id, auto_unbox = TRUE)),
-            htmltools::tags$span(class = "hdreq-ev-tipo", if (identical(r$clase, "tabla")) tr("adjuntos.tabla.tipo") else toupper(r$ext)),
+            htmltools::tags$span(class = "hdreq-ev-tipo", if (identical(r$clase, "tabla")) tr("comun.adjuntos.tabla.tipo") else toupper(r$ext)),
             htmltools::tags$span(class = "hdreq-ev-nombre", nombre),
-            htmltools::tags$span(class = "hdreq-ev-tam", tr(paste0("adjuntos.tipo_doc.", r$tipo_doc)))),
+            htmltools::tags$span(class = "hdreq-ev-tam", tr(paste0("comun.adjuntos.tipo_doc.", r$tipo_doc)))),
           if (quitar) htmltools::tags$button(type = "button", class = "btn btn-sm btn-link text-danger p-0 hdreq-quitar",
-            title = tr("adjuntos.quitar"),
+            title = tr("comun.adjuntos.quitar"),
             onclick = sprintf("Shiny.setInputValue('pdoc_quitar', %s, {priority: 'event'})", jsonlite::toJSON(r$id, auto_unbox = TRUE)),
             "✕"))
       }))
@@ -201,7 +201,7 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
   shiny::observeEvent(input$pdoc_quitar, {
     if (!editar_o_avisa()) return()
     c <- cid(); if (is.null(c)) return()
-    escribir(function() documento_papelera(c, as.character(input$pdoc_quitar), yo(), home = casa()), tr("adjuntos.quitado"))
+    escribir(function() documento_papelera(c, as.character(input$pdoc_quitar), yo(), home = casa()), tr("comun.adjuntos.quitado"))
   })
 
   # Downloads: always an attachment (downloadHandler), with the stored type.
@@ -209,7 +209,7 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
     if (!adj_puede_ver(usr(), ENT)) return()
     c <- cid(); if (is.null(c)) return()
     b <- tryCatch(documento_bytes(c, as.character(input$pdoc_descargar_id)), error = function(e) NULL)
-    if (is.null(b)) { shiny::showNotification(tr("adjuntos.error_leer"), type = "error"); return() }
+    if (is.null(b)) { shiny::showNotification(tr("comun.adjuntos.error_leer"), type = "error"); return() }
     descarga(b)
     session$sendCustomMessage("hdreq_descargar", list(id = "pdoc_descargar"))
   })

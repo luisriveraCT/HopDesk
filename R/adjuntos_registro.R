@@ -17,13 +17,13 @@
 # (migrating requisiciones_evidencia.rds), orden de pago, movimiento.
 # =============================================================================
 
-# Document kinds: code -> its dictionary key (adjuntos.tipo_doc.<code>).
+# Document kinds: code -> its dictionary key (comun.adjuntos.tipo_doc.<code>).
 ADJ_TIPOS_DOC <- c("contrato", "estado_cuenta", "cfdi", "comprobante_pago", "cotizacion",
                    "orden_compra", "tabla_amortizacion", "otro")
 
 ADJ_ENTIDADES <- list(
   pasivo = list(
-    etiqueta       = "adjuntos.entidad.pasivo",
+    etiqueta       = "comun.adjuntos.entidad.pasivo",
     existe         = ".adj_pasivo_existe",
     reactivo_ver   = "pasivos_liabilities_db",
     permiso_editar = "can_manage_pasivos",

@@ -65,7 +65,7 @@ q(shiny::testServer(srv, {
   ok("1.3 cerrada otra vez, nada más se lee", lecturas == n0 && is.null(session$userData$r$docs()))
   id_rv(NULL); session$setInputs(pdoc_abierto = TRUE); session$flushReact()
   ok("1.4 un pasivo nuevo (sin id): dice que se guarde primero y no lee",
-     lecturas == n0 && grepl(tr("adjuntos.guardar_primero"), salida(output$pdoc_cuerpo), fixed = TRUE))
+     lecturas == n0 && grepl(tr("comun.adjuntos.guardar_primero"), salida(output$pdoc_cuerpo), fixed = TRUE))
   id_rv(P1)
   usuario_rv(list(tier = SIN_PSV, permisos = permisos_resueltos(SIN_PSV, NULL))); session$flushReact()
   n1 <- lecturas; invisible(session$userData$r$docs())
