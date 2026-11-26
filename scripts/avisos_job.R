@@ -49,7 +49,7 @@ JOB_EVENTOS <- c(
   "omitido_calculo", "omitido_sin_lunes", "omitido_destinatarios", "error_cliente",
   "destinatarios", "enviado", "fallido", "ya_enviado", "prueba_html", "alertas_umbral",
   "archivados", "sin_llave_nueva", "moneda_base_omision", "historial_fallido", "ya_corrido",
-  "avisos_inhabiles", "inhabiles_regla_calculada")   # T116 F2
+  "avisos_inhabiles", "avisos_inhabiles_retirados", "inhabiles_regla_calculada")   # T116 F2
 
 .job <- new.env(parent = emptyenv())
 job_reiniciar <- function() .job$cuenta <- stats::setNames(integer(length(JOB_EVENTOS)), JOB_EVENTOS)
@@ -185,7 +185,7 @@ job_tipos <- function(monedas, base)
   avisos_tipos(monedas, base, tryCatch(fx_fuentes_hoy(), error = function(e) NULL))
 
 job_lunes <- function(cid, hoy, ahora, prueba, url) {
-  inhabiles_job(cid, hoy, job_contar)   # T116 F2: before anything that may skip the client
+  inhabiles_job(cid, hoy, job_contar, prueba)   # T116 F2: before anything that may skip the client; test mode writes nothing
   if (job_ya_salio(cid, "lunes", hoy)) return(job_contar("ya_corrido"))
   x <- avisos_cliente_datos(cid, ahora)
   if (!x$ok) return(job_contar(x$motivo))
@@ -212,7 +212,7 @@ job_lunes <- function(cid, hoy, ahora, prueba, url) {
 }
 
 job_viernes <- function(cid, hoy, ahora, prueba, url) {
-  inhabiles_job(cid, hoy, job_contar)   # T116 F2
+  inhabiles_job(cid, hoy, job_contar, prueba)   # T116 F2
   if (job_ya_salio(cid, "viernes", hoy)) return(job_contar("ya_corrido"))
   x <- avisos_cliente_datos(cid, ahora)
   if (!x$ok) return(job_contar(x$motivo))

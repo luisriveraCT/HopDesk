@@ -12,8 +12,12 @@
 #   6  the staff's calendar unreadable: the rule, and the job counts
 #      inhabiles_regla_calculada ONCE per run (not per client); readable: the
 #      official reason in the text
-#   7  the job: the step runs first in job_lunes and job_viernes, and both
+#   7  the job: the step runs first in job_lunes and job_viernes, and its
 #      events are in JOB_EVENTOS (the log may only count known events)
+#   8  test mode (the job's default): nothing written, only counted
+#   9  an aviso that no longer applies (the staff confirmed the year without
+#      that day; the client dropped the country) is retired -- never one
+#      somebody discarded brought back; past ones and live ones left alone
 #
 # Run from project root:  Rscript tests/test_t116_f2_aviso.R
 # =============================================================================
@@ -100,16 +104,58 @@ cat("== 7. El job ==\n")
 job <- readLines("scripts/avisos_job.R", warn = FALSE, encoding = "UTF-8")
 primera <- function(fn) { i <- grep(paste0("^", fn, " <- function"), job); trimws(job[i + 1L]) }
 ok("7.1 job_lunes y job_viernes publican primero, antes de cualquier salida temprana",
-   startsWith(primera("job_lunes"), "inhabiles_job(cid, hoy, job_contar)") &&
-     startsWith(primera("job_viernes"), "inhabiles_job(cid, hoy, job_contar)"))
+   startsWith(primera("job_lunes"), "inhabiles_job(cid, hoy, job_contar, prueba)") &&
+     startsWith(primera("job_viernes"), "inhabiles_job(cid, hoy, job_contar, prueba)"))
 ok("7.2 los dos eventos están en JOB_EVENTOS y los archivos en AVISOS_JOB_ARCHIVOS", {
   env <- new.env(); for (e in parse("scripts/avisos_job.R", keep.source = FALSE))
     if (is.call(e) && identical(e[[1]], as.name("<-")) && as.character(e[[2]]) %in% c("JOB_EVENTOS", "AVISOS_JOB_ARCHIVOS")) eval(e, env)
-  all(c("avisos_inhabiles", "inhabiles_regla_calculada") %in% env$JOB_EVENTOS) &&
+  all(c("avisos_inhabiles", "avisos_inhabiles_retirados", "inhabiles_regla_calculada") %in% env$JOB_EVENTOS) &&
     all(c("R/policy_engine.R", "R/mercado.R", "R/avisos_inhabiles.R") %in% env$AVISOS_JOB_ARCHIVOS) })
 x <- readLines("R/avisos_inhabiles.R", warn = FALSE, encoding = "UTF-8"); x <- x[!grepl("^\\s*#", x)]
 ok("7.3 R/avisos_inhabiles.R no imprime nada (el log del job es público)",
    !any(grepl("\\b(cat|print|message|writeLines|warning|printf|str|show)\\s*\\(", x)))
+
+cat("== 8. Modo prueba ==\n")
+s3_memoria_reset(); mercado_inhabiles_poner(NULL); .MERCADO_INHABILES$intento_en <- NULL; cuenta <- character()
+n0 <- .mem_escrituras
+n8 <- inhabiles_job("cli-p", D("2027-10-29"), contar, prueba = TRUE, leer_config = cfg(moneda_base = "MXN"))
+ok("8.1 en modo prueba no escribe nada, solo cuenta", n8 == 1L && .mem_escrituras == n0 &&
+     !nrow(avisos_de("cli-p")) && sum(cuenta == "avisos_inhabiles") == 1L)
+
+cat("== 9. Lo que ya no aplica se retira ==\n")
+s3_memoria_reset(); mercado_inhabiles_poner(NULL); .MERCADO_INHABILES$intento_en <- NULL; cuenta <- character()
+q(inhabiles_job("cli-r", D("2027-10-29"), contar, leer_config = cfg(moneda_base = "MXN")))
+a9 <- avisos_de("cli-r")
+q(avisos_descartar("cli-r", a9$id, "ana.ficticia"))
+# The staff confirms 2027 WITHOUT 2 nov (a fictional decree moves it).
+.mem[["hd-admin/mercado/inhabiles.rds"]] <- tibble::tibble(
+  id = c("d1", "a1"), tipo = c("dia", "anio"), pais = "MX", fecha = c(D("2027-12-25"), NA), anio = 2027L,
+  motivo = c("Navidad", NA), fuente = "prueba", capturado_por = "staff.ficticio",
+  capturado_en = Sys.time(), anulado_por = NA_character_, anulado_en = as.POSIXct(NA))
+.MERCADO_INHABILES$intento_en <- NULL
+prueba_antes <- .mem_escrituras
+q(inhabiles_job("cli-r", D("2027-11-01"), contar, prueba = TRUE, leer_config = cfg(moneda_base = "MXN")))
+ok("9.1 en modo prueba lo cuenta pero no lo retira", .mem_escrituras == prueba_antes &&
+     sum(cuenta == "avisos_inhabiles_retirados") == 1L && !isTRUE(avisos_de("cli-r")$retirado))
+q(inhabiles_job("cli-r", D("2027-11-01"), contar, leer_config = cfg(moneda_base = "MXN")))
+b9 <- avisos_de("cli-r")
+ok("9.2 el 2 nov ya no es inhábil: el aviso queda retirado por el sistema", isTRUE(b9$retirado) && identical(b9$retirado_por, "sistema"))
+ok("9.3 ...sin revivir el descarte de Ana (sigue descartado)", grepl("ana.ficticia", b9$descartados, fixed = TRUE))
+s3_memoria_reset(); mercado_inhabiles_poner(NULL); .MERCADO_INHABILES$intento_en <- NULL; cuenta <- character()
+q(inhabiles_job("cli-q", D("2027-10-29"), contar, leer_config = cfg(moneda_base = "MXN")))
+q(inhabiles_job("cli-q", D("2027-11-01"), contar, leer_config = cfg(moneda_base = "MXN", paises = "US")))
+a94 <- avisos_de("cli-q")
+ok("9.4 el cliente quitó México de sus países: el aviso de México se retira (el de EUA nace vivo)",
+   isTRUE(a94$retirado[a94$clave == "inhabil:MX:2027-11-02"]) && !isTRUE(a94$retirado[a94$clave == "inhabil:US:2027-11-11"]))
+s3_memoria_reset(); cuenta <- character()
+q(inhabiles_job("cli-s", D("2027-10-29"), contar, leer_config = cfg(moneda_base = "MXN")))
+q(inhabiles_job("cli-s", D("2027-11-05"), contar, leer_config = cfg(moneda_base = "MXN", paises = "US")))
+ok("9.5 uno que ya pasó no se toca (vence solo)", !isTRUE(avisos_de("cli-s")$retirado[avisos_de("cli-s")$clave == "inhabil:MX:2027-11-02"]))
+q(inhabiles_job("cli-t", D("2027-11-12"), contar, leer_config = cfg(moneda_base = "MXN", paises = c("MX", "US"))))
+q(inhabiles_job("cli-t", D("2027-11-15"), contar, leer_config = cfg(moneda_base = "MXN", paises = c("MX", "US"))))
+t9 <- avisos_de("cli-t")
+ok("9.6 lo que sigue aplicando (mismos países, mismo calendario) no se retira",
+   nrow(t9) >= 2L && !any(t9$retirado %in% TRUE))
 
 mercado_inhabiles_poner(NULL)
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
