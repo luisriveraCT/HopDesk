@@ -69,11 +69,13 @@ stubs <- list(
     .anota(sprintf("confirmados AP: %s", paste(nuevas$agenda_item_id, collapse = ",")))
     nuevas
   },
-  # T104: a confirmation needs its origin account -- one NTS account in MXN
-  # (the Agenda's modal lists it; the server checks it).
+  # T104: a confirmation needs its origin account -- NTS pays in MXN and
+  # USD, so one account in each (the Agenda's modal lists the payment's
+  # currency's; the server checks it).
   load_ctas_cuentas = function(...)
-    data.frame(id = "CT-NTS", banco_id = "BB", Empresa = "NTS", razon_social = "", rfc = "", Moneda = "MXN",
-               alias = "Operativa", cuenta = "73543010201", clabe_interbancaria = "", is_ppl_default = TRUE,
+    data.frame(id = c("CT-NTS", "CT-NTS-USD"), banco_id = "BB", Empresa = "NTS", razon_social = "", rfc = "",
+               Moneda = c("MXN", "USD"), alias = c("Operativa", "Operativa USD"),
+               cuenta = c("73543010201", "73543010999"), clabe_interbancaria = "", is_ppl_default = TRUE,
                saldo_inicial = 0, activa = TRUE, stringsAsFactors = FALSE),
   load_ctas_bancos = function(...) data.frame(id = "BB", nombre = "BanBajío", stringsAsFactors = FALSE),
   get_cuentas_ppl_data = function(emp, cur, shared)
