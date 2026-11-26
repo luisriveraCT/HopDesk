@@ -70,5 +70,21 @@ r <- .policy_moves_sumar(guardada, nuevo, fact |> dplyr::mutate(ledger = "AP"))
 ok("5.2 la fila guardada antes (2 nov) se queda: una sola fila y su fecha",
    nrow(r) == 1L && identical(r$FechaVenc_Politica, D("2027-11-02")))
 
+cat("== 6. festivos_cache: el tipo que espera compose_policies ==\n")
+ov <- tibble::tibble(id = "o1", country = "MX", date = D("2027-11-02"), action = "remove",
+                     description = "ajuste ficticio", created_by = "staff.ficticio", created_at = Sys.time())
+hc6 <- festivos_cache(list(p_sk), ov, years = 2027)
+ok("6.1 lista país -> fechas, con el ajuste manual aplicado",
+   identical(names(hc6), "MX") && inherits(hc6$MX, "Date") && !D("2027-11-02") %in% hc6$MX && D("2027-12-25") %in% hc6$MX)
+ok("6.2 compose_policies respeta el ajuste con la lista; con la tabla de ajustes como caché (lo de antes) lo ignoraba",
+   identical(compose_policies(D("2027-11-02"), list(p_sk), hc6), D("2027-11-02")) &&
+     identical(suppressWarnings(compose_policies(D("2027-11-02"), list(p_sk), ov)), D("2027-11-03")))
+ok("6.3 sin políticas, sin países: lista vacía", identical(festivos_cache(list(), ov), stats::setNames(list(), character())))
+asis <- paste(readLines(Sys.getenv("T116_ASISTENTE", "R/pasivos_wizard_module.R"), warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+ok("6.4 el asistente de Pasivos arma la caché con festivos_cache() de las mismas políticas que pasa",
+   grepl("holidays <- festivos_cache(politicas_pasivo,", asis, fixed = TRUE) &&
+     grepl("policies_for_liability = politicas_pasivo,", asis, fixed = TRUE) &&
+     !grepl("holidays <- tryCatch(shared$holiday_overrides_db()", asis, fixed = TRUE))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

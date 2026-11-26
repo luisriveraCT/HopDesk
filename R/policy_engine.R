@@ -136,6 +136,19 @@ get_holidays <- function(country = "MX", years = NULL, overrides = NULL) {
   result
 }
 
+# The holidays_cache compose_policies() takes: country code -> holidays,
+# the staff's manual overrides (holiday_overrides.rds) applied. One entry per
+# country the policies name (params$country). `overrides` is that table, never
+# the cache itself (T116: Pasivos used to pass the table as the cache, and a
+# country missing from the cache is looked up WITHOUT the overrides).
+festivos_cache <- function(politicas, overrides = NULL, years = NULL) {
+  paises <- unique(toupper(trimws(unlist(lapply(politicas, function(p) p$params$country %||% NULL)))))
+  paises <- paises[!is.na(paises) & nzchar(paises)]
+  stats::setNames(lapply(paises, function(ctry)
+    tryCatch(get_holidays(ctry, years = years, overrides = overrides), error = function(e) as.Date(character()))),
+    paises)
+}
+
 # ── Rolling helpers ─────────────────────────────────────────────────────────────
 
 # Roll d in direction until it lands on an allowed weekday not in holidays.

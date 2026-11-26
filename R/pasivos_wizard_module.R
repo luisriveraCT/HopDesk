@@ -408,7 +408,12 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
   }
 
   # Generate provisions
-  holidays <- tryCatch(shared$holiday_overrides_db(), error = function(e) list())
+  # T116: the cache is country -> holidays (festivos_cache()), built from the
+  # same policies passed below and the staff's overrides -- never the
+  # overrides table itself.
+  politicas_pasivo <- list()
+  holidays <- festivos_cache(politicas_pasivo,
+                             tryCatch(shared$holiday_overrides_db(), error = function(e) NULL))
 
   gen_err <- character(0)
   generated <- tryCatch(
@@ -417,7 +422,7 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
       window_start           = hoy_cliente(shared),   # T75b: the client's day
       client_id              = tryCatch(shared$effective_client_id(), error = function(e) NULL),
       window_end             = NULL,
-      policies_for_liability = list(),
+      policies_for_liability = politicas_pasivo,
       holidays_cache         = holidays
     ),
     error = function(e) {
