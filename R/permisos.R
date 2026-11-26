@@ -81,7 +81,10 @@ PERMISOS <- list(
   can_jump_clients               = list(grupo = "interno", interno = TRUE),
   can_view_client_audit_logs     = list(grupo = "interno", interno = TRUE),
   can_view_staff_audit_log       = list(grupo = "interno", interno = TRUE),
-  can_manage_tables              = list(grupo = "interno", interno = TRUE, pendiente = "T")
+  can_manage_tables              = list(grupo = "interno", interno = TRUE, pendiente = "T"),
+  # T116 F2: capture the official non-working days (hd-admin/mercado/, one
+  # calendar for every client). Read by R/settings/settings_mercado.R.
+  can_capture_market_calendar    = list(grupo = "interno", interno = TRUE)
 )
 
 PERMISOS_GRUPOS <- c("grupo", "tesoreria", "requisiciones", "panorama", "interno")

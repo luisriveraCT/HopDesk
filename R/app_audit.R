@@ -422,6 +422,10 @@ format_session_duration <- function(secs) {
 # layer's own traces: S. "<accion>_fallido" takes its action's class.
 ACCIONES_STAFF <- list(
   client_access           = list(clase = "S"),
+  # T116 F2: the staff's market calendar capture (hd-admin/mercado/), never a client's.
+  mercado_inhabil_agregar = list(clase = "S"),
+  mercado_anio_confirmar  = list(clase = "S"),
+  mercado_anular          = list(clase = "S"),
   ver_como                = list(clase = "S"),
   ctx_load_fallido        = list(clase = "S"),
   hop_access_requested    = list(clase = "S"),

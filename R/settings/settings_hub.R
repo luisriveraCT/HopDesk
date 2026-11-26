@@ -12,13 +12,19 @@ show_settings_modal <- function(input, output, session, shared) {
   # Resolve tier before building the modal — must happen outside tagList/div
   usuario <- tryCatch(shared$usuario(), error = function(e) NULL)
 
-  sincro_btn <- if (puede(usuario, "can_manage_sync")) {
+  # Admin: each button only with its permission. T116 F2: «Calendario de
+  # mercado» is staff only (an internal key) -- NULL, so not in a client's DOM.
+  admin_btns <- Filter(Negate(is.null), list(
+    if (puede(usuario, "can_manage_sync"))
+      actionButton("stg_btn_sincro",
+        tagList(icon("rotate"), " Sincronización"),
+        class = "btn btn-sm btn-outline-secondary text-start w-100"),
+    mercado_boton_hub(usuario)))
+  sincro_btn <- if (length(admin_btns)) {
     tagList(
       tags$hr(class = "my-1"),
       tags$p(class = "text-muted small px-2 mb-1 text-uppercase fw-semibold", "Admin"),
-      actionButton("stg_btn_sincro",
-        tagList(icon("rotate"), " Sincronización"),
-        class = "btn btn-sm btn-outline-secondary text-start w-100")
+      admin_btns
     )
   } else NULL
 
@@ -95,6 +101,9 @@ show_settings_modal <- function(input, output, session, shared) {
 # settings_observers  (called once from app.R server)
 # =============================================================================
 settings_observers <- function(input, output, session, shared) {
+
+  # T116 F2: the staff's market calendar capture (R/settings/settings_mercado.R).
+  settings_mercado_observer(input, output, session, shared)
 
   # ── Intercompany ─────────────────────────────────────────────────────────────
 

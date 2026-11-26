@@ -361,7 +361,8 @@ rebase_por_id <- function(nuevo, base, fresco, id_col) {
 .HD_ADMIN_CID <- "hd-admin"
 .HD_ADMIN_SOLO_CRECEN <- c("client_registry.rds", "client_requests.rds", "hop_requests.rds",
                            "hop_grants.rds", "pending_invites.rds", "notifications.rds",
-                           "username_index.rds", "email_queue.rds")
+                           "username_index.rds", "email_queue.rds",
+                           "mercado/inhabiles.rds")   # T116 F2: voided, never removed
 
 .hd_admin_completar <- function(df, schema_fn) {
   if (is.null(df) || !is.data.frame(df)) return(schema_fn())
@@ -2888,8 +2889,10 @@ save_grupos <- function(df, client_id = NULL) {
   # convencion_dias (T115): the day-count convention a NEW financiero starts
   # on (PASIVOS_CONVENCIONES); NA = PASIVOS_CONVENCION_OMISION. Copied into
   # each liability at creation, never read live by a saved one.
+  # paises (T116 F2): the client's countries (MERCADO_PAISES, R/mercado.R);
+  # empty = the country of its base currency (mercado_paises_cliente()).
   list(group_name = "", logo_raw = NULL, logo_ext = "png", moneda_base = NA_character_,
-       tema = NA_character_, convencion_dias = NA_character_)
+       tema = NA_character_, convencion_dias = NA_character_, paises = character(0))
 }
 
 load_group_config <- function(client_id = NULL) {
@@ -2917,7 +2920,7 @@ load_group_config <- function(client_id = NULL) {
 # or logo both survive. The logo is one unit, raw bytes and extension
 # together: never one session's bytes with another's extension. Fields this
 # form does not know (a later stage's) are S3's.
-.GROUP_CONFIG_UNIDADES <- list("group_name", "moneda_base", "tema", "convencion_dias", c("logo_raw", "logo_ext"))
+.GROUP_CONFIG_UNIDADES <- list("group_name", "moneda_base", "tema", "convencion_dias", "paises", c("logo_raw", "logo_ext"))
 .group_config_rebase <- function(nuevo, base, fresco) {
   nuevo <- .group_config_completar(nuevo); base <- .group_config_completar(base)
   out   <- .group_config_completar(fresco)

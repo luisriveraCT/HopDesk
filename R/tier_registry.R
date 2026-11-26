@@ -36,7 +36,7 @@ TIER_REGISTRY <- list(
                    permisos = c("can_view_tiers", "can_manage_empresas", "can_manage_invites",
                                 "can_view_client_audit_logs", "can_view_payment_audit",
                                 "can_configure_erp", "can_manage_interco", "can_manage_sync",
-                                "can_manage_group_branding", "can_manage_tables",
+                                "can_manage_group_branding", "can_manage_tables", "can_capture_market_calendar",
                                 "can_view_requisiciones", "can_create_requisiciones",
                                 "can_edit_requisiciones", "can_trash_own_requisiciones",
                                 "can_trash_others_requisiciones", "can_edit_provisiones",

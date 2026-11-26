@@ -55,74 +55,98 @@
 }
 
 # ── Holiday presets ────────────────────────────────────────────────────────────
-# Returns a sorted Date vector of banking-calendar holidays.
+# The banking-calendar holidays of one country and year by rule, each with
+# its name's dictionary key (comun.mercado.inhabil.<x>; NA for FR, which is
+# never a client's country -- only policies use it). T116 F2.
 # Supported: "MX" (Mexico: the banks' calendar, CNBV), "US" (Federal Reserve),
-# "FR" (France)
-# Works for any year range, not just 2025–2027.
+# "EU" (the euro area's TARGET2 calendar), "FR" (France). Unknown: none.
+.festivos_regla <- function(country, y) {
+  y <- as.integer(y)
+  f <- function(...) {
+    x <- list(...)
+    x <- x[!vapply(x, is.null, logical(1))]
+    data.frame(fecha = as.Date(vapply(x, function(e) as.character(as.Date(e[[1]])), character(1))),
+               clave = vapply(x, function(e) e[[2]], character(1)), stringsAsFactors = FALSE)
+  }
+  k <- function(x) paste0("comun.mercado.inhabil.", x)
+  d <- function(m, dd) as.Date(sprintf("%d-%02d-%02d", y, m, dd))
+  switch(country,
+    MX = {
+      easter <- .easter_sunday(y)
+      f(list(d(1, 1),                     k("anio_nuevo")),
+        list(.nth_weekday(y, 2L, 1L, 1L),  k("constitucion")),   # 1er lunes feb
+        list(.nth_weekday(y, 3L, 3L, 1L),  k("juarez")),         # 3er lunes mar
+        list(easter - 3L,                  k("jueves_santo")),   # CNBV
+        list(easter - 2L,                  k("viernes_santo")),  # LFT + CNBV
+        list(d(5, 1),                      k("trabajo")),
+        list(d(9, 16),                     k("independencia")),
+        # 1 oct, transmisión del Poder Ejecutivo (LFT art. 74 VII): cada seis
+        # años desde 2024 (T116)
+        if (y >= 2024L && (y - 2024L) %% 6L == 0L) list(d(10, 1), k("transmision_ejecutivo")),
+        list(d(11, 2),                     k("muertos")),        # CNBV, T116
+        list(.nth_weekday(y, 11L, 3L, 1L), k("revolucion")),     # 3er lunes nov
+        list(d(12, 12),                    k("guadalupe")),      # CNBV, T116
+        list(d(12, 25),                    k("navidad")))
+    },
+    US = f(list(.us_observed(d(1, 1)),          k("anio_nuevo")),
+           list(.nth_weekday(y, 1L, 3L, 1L),    k("us_mlk")),          # 3rd Mon Jan
+           list(.nth_weekday(y, 2L, 3L, 1L),    k("us_presidentes")),  # 3rd Mon Feb
+           list(.nth_weekday(y, 5L, -1L, 1L),   k("us_memorial")),     # last Mon May
+           list(.us_observed(d(6, 19)),         k("us_juneteenth")),
+           list(.us_observed(d(7, 4)),          k("us_independencia")),
+           list(.nth_weekday(y, 9L, 1L, 1L),    k("us_trabajo")),      # 1st Mon Sep
+           list(.nth_weekday(y, 10L, 2L, 1L),   k("us_colon")),        # 2nd Mon Oct
+           list(.us_observed(d(11, 11)),        k("us_veteranos")),
+           list(.nth_weekday(y, 11L, 4L, 4L),   k("us_accion_gracias")), # 4th Thu Nov
+           list(.us_observed(d(12, 25)),        k("navidad"))),
+    # TARGET2 (the ECB's payment system): closed on these days only.
+    EU = {
+      easter <- .easter_sunday(y)
+      f(list(d(1, 1),        k("anio_nuevo")),
+        list(easter - 2L,    k("viernes_santo")),
+        list(easter + 1L,    k("lunes_pascua")),
+        list(d(5, 1),        k("trabajo")),
+        list(d(12, 25),      k("navidad")),
+        list(d(12, 26),      k("eu_26_dic")))
+    },
+    FR = {
+      easter <- .easter_sunday(y)
+      f(list(d(1, 1), NA_character_), list(easter + 1L, NA_character_), list(d(5, 1), NA_character_),
+        list(d(5, 8), NA_character_), list(easter + 39L, NA_character_), list(easter + 50L, NA_character_),
+        list(d(7, 14), NA_character_), list(d(8, 15), NA_character_), list(d(11, 1), NA_character_),
+        list(d(11, 11), NA_character_), list(d(12, 25), NA_character_))
+    },
+    data.frame(fecha = as.Date(character()), clave = character(), stringsAsFactors = FALSE))
+}
 
+# Returns a sorted Date vector of banking-calendar holidays.
+# Works for any year range, not just 2025–2027.
+#
+# T116 F2: for a year the HopDesk staff CONFIRMED as complete in the market
+# calendar capture (R/mercado.R, hd-admin/mercado/inhabiles.rds), the
+# official list replaces the rule's for that country and year. Read from
+# memory only (mercado_inhabiles_oficiales()); nothing here touches S3, and
+# without that file loaded -- tests, the job without access -- it is the rule.
 # overrides: optional data.frame with cols date (Date), country (chr), action ("add"|"remove")
+#            (the client's own adjustments; applied last, over both).
 get_holidays <- function(country = "MX", years = NULL, overrides = NULL) {
   if (is.null(years)) {
     cur <- as.integer(format(Sys.Date(), "%Y"))
     years <- (cur - 1L):(cur + 1L)
   }
   country <- toupper(trimws(country))
-  hols <- unlist(lapply(as.integer(years), function(y) {
-    switch(country,
-      MX = {
-        easter <- .easter_sunday(y)
-        c(
-          as.Date(sprintf("%d-01-01", y)),        # Año Nuevo
-          .nth_weekday(y,  2L,  1L, 1L),          # 1er lunes feb — Constitución
-          .nth_weekday(y,  3L,  3L, 1L),          # 3er lunes mar — Juárez
-          as.Date(sprintf("%d-05-01", y)),         # Día del Trabajo
-          easter - 3L,                             # Jueves Santo (CNBV)
-          easter - 2L,                             # Viernes Santo (LFT + CNBV)
-          as.Date(sprintf("%d-09-16", y)),         # Independencia
-          # 1 oct, transmisión del Poder Ejecutivo (LFT art. 74 VII): cada
-          # seis años desde 2024 (T116)
-          if (y >= 2024L && (y - 2024L) %% 6L == 0L) as.Date(sprintf("%d-10-01", y)),
-          as.Date(sprintf("%d-11-02", y)),         # Día de Muertos (CNBV, T116)
-          .nth_weekday(y, 11L,  3L, 1L),          # 3er lunes nov — Revolución
-          as.Date(sprintf("%d-12-12", y)),         # Virgen de Guadalupe (CNBV, T116)
-          as.Date(sprintf("%d-12-25", y))          # Navidad
-        )
-      },
-      US = {
-        c(
-          .us_observed(sprintf("%d-01-01", y)),    # New Year's Day
-          .nth_weekday(y,  1L,  3L, 1L),          # MLK Day  (3rd Mon Jan)
-          .nth_weekday(y,  2L,  3L, 1L),          # Presidents' Day (3rd Mon Feb)
-          .nth_weekday(y,  5L, -1L, 1L),          # Memorial Day (last Mon May)
-          .us_observed(sprintf("%d-06-19", y)),    # Juneteenth
-          .us_observed(sprintf("%d-07-04", y)),    # Independence Day
-          .nth_weekday(y,  9L,  1L, 1L),          # Labor Day (1st Mon Sep)
-          .nth_weekday(y, 10L,  2L, 1L),          # Columbus Day (2nd Mon Oct)
-          .us_observed(sprintf("%d-11-11", y)),    # Veterans Day
-          .nth_weekday(y, 11L,  4L, 4L),          # Thanksgiving (4th Thu Nov)
-          .us_observed(sprintf("%d-12-25", y))     # Christmas
-        )
-      },
-      FR = {
-        easter <- .easter_sunday(y)
-        c(
-          as.Date(sprintf("%d-01-01", y)),         # Nouvel An
-          easter + 1L,                             # Lundi de Pâques
-          as.Date(sprintf("%d-05-01", y)),         # Fête du Travail
-          as.Date(sprintf("%d-05-08", y)),         # Victoire 1945
-          easter + 39L,                            # Ascension
-          easter + 50L,                            # Lundi de Pentecôte
-          as.Date(sprintf("%d-07-14", y)),         # Fête Nationale
-          as.Date(sprintf("%d-08-15", y)),         # Assomption
-          as.Date(sprintf("%d-11-01", y)),         # Toussaint
-          as.Date(sprintf("%d-11-11", y)),         # Armistice
-          as.Date(sprintf("%d-12-25", y))          # Noël
-        )
-      },
-      as.Date(character())  # unknown country → empty
-    )
-  }))
+  years <- as.integer(years)
+  hols <- do.call(c, c(list(as.Date(character())),
+                       lapply(years, function(y) .festivos_regla(country, y)$fecha)))
   result <- sort(unique(as.Date(hols)))
+
+  if (exists("mercado_inhabiles_oficiales", mode = "function")) {
+    of <- mercado_inhabiles_oficiales(country, years)
+    if (length(of$anios)) {
+      anio <- as.integer(format(result, "%Y"))
+      result <- sort(unique(c(result[!anio %in% of$anios], of$fechas)))
+    }
+  }
 
   if (!is.null(overrides) && is.data.frame(overrides) && nrow(overrides) > 0) {
     ov <- overrides[toupper(trimws(overrides$country)) == country, , drop = FALSE]

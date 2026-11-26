@@ -2552,6 +2552,7 @@ server <- function(input, output, session) {
       message(sprintf("[LOAD]   partner_policies %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time(); holiday_overrides_db(tryCatch(load_holiday_overrides(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   holiday_overrides %.1fs", (proc.time() - t1)[["elapsed"]]))
+      mercado_inhabiles_refrescar()   # T116 F2: the staff's official calendar (global; once an hour per process)
       t1 <- proc.time(); notes_df(tryCatch(load_notes(client_id = cid_lo), error = function(e) NULL))
       message(sprintf("[LOAD]   notes            %.1fs", (proc.time() - t1)[["elapsed"]]))
       t1 <- proc.time(); tags_db(tryCatch(load_tags(client_id = cid_lo), error = function(e) NULL))
