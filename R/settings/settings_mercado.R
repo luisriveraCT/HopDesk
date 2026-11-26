@@ -100,7 +100,7 @@ settings_mercado_observer <- function(input, output, session, shared) {
   })
 
   observeEvent(input$mer_agregar, {
-    if (!puede_o_avisa(shared, "can_capture_market_calendar")) return()
+    if (!.mercado_puede(shared)) return()   # silent: a client never learns the permission's name
     p <- pais_sel(); f <- input$mer_fecha
     tryCatch({
       modificar_mercado_agregar_dia(p, f, input$mer_motivo, input$mer_fuente, por = usuario_actual(),
@@ -113,7 +113,7 @@ settings_mercado_observer <- function(input, output, session, shared) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$mer_anular, {
-    if (!puede_o_avisa(shared, "can_capture_market_calendar")) return()
+    if (!.mercado_puede(shared)) return()   # silent: a client never learns the permission's name
     marcadas <- filas()[filas()$id %in% t_mer$seleccion(), , drop = FALSE]
     ids <- marcadas$fila_id[!is.na(marcadas$fila_id)]
     if (!length(ids)) { showNotification(tr("tablas.ajustes.mercado.anular_nada"), type = "warning"); return() }
@@ -126,7 +126,7 @@ settings_mercado_observer <- function(input, output, session, shared) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$mer_confirmar, {
-    if (!puede_o_avisa(shared, "can_capture_market_calendar")) return()
+    if (!.mercado_puede(shared)) return()   # silent: a client never learns the permission's name
     p <- pais_sel(); a <- anio_sel()
     tryCatch({
       modificar_mercado_confirmar_anio(p, a, input$mer_fuente, por = usuario_actual(),
@@ -138,7 +138,7 @@ settings_mercado_observer <- function(input, output, session, shared) {
 
   # Undo a year's confirmation (voided, never deleted): the rule applies again.
   observeEvent(input$mer_desconfirmar, {
-    if (!puede_o_avisa(shared, "can_capture_market_calendar")) return()
+    if (!.mercado_puede(shared)) return()   # silent: a client never learns the permission's name
     p <- pais_sel(); a <- anio_sel()
     conf <- if (!is.na(p) && !is.na(a)) mercado_anio_confirmado(p, a) else NULL
     if (is.null(conf)) { showNotification(tr("tablas.ajustes.mercado.sin_confirmar"), type = "warning"); return() }

@@ -314,7 +314,10 @@ nivel_tabla_permitida <- function(tier, tabla) {
 # hd_registro, every permission exists.
 HD_ARCHIVOS_PERMISO <- list(
   "tiers_module.R"            = "can_view_tiers",
-  "audit_log_viewer_module.R" = "can_view_tiers")
+  "audit_log_viewer_module.R" = "can_view_tiers",
+  # T116 F2: the staff's market calendar capture (built in every session by
+  # settings_observers(); a client never receives its table, not even empty).
+  "settings_mercado.R"        = "can_capture_market_calendar")
 
 # nivel_tabla_permitida() for one session: `usuario` as usuario_sesion()
 # builds it (app.R) -- tier = the EFFECTIVE tier and permisos resolved for it.

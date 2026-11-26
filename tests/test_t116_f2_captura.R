@@ -10,6 +10,9 @@
 #   3  on the real observers (testServer, in-memory S3): a client sending the
 #      inputs by hand writes nothing and gets no panel; staff adds a day,
 #      confirms the year and voids it, each write with its T72 event
+#  4  nothing of it travels to a client's browser: no hdt-datos of the table
+#     (HD_ARCHIVOS_PERMISO), and a client pressing the buttons by hand gets
+#     no notification at all (never the permission's name)
 #
 # Run from project root:  Rscript tests/test_t116_f2_captura.R
 # =============================================================================
@@ -118,6 +121,45 @@ acciones <- c(unlist(lapply(ls(.audit_pending), function(k) .audit_pending[[k]]$
 ok("3.7 cada escritura dejó su evento T72 (agregar, confirmar, anular)",
    all(c("mercado_inhabil_agregar", "mercado_anio_confirmar", "mercado_anular") %in% acciones),
    paste("claves:", paste(log_claves, collapse = ", "), "| acciones:", paste(unique(acciones), collapse = ", ")))
+
+cat("== 4. Al navegador de un cliente no viaja nada de la captura ==\n")
+# What the session sends: hdt-* messages (rootScope's sendCustomMessage) and
+# notifications. The table gate is app.R's: nivel_tabla_permitida_usuario()
+# on the session's user (HD_ARCHIVOS_PERMISO).
+viaja <- function(u, clics = function(session) NULL) {
+  mensajes <- list(); avisos <- list()
+  assign("showNotification", function(ui, ...) { avisos[[length(avisos) + 1L]] <<- paste(as.character(ui), collapse = ""); invisible("id") },
+         envir = globalenv())
+  shared <- list(usuario = reactiveVal(u), current_user = function() u$user,
+                 home_client_id = function() "hd-admin", effective_client_id = function() "hd-admin")
+  q(testServer(function(input, output, session) {
+    rs <- session$rootScope()
+    unlockBinding("sendCustomMessage", rs)
+    rs$sendCustomMessage <- function(type, message) mensajes[[length(mensajes) + 1L]] <<- list(type = type, msg = message)
+    session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida_usuario(u, tabla)
+    settings_mercado_observer(input, output, session, shared)
+  }, { session$setInputs(mer_pais = "MX", mer_anio = 2027); session$flushReact(); clics(session) }))
+  list(datos = Filter(function(m) identical(m$type, "hdt-datos") && identical(m$msg$tabla, "mercado_inhabiles"), mensajes),
+       todo = paste(vapply(mensajes, function(m) paste(utils::capture.output(utils::str(m)), collapse = ""), ""), collapse = ""),
+       avisos = unlist(avisos))
+}
+for (t in clientes) {
+  v <- viaja(usuario_de(t, todos = TRUE))
+  ok(sprintf("4.1 %s con todo: ningún mensaje de la tabla mercado_inhabiles", t),
+     !length(v$datos) && !grepl("mercado_inhabiles|solo_oficial|solo_regla", v$todo))
+}
+vs <- viaja(usuario_de("hopdesk"))
+ok("4.2 staff sí la recibe (la puerta no la apaga de más)", length(vs$datos) >= 1L)
+ok("4.3 la puerta de la tabla: settings_mercado.R pide can_capture_market_calendar",
+   identical(HD_ARCHIVOS_PERMISO[["settings_mercado.R"]], K) && identical(hd_registro$mercado_inhabiles$archivo, "settings_mercado.R"))
+s3_memoria_reset()
+vc <- viaja(usuario_de("dev", todos = TRUE), function(session) {
+  session$setInputs(mer_fecha = as.Date("2027-11-02"), mer_motivo = "x")
+  session$setInputs(mer_agregar = 1); session$setInputs(mer_anular = 1)
+  session$setInputs(mer_confirmar = 1); session$setInputs(mer_desconfirmar = 1)
+})
+ok("4.4 un cliente que manda los botones a mano: ninguna notificación (ni el nombre del permiso)",
+   !length(vc$avisos) && !length(grep("mercado", ls(.mem))), paste(vc$avisos, collapse = " | "))
 
 mercado_inhabiles_poner(NULL)
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
