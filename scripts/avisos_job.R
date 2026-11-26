@@ -41,14 +41,15 @@ AVISOS_JOB_ARCHIVOS <- c(
   "R/pasivos_persistence.R", "R/bancos_persistence.R", "R/cashflow_export_module.R", "R/fx_banxico.R",
   "R/fx_tipos.R", "R/email_service.R", "R/avisos.R", "R/agenda_filas.R", "R/panorama_datos.R", "R/ui_components.R",
   "R/avisos_umbrales.R", "R/avisos_correos.R", "R/avisos_datos.R", "R/avisos_logros.R", "R/avisos_archivo.R",
-  "R/avisos_correo_vigia.R")
+  "R/avisos_correo_vigia.R", "R/policy_engine.R", "R/mercado.R", "R/avisos_inhabiles.R")   # T116 F2
 
 # The only things the log may count.
 JOB_EVENTOS <- c(
   "clientes", "clientes_ok", "omitido_lectura", "omitido_sin_sap", "omitido_sap_viejo",
   "omitido_calculo", "omitido_sin_lunes", "omitido_destinatarios", "error_cliente",
   "destinatarios", "enviado", "fallido", "ya_enviado", "prueba_html", "alertas_umbral",
-  "archivados", "sin_llave_nueva", "moneda_base_omision", "historial_fallido", "ya_corrido")
+  "archivados", "sin_llave_nueva", "moneda_base_omision", "historial_fallido", "ya_corrido",
+  "avisos_inhabiles", "inhabiles_regla_calculada")   # T116 F2
 
 .job <- new.env(parent = emptyenv())
 job_reiniciar <- function() .job$cuenta <- stats::setNames(integer(length(JOB_EVENTOS)), JOB_EVENTOS)
@@ -184,6 +185,7 @@ job_tipos <- function(monedas, base)
   avisos_tipos(monedas, base, tryCatch(fx_fuentes_hoy(), error = function(e) NULL))
 
 job_lunes <- function(cid, hoy, ahora, prueba, url) {
+  inhabiles_job(cid, hoy, job_contar)   # T116 F2: before anything that may skip the client
   if (job_ya_salio(cid, "lunes", hoy)) return(job_contar("ya_corrido"))
   x <- avisos_cliente_datos(cid, ahora)
   if (!x$ok) return(job_contar(x$motivo))
@@ -210,6 +212,7 @@ job_lunes <- function(cid, hoy, ahora, prueba, url) {
 }
 
 job_viernes <- function(cid, hoy, ahora, prueba, url) {
+  inhabiles_job(cid, hoy, job_contar)   # T116 F2
   if (job_ya_salio(cid, "viernes", hoy)) return(job_contar("ya_corrido"))
   x <- avisos_cliente_datos(cid, ahora)
   if (!x$ok) return(job_contar(x$motivo))
