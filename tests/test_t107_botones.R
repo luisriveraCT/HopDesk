@@ -5,7 +5,7 @@
 # (www/hd_botones.js; hd_boton(), hd_espera_attr(), hd_boton_listo() and
 # HD_BOTONES_SIN_ESPERA in R/ui_components.R).
 #   J. the JS, in node with a fake page: held in the click's own frame
-#      (pressed, aria-busy, disabled), released on the idle that follows the
+#      (pressed, inert, aria-busy; never .disabled), released on the idle after the
 #      server's busy -- to NEUTRAL; a check or a cross only when the server
 #      says so (hd-boton message, or an error notification); the 60 s cap;
 #      "servidor" and "no"; closing buttons never held; a link; a double click.
@@ -53,7 +53,7 @@ correr_node <- function(lineas) {
     "    if (attrs && attrs.id) P.porId[attrs.id] = e;",
     "    return e; }",
     "  P.el = el;",
-    "  var doc = { body: {}, addEventListener: function (t, f) { if (t === 'click') P.clic = f; },",
+    "  var doc = { body: {}, addEventListener: function (t, f, cap) { if (t === 'click') { if (cap) P.clicCaptura = f; else P.clic = f; } },",
     "    getElementById: function (id) { return P.porId[id] || null; } };",
     "  var $ = function () { return { on: function (ev, f) { P.on[ev] = f; } }; };",
     "  var sb = { window: {}, document: doc, console: { error: function () {} }, JSON: JSON,",
@@ -67,11 +67,22 @@ correr_node <- function(lineas) {
     "  vm.runInNewContext(CODIGO, sb);",
     "  P.B = sb.window.hdBotones;",
     "  P.avanzar = function (ms) { P.ahora += ms; P.timers.forEach(function (t) { if (!t.hecho && t.en <= P.ahora) { t.hecho = true; t.f(); } }); };",
-    "  P.clicar = function (e) { P.clic({ target: e }); };",
+    # a click as the browser runs it: document capture, then the target (Shiny's
+    # binding listens on the button: counted in e.llegaron), then document bubble.
+    # A disabled <button> gets no click at all.
+    "  P.clicar = function (e) {",
+    "    if (e.disabled) return;",
+    "    var parado = false, ev = { target: e, preventDefault: function () {},",
+    "      stopPropagation: function () { parado = true; }, stopImmediatePropagation: function () { parado = true; } };",
+    "    if (P.clicCaptura) P.clicCaptura(ev);",
+    "    if (parado) return;",
+    "    for (var x = e; x; x = x.parentElement) x.llegaron = (x.llegaron || 0) + 1;",
+    "    P.clic(ev); };",
     "  P.busy = function () { P.on['shiny:busy'](); }; P.idle = function () { P.on['shiny:idle'](); };",
     "  P.errorAviso = function () { P.mo([{ addedNodes: [{ classList: { contains: function (c) { return c === 'shiny-notification-error'; } } }] }]); };",
     "  P.estado = function (e) { return { ocupado: e.cls.has('hd-btn-ocupado'), aria: e.getAttribute('aria-busy'), disabled: !!e.disabled,",
-    "    ok: e.cls.has('hd-btn-ok'), error: e.cls.has('hd-btn-error'), inerte: e.cls.has('hd-btn-inerte') }; };",
+    "    ok: e.cls.has('hd-btn-ok'), error: e.cls.has('hd-btn-error'), inerte: e.cls.has('hd-btn-inerte'),",
+    "    aria_dis: e.getAttribute('aria-disabled'), llegaron: e.llegaron || 0 }; };",
     "  return P; }",
     lineas), js)
   jsonlite::fromJSON(paste(system2(node, js, stdout = TRUE), collapse = ""), simplifyVector = FALSE)
@@ -116,13 +127,24 @@ if (!nzchar(node)) {
     # 9. a disabled button stays disabled after; a link takes no pointer events; a double click holds once
     "P = pagina(); var dis = P.el('BUTTON', 'btn action-button'); dis.disabled = true; P.clicar(dis); r.ya_deshabilitado = P.estado(dis);",
     "var a = P.el('A', 'action-button'); P.clicar(a); r.enlace = P.estado(a); P.busy(); P.idle(); r.enlace_suelto = P.estado(a);",
-    "var dd = P.el('BUTTON', 'btn action-button'); P.clicar(dd); P.clicar(dd); r.doble = P.B.pendientes.length;",
+    "var dd = P.el('BUTTON', 'btn action-button'); P.clicar(dd); P.clicar(dd); r.doble = P.B.pendientes.length; r.doble_llegaron = dd.llegaron;",
+    # 11. the server disables it while it waits (shinyjs::toggleState, ok = FALSE):
+    # still disabled after the idle; and one it enables while it waits stays enabled
+    "P = pagina(); var sv = P.el('BUTTON', 'btn action-button'); P.clicar(sv); P.busy(); sv.disabled = true; P.idle(); r.servidor_deshabilita = P.estado(sv);",
+    "P = pagina(); var sv2 = P.el('BUTTON', 'btn action-button', { id: 'sv2' }); P.busy(); P.clicar(sv2); sv2.disabled = true; P.handlers['hd-boton']({ id: 'sv2', ok: true }); r.servidor_deshabilita_listo = P.estado(sv2);",
+    "P = pagina(); var sv3 = P.el('BUTTON', 'btn action-button'); P.clicar(sv3); sv3.disabled = true; P.avanzar(1600); r.sin_espera_deshabilitado = P.estado(sv3);",
+    # 12. aria-disabled that was there before is put back; one held is never .disabled
+    "P = pagina(); var ar = P.el('BUTTON', 'btn action-button', { 'aria-disabled': 'false' }); P.clicar(ar); r.aria_retenido = P.estado(ar); P.busy(); P.idle(); r.aria_suelto = P.estado(ar);",
     # 10. a tags$button of our own with data-hd-espera="auto"
     "var pb = P.el('BUTTON', 'pan-boton', { 'data-hd-espera': 'auto' }); P.clicar(pb); r.propio = P.estado(pb);",
     "console.log(JSON.stringify(r));"))
-  e <- function(x, ocupado, disabled = ocupado, ok = FALSE, error = FALSE)
-    identical(x$ocupado, ocupado) && identical(x$disabled, disabled) && identical(x$ok, ok) && identical(x$error, error)
-  ok("J1 the click itself holds the button: pressed, aria-busy, disabled",
+  # held = pressed + inert (no pointer events) + aria-disabled; .disabled is
+  # never the JS's (T107a): it stays whatever it was unless the test says so
+  e <- function(x, ocupado, disabled = FALSE, ok = FALSE, error = FALSE)
+    identical(x$ocupado, ocupado) && identical(x$inerte, ocupado) &&
+      identical(identical(x$aria_dis, "true"), ocupado) &&
+      identical(x$disabled, disabled) && identical(x$ok, ok) && identical(x$error, error)
+  ok("J1 the click itself holds the button: pressed, inert, aria-busy and aria-disabled (never .disabled)",
      e(r$al_clic, TRUE) && identical(r$al_clic$aria, "true"))
   ok("J2 it stays held while the server works, and the idle releases it to NEUTRAL (no check by inference)",
      e(r$trabajando, TRUE) && e(r$al_idle, FALSE) && is.null(r$al_idle$aria))
@@ -146,8 +168,16 @@ if (!nzchar(node)) {
   ok("J12 a disabled button is left alone; a link is made inert (no 'disabled' on an <a>) and released",
      e(r$ya_deshabilitado, FALSE, disabled = TRUE) && isTRUE(r$enlace$ocupado) && isTRUE(r$enlace$inerte) &&
        !isTRUE(r$enlace_suelto$ocupado) && !isTRUE(r$enlace_suelto$inerte))
-  ok("J13 a double click holds it once (the second click finds it disabled)", identical(r$doble, 1L))
+  ok("J13 a double click holds it once, and the second click never reaches the button (stopped in the capture phase)",
+     identical(r$doble, 1L) && identical(r$doble_llegaron, 1L))
   ok("J14 a tags$button of our own with data-hd-espera is held too", e(r$propio, TRUE))
+  ok("J15 the server disables it while it waits (toggleState, ok = FALSE): still disabled after the idle",
+     e(r$servidor_deshabilita, FALSE, disabled = TRUE))
+  ok("J16 the same when released by hd_boton_listo or by the 1.5 s without busy",
+     e(r$servidor_deshabilita_listo, FALSE, disabled = TRUE, ok = TRUE) && e(r$sin_espera_deshabilitado, FALSE, disabled = TRUE))
+  ok("J17 an aria-disabled set before the click is put back on release",
+     isTRUE(r$aria_retenido$ocupado) && identical(r$aria_retenido$aria_dis, "true") &&
+       identical(r$aria_suelto$aria_dis, "false") && !isTRUE(r$aria_suelto$ocupado))
 }
 
 # ── G. the guardian ───────────────────────────────────────────────────────────

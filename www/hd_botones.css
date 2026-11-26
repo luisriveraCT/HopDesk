@@ -16,7 +16,7 @@
   cursor: progress !important;
   transform: translateY(1px);
   box-shadow: inset 0 2px 4px var(--hd-borde-fuerte) !important;
-  opacity: 1 !important;           /* disabled must not read as "not allowed" here */
+  opacity: 1 !important;           /* a held button must not read as "not allowed" */
 }
 .hd-btn-ocupado > *, .hd-btn-ok > *, .hd-btn-error > * { visibility: hidden; }
 .hd-btn-ocupado::after {
@@ -33,7 +33,8 @@
   .hd-btn-ocupado::after { animation: none; border-right-color: var(--hd-btn-tinta); width: .5em; height: .5em; margin: -.25em 0 0 -.25em; }
 }
 
-/* a link that works: no second click */
+/* a held button or link: no second click (the JS also stops it in the
+   capture phase, for the keyboard; it never sets .disabled, the server's) */
 .hd-btn-inerte { pointer-events: none; }
 
 /* the server's word: a check or a cross, briefly, in the label's place */

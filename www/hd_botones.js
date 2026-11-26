@@ -1,9 +1,17 @@
 /* hd_botones.js (T107) -- every button answers the instant it is clicked.
  *
  * Luis: "la app sí lo registró". On the click, in the same frame, the button
- * shows it is working (pressed, a small spinner, disabled so a second click
+ * shows it is working (pressed, a small spinner, inert so a second click
  * cannot send it twice). It goes back to normal when the server has finished
  * answering (the first shiny:idle after the server started on it).
+ *
+ * The JS never touches .disabled (the Coordinador, T107a): that belongs to
+ * the server (shinyjs::toggleState, renderUI, update*). Writing it back on
+ * release would undo a "disabled" the server set while the button waited --
+ * e.g. tiers_module.R toggleState("btn_confirm_limit_change", ok) -- and let
+ * the user confirm what the server did not allow. So a held button is only
+ * inert: a class (pointer-events: none), aria-disabled, and a capture-phase
+ * listener that stops a second click (or Enter / Space) before Shiny sees it.
  *
  * Never a success mark by inference (the Coordinador, T107): an observer
  * that stops in a req() or fails without a word says nothing, and a check
@@ -64,11 +72,10 @@
          come for it, so the click counts as the start of that busy stretch
          (the first idle releases it -- never later than the real end) */
       el.__hdEst = { modo: modo, clicAt: ahora, busyAt: B.shinyOcupado ? ahora : 0, error: false,
-                     estabaDeshabilitado: !!el.disabled, tope: null, sinEspera: null };
-      el.classList.add('hd-btn-ocupado');
+                     ariaAntes: el.getAttribute('aria-disabled'), tope: null, sinEspera: null };
+      el.classList.add('hd-btn-ocupado', 'hd-btn-inerte');   /* inert: no pointer events */
       el.setAttribute('aria-busy', 'true');
-      if ('disabled' in el && el.tagName !== 'A') el.disabled = true;
-      else el.classList.add('hd-btn-inerte');            /* a link: no pointer events */
+      el.setAttribute('aria-disabled', 'true');
       el.__hdEst.tope = setTimeout(function () { B.soltar(el, null); }, B.TOPE);
       if (modo === 'auto')
         el.__hdEst.sinEspera = setTimeout(function () {
@@ -88,7 +95,12 @@
       B.pendientes = B.pendientes.filter(function (x) { return x !== el; });
       el.classList.remove('hd-btn-ocupado', 'hd-btn-inerte');
       el.removeAttribute('aria-busy');
-      if ('disabled' in el && el.tagName !== 'A') el.disabled = est.estabaDeshabilitado;
+      /* aria-disabled back to what it was, only if it is still ours; .disabled
+         is never touched (whatever the server set while it waited stays) */
+      if (el.getAttribute('aria-disabled') === 'true') {
+        if (est.ariaAntes === null) el.removeAttribute('aria-disabled');
+        else el.setAttribute('aria-disabled', est.ariaAntes);
+      }
       if (est.error && !estado) estado = 'error';
       if (estado === 'ok' || estado === 'error') {
         var c = 'hd-btn-' + estado;
@@ -97,6 +109,15 @@
       }
     }
   };
+
+  /* a click on a button that is held: stopped in the capture phase, before
+     it reaches the button (Shiny's binding listens on the button itself), so
+     the server never gets it twice. Enter / Space on a focused button fire a
+     click too, so the keyboard is covered. */
+  document.addEventListener('click', function (e) {
+    var el = B.objetivo(e.target);
+    if (el && el.__hdEst) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
 
   /* the click: bubble phase, so Shiny's own binding already took it */
   document.addEventListener('click', function (e) {
