@@ -109,5 +109,24 @@ ok("7.4 la vista previa de una política arma su caché con festivos_cache() y l
      grepl("tryCatch(shared$holiday_overrides_db(), error = function(e) NULL))", pol_src, fixed = TRUE) &&
      !grepl("get_holidays(ctry), error", pol_src, fixed = TRUE))
 
+cat("== 8. Los años de la caché salen de las facturas ==\n")
+calc8 <- function(venc, pols = "pol-1", catalogo = cat_df) {
+  f <- tibble::tibble(Empresa = "NTS", Moneda = "MXN", Documento = paste0("D", seq_along(venc)), Parte = "PROVEEDOR FICTICIO",
+                      FechaVenc_Original = as.Date(venc), fecha_factura = as.Date(venc) - 30)
+  p <- tibble::tibble(parte = "PROVEEDOR FICTICIO", policy_id = pols, policy_order = seq_along(pols), ledger = "AP", is_interco = FALSE)
+  r <- compute_policy_moves(f, p, catalogo, ledger = "AP", applied_by = "auto")
+  r$FechaVenc_Politica[match(f$Documento, r$Documento)]
+}
+ok("8.1 una factura que vence el lunes 1 may 2028 se recorre al 2 (el año no es el actual ±1)",
+   identical(calc8("2028-05-01"), D("2028-05-02")))
+cat_off <- dplyr::bind_rows(cat_df, tibble::tibble(id = "pol-0", type = "offset_days",
+  params = list(list(n = 1L, unit = "naturales")), roll_direction = "forward"))
+ok("8.2 un recorrido que cruza el año: vence 31 dic 2029 +1 día = 1 ene 2030 (festivo) -> 2 ene",
+   identical(calc8("2029-12-31", c("pol-0", "pol-1"), cat_off), D("2030-01-02")))
+ok("8.3 fechas mal capturadas (1900, 9999, NA) no rompen nada ni inflan la caché",
+   identical(.festivos_anios(D("1900-05-01", "9999-12-31", NA, "2028-05-01")), 2027:2029) &&
+     is.null(.festivos_anios(D("1900-05-01", NA))) &&
+     identical(calc8(c("1900-05-01", "9999-12-31", "2028-05-01"))[3], D("2028-05-02")))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

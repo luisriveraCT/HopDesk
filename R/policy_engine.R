@@ -136,6 +136,19 @@ get_holidays <- function(country = "MX", years = NULL, overrides = NULL) {
   result
 }
 
+# The years a holidays cache must cover for these dates: from the first to
+# the last, one more on each side (a roll can cross into the next or the
+# previous year). NA dates are skipped; a date outside .FESTIVOS_ANIOS_TOPE
+# (a typo like 1900 or 9999) is skipped too, never a cache of 8000 years.
+# NULL when no date is usable: get_holidays()' own default then (T116).
+.FESTIVOS_ANIOS_TOPE <- c(2000L, 2100L)
+.festivos_anios <- function(fechas) {
+  y <- suppressWarnings(as.integer(format(as.Date(fechas), "%Y")))
+  y <- y[!is.na(y) & y >= .FESTIVOS_ANIOS_TOPE[1] & y <= .FESTIVOS_ANIOS_TOPE[2]]
+  if (!length(y)) return(NULL)
+  seq(min(y) - 1L, max(y) + 1L)
+}
+
 # The holidays_cache compose_policies() takes: country code -> holidays,
 # the staff's manual overrides (holiday_overrides.rds) applied. One entry per
 # country the policies name (params$country). `overrides` is that table, never
@@ -495,20 +508,15 @@ compute_policy_moves <- function(invoices_df,
     policy_catalog_df$id
   )
 
-  # Pre-populate holidays_cache for all countries referenced in policies
-  needed_countries <- unique(unlist(lapply(pol_lookup, function(p) {
-    p$params$country %||% NULL
-  })))
-  for (ctry in needed_countries) {
-    if (nzchar(ctry) && !ctry %in% names(holidays_cache)) {
-      holidays_cache[[ctry]] <- tryCatch(
-        get_holidays(ctry, overrides = overrides_df),
-        error = function(e) as.Date(character())
-      )
-    }
-  }
-
   invoices_df <- .politica_normalizar_facturas(invoices_df, ledger)
+
+  # Pre-populate holidays_cache for all countries referenced in policies, for
+  # the years of these invoices' due dates (T116: it used to be this year +-1
+  # whatever the dates, so a 2028 due date skipped no holiday at all).
+  calculada <- festivos_cache(pol_lookup, overrides_df,
+                              years = .festivos_anios(.politica_fecha(invoices_df$FechaVenc_Original)))
+  for (ctry in setdiff(names(calculada), names(holidays_cache)))
+    holidays_cache[[ctry]] <- calculada[[ctry]]
 
   # Join invoices → partner_policies on Parte (case-insensitive + trim)
   inv_keyed <- invoices_df |>
