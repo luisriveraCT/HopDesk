@@ -277,14 +277,9 @@ sin_declarar <- function(f) {
   malos
 }
 sin <- unlist(lapply(archivos, sin_declarar))
-# the integrator's lines go in their own commit (T107b, commit 2): until then
-PENDIENTE_INTEGRADOR <- c("app.R" = 1L, "R/pagar_hoy_module.R" = 2L, "R/tiers_module.R" = 4L)
-n_sin <- table(sub(":.*$", "", sin))
-de_mas <- names(n_sin)[!names(n_sin) %in% names(PENDIENTE_INTEGRADOR) |
-                         as.integer(n_sin) > PENDIENTE_INTEGRADOR[names(n_sin)]]
 ok(sprintf("G7 every tags$button that sets an input says how it waits (a named `data-hd-espera`)%s",
-           if (length(de_mas)) paste0(" -- MISSING in: ", paste(sin[sub(":.*$", "", sin) %in% de_mas], collapse = ", ")) else ""),
-   !length(de_mas))
+           if (length(sin)) paste0(" -- MISSING in: ", paste(sin, collapse = ", ")) else ""),
+   !length(sin))
 # the attribute really is an attribute: rendered, not a child
 b1 <- htmltools::tags$button(`data-hd-espera` = "no", type = "button", "x")
 ok("G7b the named attribute renders as data-hd-espera, and no helper wraps it in a list",

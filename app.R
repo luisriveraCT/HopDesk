@@ -3208,7 +3208,7 @@ server <- function(input, output, session) {
         is_snap  <- !is.null(tip_inf) && !tip_inf$is_live
         snap_cls <- if (active && is_snap) " snapshot" else ""
 
-        btn <- tags$button(
+        btn <- tags$button(`data-hd-espera` = "auto",
           id      = paste0("emp_btn_", initials),
           class   = paste0("btn btn-sm emp-toggle-btn",
                            if (active) " active" else "",

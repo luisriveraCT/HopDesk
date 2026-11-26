@@ -3543,14 +3543,14 @@ tiersServer <- function(id, shared) {
                     selectInput(dur_id, label = NULL, choices = .HOP_DURATIONS,
                                 selected = "86400", width = "100%")
                   ),
-                  tags$button(
+                  tags$button(`data-hd-espera` = "auto",
                     class   = "btn btn-sm btn-success",
                     onclick = sprintf(
                       "var d=document.getElementById('%s').value; Shiny.setInputValue('%s','%s:%s:'+d,{priority:'event'});",
                       dur_id, ns("hop_approve"), req_id, cid),
                     tagList(icon("check"), " Aprobar")
                   ),
-                  tags$button(
+                  tags$button(`data-hd-espera` = "auto",
                     class   = "btn btn-sm btn-outline-danger",
                     onclick = sprintf(
                       "Shiny.setInputValue('%s','%s:%s',{priority:'event'});",
@@ -4031,7 +4031,7 @@ tiersServer <- function(id, shared) {
                 width    = "100%"
               )
             ),
-            tags$button(
+            tags$button(`data-hd-espera` = "auto",
               class   = "btn btn-sm btn-outline-danger py-0 px-2",
               style   = "font-size:.74rem; line-height:1.8;",
               onclick = sprintf(
@@ -4241,7 +4241,7 @@ tiersServer <- function(id, shared) {
                   )
                 ),
                 if (!is_read)
-                  tags$button(
+                  tags$button(`data-hd-espera` = "auto",
                     class   = "btn btn-sm btn-link py-0 text-muted",
                     style   = "font-size:.75rem; white-space:nowrap;",
                     onclick = sprintf(

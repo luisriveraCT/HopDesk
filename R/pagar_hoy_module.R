@@ -2234,7 +2234,7 @@ pagarHoyServer <- function(id, shared) {
           # in this currency there is nothing to confirm with (the server
           # refuses it too, .ph_cuenta_confirmacion()).
           footer = tagList(modalButton("Cancelar"), if (!no_cta_ap)
-            tags$button(
+            tags$button(`data-hd-espera` = "auto",
               type    = "button",
               class   = "btn btn-success",
               onclick = sprintf(
@@ -2312,7 +2312,7 @@ pagarHoyServer <- function(id, shared) {
         showModal(modalDialog(
           title = paste0("Confirmar cobros \u2014 ", emp), size = "m", easyClose = TRUE,
           footer = tagList(modalButton("Cancelar"),
-            tags$button(
+            tags$button(`data-hd-espera` = "auto",
               type    = "button",
               class   = "btn btn-primary",
               onclick = sprintf(
