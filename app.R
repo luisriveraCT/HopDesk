@@ -66,6 +66,7 @@ source("R/panorama_datos.R")
 source("R/panorama_publicar_module.R")
 source("R/panorama_module.R")
 source("R/staging_browse_module.R")
+source("R/pasivos_engine.R")   # T109: the engine of the wizard, the Lista and the costs -- it relied on shinyapps' autoload, so arranque_app.R (T15) had none
 source("R/pasivos_table_pivot.R")
 source("R/pasivos_table_styles.R")
 source("R/pasivos_rates.R")
