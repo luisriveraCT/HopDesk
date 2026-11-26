@@ -114,7 +114,8 @@ ok("5.3 global.R carga las cuatro piezas después de adjuntos_s3.R",
      pos("R/adjuntos_registro.R") > pos("R/adjuntos_s3.R"))
 ui <- salida(adjuntos_pasivo_ui())
 ok("5.4 la sección nace cerrada (details sin open) y avisa al servidor que está cerrada",
-   grepl("<details", ui, fixed = TRUE) && !grepl("<details[^>]*[[:space:]]open([[:space:]=>]|$)", ui) && grepl("Shiny.setInputValue('pdoc_abierto', false", ui, fixed = TRUE))
+   grepl("<details", ui, fixed = TRUE) && !grepl("<details[^>]*[[:space:]]open([[:space:]=>]|$)", ui) && grepl("Shiny.setInputValue('pdoc_abierto', false", ui, fixed = TRUE) &&
+     !grepl("<script>[^<]*&amp;", ui))   # tags$script() escapes plain text: "&&" broke the script (Chrome, T106)
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()

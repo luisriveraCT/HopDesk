@@ -29,10 +29,15 @@ adjuntos_pasivo_ui <- function() {
       htmltools::tags$link(rel = "stylesheet", href = "requisiciones.css?v=5"),
       htmltools::tags$script(src = "requisiciones_paste.js?v=2")),
     htmltools::tags$details(class = "mt-3 pdoc",
-      ontoggle = "Shiny.setInputValue('pdoc_abierto', this.open, {priority: 'event'})",
+      # 'shown': Shiny rechecks what is visible on that event, never on a
+      # <details> opening (found in Chrome, T106: the body stayed suspended).
+      ontoggle = "Shiny.setInputValue('pdoc_abierto', this.open, {priority: 'event'}); if (this.open && window.jQuery) jQuery(this).trigger('shown');",
       htmltools::tags$summary(class = "fw-semibold", tr("comun.adjuntos.titulo")),
       shiny::uiOutput("pdoc_cuerpo")),
-    htmltools::tags$script("if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue('pdoc_abierto', false, {priority: 'event'});"))
+    # Only once Shiny is connected: called while the page is still loading,
+    # setInputValue would race Shiny's own start. HTML(): tags$script() escapes
+    # its text, and "&&" became "&amp;&amp;" -- a syntax error (found in Chrome, T106).
+    htmltools::tags$script(htmltools::HTML("if (window.Shiny && Shiny.shinyapp && Shiny.shinyapp.isConnected && Shiny.shinyapp.isConnected()) Shiny.setInputValue('pdoc_abierto', false, {priority: 'event'});")))
 }
 
 setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
@@ -100,6 +105,12 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
       shiny::uiOutput("pdoc_lista"),
       htmltools::div(style = "display:none;", shiny::downloadLink("pdoc_descargar", "")))
   })
+  # Born inside a closed <details>, these outputs would be suspended as hidden
+  # and never resumed (opening a <details> is not an event Shiny watches).
+  # Not suspending them reads nothing: closed, the body is NULL and docs()
+  # does not read S3 (abierto() is FALSE) -- the laziness is abierto()'s.
+  # (Set at the end, once the three outputs exist.)
+
   # The paste zone is bound once its elements are in the page.
   shiny::observe({
     shiny::req(abierto(), id_actual())
@@ -222,6 +233,7 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
     content = function(file) writeBin(descarga()$bytes, file),
     contentType = NULL)
   shiny::outputOptions(output, "pdoc_descargar", suspendWhenHidden = FALSE)
+  for (o in c("pdoc_cuerpo", "pdoc_lista", "pdoc_pegado")) shiny::outputOptions(output, o, suspendWhenHidden = FALSE)
 
   invisible(list(docs = docs, abierto = abierto))
 }
