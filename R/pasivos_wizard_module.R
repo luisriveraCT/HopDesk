@@ -495,8 +495,11 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
   # and "Pasivo guardado. N provisiones generadas." went on as saved. The
   # liability is saved; its provisions are not, and it says so (editing it
   # again generates them).
+  # T108: the session keeps what was written (the rebase, as a load returns
+  # it), so its own sync bump finds nothing new and does not recompute.
+  escritas <- NULL
   prov_ok <- tryCatch({
-    save_pasivos_provisions(new_provs, client_id = shared$effective_client_id(), base = existing)
+    escritas <- save_pasivos_provisions(new_provs, client_id = shared$effective_client_id(), base = existing)
     TRUE
   }, error = function(e) {
     message("[wizard] save_pasivos_provisions failed: ", conditionMessage(e))
@@ -521,7 +524,7 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
     return(list(ok = TRUE))
   }
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
-  shared$pasivos_provisions_db(new_provs)
+  shared$pasivos_provisions_db(if (is.data.frame(escritas)) escritas else new_provs)
   bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
   if (nrow(tras_fin)) .pasivos_fin_a_papelera(tras_fin, liab_row, user, shared)   # T70
 

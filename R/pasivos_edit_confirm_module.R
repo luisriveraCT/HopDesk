@@ -219,9 +219,11 @@ pasivos_conflictos_decisiones <- function(filas, opciones, ediciones) {
 
   # Regla 17: a failed save stop()s before the session's copy, the bump or the
   # audit (it used to be swallowed, and the panel said "saved" anyway).
-  save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base)
+  # T108: the session keeps what was written (as a load returns it), so its
+  # own sync bump finds nothing new and does not recompute.
+  escritas <- save_pasivos_provisions(provs, client_id = shared$effective_client_id(), base = provs_base)
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
-  shared$pasivos_provisions_db(provs)
+  shared$pasivos_provisions_db(if (is.data.frame(escritas)) escritas else provs)
   bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
 
   tryCatch(pasivos_log_audit(

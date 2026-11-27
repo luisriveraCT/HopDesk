@@ -36,6 +36,22 @@
   invisible(TRUE)
 }
 
+# T108: two values of a synced table are the same content when, as plain
+# data frames ordered by id (a stable order: rows that share an id keep
+# theirs), they are identical(). Anything else -- no id column, not a data
+# frame, a signal like usuarios_db's time -- compares with identical() as is.
+.sync_mismo_contenido <- function(a, b) {
+  canon <- function(x) {
+    x <- as.data.frame(x, stringsAsFactors = FALSE)
+    x <- x[order(as.character(x$id), method = "radix"), , drop = FALSE]
+    rownames(x) <- NULL
+    x
+  }
+  if (is.data.frame(a) && is.data.frame(b) && "id" %in% names(a) && "id" %in% names(b))
+    return(identical(canon(a), canon(b)))
+  identical(a, b)
+}
+
 register_synced <- function(name, s3_key, loader, per_session_loader = NULL) {
   .SYNC_REGISTRY[[name]] <<- list(s3_key = s3_key, loader = loader,
                                    per_session_loader = per_session_loader)
@@ -195,9 +211,17 @@ setup_sync_bus <- function(session, shared, poll_ms = 8000,
         new_value <- tryCatch(entry$per_session_loader(shared), error = function(e) NULL)
       }
 
+      # T108: the reload invalidates only when the content changed. A save
+      # leaves the saving session holding what it wrote, as a load returns
+      # it; its own bump used to reload that same table in another row
+      # order, which recomputed the whole app a second time. Another
+      # session's bump brings different content, so it always lands.
       if (!is.null(new_value)) {
         rv <- shared[[name]]
-        if (is.function(rv)) rv(new_value)
+        if (is.function(rv)) {
+          actual <- tryCatch(shiny::isolate(rv()), error = function(e) NULL)
+          if (!.sync_mismo_contenido(actual, new_value)) rv(new_value)
+        }
       }
       # Always advance local_ver even on load failure to avoid hammering S3
       # every tick when a key is persistently unreadable.

@@ -69,14 +69,16 @@
 )
 
 load_pasivos_liabilities <- function(client_id = NULL) {
-  df <- .pasivos_load_with_list_cols(
-    S3_KEYS$pasivos_liabilities,
-    .schema_pasivos_liability,
-    .PASIVOS_LIABILITY_LIST_COLS,
-    client_id = client_id
-  )
-  .pasivos_liabs_compat(df)
+  obj <- tryCatch(.s3_read_with(S3_KEYS$pasivos_liabilities, client_id = client_id), error = function(e) NULL)
+  pasivos_liabilities_como_se_leen(obj)
 }
+
+# T108: the liabilities exactly as a load returns them (the schema, the list
+# columns, the back-compat below). The loader, the strict read and what a
+# session keeps after saving all go through it: the saving session holds what
+# every other session reads, so the sync bus sees no change in its own save.
+pasivos_liabilities_como_se_leen <- function(obj)
+  .pasivos_liabs_compat(.pasivos_con_list_cols(obj, .schema_pasivos_liability, .PASIVOS_LIABILITY_LIST_COLS))
 
 # Backward-compat: pre-frecuencia_pago records load as NA → default to mensual
 .pasivos_liabs_compat <- function(df) {
@@ -85,49 +87,57 @@ load_pasivos_liabilities <- function(client_id = NULL) {
   df
 }
 
+# Returns (invisibly) the table written (T108: modificar_pasivos_liabilities()
+# keeps exactly that, without reading the companies again).
 save_pasivos_liabilities <- function(df, client_id = NULL) {
-  .s3_write(iniciales_vigentes(df, "pasivos_liabilities", client_id),   # never earlier initials (CM29)
-            S3_KEYS$pasivos_liabilities, client_id = client_id)
-  invisible(TRUE)
+  escrito <- iniciales_vigentes(df, "pasivos_liabilities", client_id)   # never earlier initials (CM29)
+  .s3_write(escrito, S3_KEYS$pasivos_liabilities, client_id = client_id)
+  invisible(escrito)
 }
 
 # Changes the liabilities on S3 as they are now (T22): a strict read (a read
 # that fails stop()s, never an empty table), `cambio(fresco)` applied to it,
-# and a write only if something changed. Returns the table now on S3. A
+# and a write only if something changed. Returns the table now on S3, as a
+# load returns it (T108: pasivos_liabilities_como_se_leen()). A
 # failed read or write stop()s. The Lista and the wizard used to write the
 # session's whole copy: a row another session had just changed went back to
 # what this session held.
 modificar_pasivos_liabilities <- function(client_id, cambio) {
   if (is.null(client_id) || !nzchar(client_id))
     stop("modificar_pasivos_liabilities: sin client_id", call. = FALSE)
-  fresco <- .pasivos_liabs_compat(.pasivos_con_list_cols(
-    .s3_leer_para_escribir(S3_KEYS$pasivos_liabilities, client_id),
-    .schema_pasivos_liability, .PASIVOS_LIABILITY_LIST_COLS))
+  fresco <- pasivos_liabilities_como_se_leen(.s3_leer_para_escribir(S3_KEYS$pasivos_liabilities, client_id))
   nuevo <- cambio(fresco)
   if (identical(nuevo, fresco)) return(invisible(fresco))
-  save_pasivos_liabilities(nuevo, client_id = client_id)
-  invisible(nuevo)
+  escrito <- save_pasivos_liabilities(nuevo, client_id = client_id)
+  if (!is.data.frame(escrito)) escrito <- nuevo   # a stand-in save (tests) that returns TRUE
+  invisible(pasivos_liabilities_como_se_leen(escrito))
 }
 
 # ── pasivos_provisions ────────────────────────────────────────────────────────
 
 load_pasivos_provisions <- function(client_id = NULL) {
-  .normalize(.s3_read_with(S3_KEYS$pasivos_provisions, client_id = client_id), .schema_pasivos_provision)
+  pasivos_provisions_como_se_leen(.s3_read_with(S3_KEYS$pasivos_provisions, client_id = client_id))
 }
+
+# T108: the provisions exactly as a load returns them (see
+# pasivos_liabilities_como_se_leen()).
+pasivos_provisions_como_se_leen <- function(obj) .normalize(obj, .schema_pasivos_provision)
 
 # `base`: the copy `df` was built from (often the session's). With it only
 # this action's provisions are applied on S3's table as it is now (CM09), so
 # a provision another session created, converted or paid meanwhile is kept.
+# With `base`, it returns the table written (that rebase, as a load returns
+# it): what the saving session keeps (T108). Without it, TRUE as always.
 save_pasivos_provisions <- function(df, client_id = NULL, permitir_reduccion = FALSE, base = NULL) {
   if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
     nuevo <- .normalize(df, .schema_pasivos_provision)
     base  <- .normalize(base, .schema_pasivos_provision)
     # CM29: never a company's earlier initials, translated after the rebase.
-    modificar_tabla(S3_KEYS$pasivos_provisions, client_id, .schema_pasivos_provision,
+    escrito <- modificar_tabla(S3_KEYS$pasivos_provisions, client_id, .schema_pasivos_provision,
                     function(fresco) iniciales_vigentes(rebase_por_id(nuevo, base, fresco, "id"),
                                                         "pasivos_provisions", client_id),
                     permitir_reduccion = permitir_reduccion)
-    return(invisible(TRUE))
+    return(invisible(pasivos_provisions_como_se_leen(escrito)))
   }
   df <- iniciales_vigentes(.normalize(df, .schema_pasivos_provision), "pasivos_provisions", client_id)   # CM29
   # The flag only when set: a normal save stays the exact call it always was.
