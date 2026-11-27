@@ -156,6 +156,34 @@ if (uuid_ok) {
      !any(m4$primary_source_id == "yahoo") && all(c("fed_funds", "estr", "cetes28") %in% m4$metric_id))
 } else cat(" (sin el paquete uuid: sección 4 omitida)\n")
 
+cat("== 6. Las migraciones dejan su entrada de sistema en el log ==\n")
+# The scanner (test_log_action_completeness_scan) trusts their callers to
+# log: this is the net -- remove the evento and it falls.
+L <- new.env(); L$x <- list()
+log_action <- function(user, module, action, description, target_id = NA_character_, s3_key = NA_character_,
+                       metadata = NULL, client_id = NULL, viewer_home_client_id = NULL) {
+  L$x[[length(L$x) + 1L]] <- list(user = user, module = module, action = action, description = description)
+  invisible(TRUE)
+}
+entradas <- function() vapply(L$x, function(e) paste(e$user, e$module, e$action, "|", e$description), "")
+s3_memoria_reset()
+q(save_forecasting_sources(fuentes_viejas()))
+q(save_forecasting_metrics(metricas_viejas(), client_id = CID))
+L$x <- list()
+q(forecasting_completar_fuentes())
+ok("6.1 completar_fuentes: una entrada sistema:forecasting sembrar_catalogo con su texto",
+   identical(entradas(), "sistema:forecasting forecasting sembrar_catalogo | Catálogo de fuentes: BCE y Fed de NY agregadas, Yahoo retirada"),
+   paste(entradas(), collapse = " / "))
+L$x <- list()
+q(forecasting_migrar_yahoo(CID))
+ok("6.2 migrar_yahoo: una entrada sistema:forecasting sembrar_catalogo con su texto",
+   identical(entradas(), "sistema:forecasting forecasting sembrar_catalogo | Catálogo de pronósticos: métricas de Yahoo pasan a Banxico o al BCE"),
+   paste(entradas(), collapse = " / "))
+L$x <- list()
+q(forecasting_completar_fuentes()); q(forecasting_migrar_yahoo(CID))
+ok("6.3 otra vez, sin nada que cambiar: ninguna entrada", !length(L$x))
+rm(log_action)
+
 cat("== 5. La guardiana ==\n")
 codigo <- function(f) { x <- readLines(f, warn = FALSE, encoding = "UTF-8"); x[!grepl("^\\s*#", x)] }
 archivos <- c("app.R", list.files("R", "\\.R$", full.names = TRUE, recursive = TRUE),

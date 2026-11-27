@@ -292,7 +292,7 @@ mercado_cache <- function(ahora = Sys.time()) {
 
 # One card row: what it is, its value (NA when not shown), date, source, and
 # whether it is fresh. `serie`: data.frame(fecha, valor) of that figure.
-.mercado_fila <- function(clave, etiqueta, tipo, serie, fuente, calendario, max_dias, hoy, cruzado = FALSE) {
+.mercado_cuadro_fila <- function(clave, etiqueta, tipo, serie, fuente, calendario, max_dias, hoy, cruzado = FALSE) {
   fila <- function(valor, fecha, reciente) data.frame(clave = clave, etiqueta = etiqueta, tipo = tipo, valor = valor,
                                                       fecha = as.Date(fecha), fuente = fuente, cruzado = cruzado,
                                                       reciente = reciente, stringsAsFactors = FALSE)
@@ -356,7 +356,7 @@ mercado_tipos_cliente <- function(cfg, cache, ahora = Sys.time()) {
   filas <- lapply(monedas, function(m) {
     par <- .mercado_par(m, base)
     s <- .mercado_serie_par(par[1], par[2], cache, base = base)
-    .mercado_fila(paste(par, collapse = "/"), paste(par, collapse = "/"), "tipo", s$serie, s$fuente,
+    .mercado_cuadro_fila(paste(par, collapse = "/"), paste(par, collapse = "/"), "tipo", s$serie, s$fuente,
                   .mercado_calendario_fuente(s$fuente), MERCADO_MAX_DIAS, hoy, cruzado = s$cruzado)
   })
   do.call(rbind, filas)
@@ -372,7 +372,7 @@ mercado_tasas_cliente <- function(cfg, cache, ahora = Sys.time()) {
     s <- if (is.null(t)) NULL else t[t$metric_id %in% id, , drop = FALSE]
     fuente <- if (!is.null(s) && nrow(s)) s$fuente[which.max(s$fecha)] else ""
     max_dias <- if (id %in% names(MERCADO_MAX_DIAS_TASA)) MERCADO_MAX_DIAS_TASA[[id]] else MERCADO_MAX_DIAS
-    .mercado_fila(id, tr(paste0("comun.mercado.tasa.", id)), "tasa",
+    .mercado_cuadro_fila(id, tr(paste0("comun.mercado.tasa.", id)), "tasa",
                   if (is.null(s)) NULL else s[, c("fecha", "valor"), drop = FALSE], fuente,
                   MERCADO_PAISES[[p]]$calendario, max_dias, hoy)
   })), recursive = FALSE)

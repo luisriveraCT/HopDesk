@@ -72,11 +72,12 @@ a <- acciones()
 ok("completar: PRIME added; metrics and subscriptions written as 2 sistema:forecasting events, no sin_evento",
    identical(nuevas, "prime") && identical(a, rep("sistema:forecasting forecasting sembrar_catalogo", 2L)))
 # save_forecasting_* write with .s3_write() directly: the entry carries the
-# table and its row counts (13 -> 14), not a difference by id (T72-B: a
+# table and its row counts (the seed minus PRIME -> +1; T116 F3 made the
+# seed 17), not a difference by id (T72-B: a
 # direct .s3_write has no table before it in hand).
-ok("2 completar: a fixed text, no client data; the table and its counts (13 -> 14) are in metadata (T72-D)",
+ok("2 completar: a fixed text, no client data; the table and its counts (n -> n + 1) are in metadata (T72-D)",
    all(vapply(L$x, `[[`, "", "description") == "Catálogo de pronósticos: se agregaron métricas nuevas de la siembra") &&
-     all(vapply(L$x, function(e) identical(e$metadata$filas_antes, 13L) && identical(e$metadata$filas_despues, 14L), TRUE)))
+     all(vapply(L$x, function(e) identical(e$metadata$filas_antes, nrow(m)) && identical(e$metadata$filas_despues, nrow(m) + 1L), TRUE)))
 cat("   texts of completar:\n"); for (e in L$x) cat("     ", e$client_id, "|", e$user, "|", e$description, "\n")
 n1 <- .mem_escrituras; L$x <- list()
 nuevas2 <- quieto(forecasting_completar_catalogo(CID))

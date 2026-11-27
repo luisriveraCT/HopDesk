@@ -259,6 +259,12 @@ cat("\n  Scanner verified against synthetic fixtures -- ", .pass, "passed,", .fa
     # is the additive seeding in R/forecasting_metric_registry.R, a system-side
     # write with no user action behind it (same shape as .interco_v2_migrar).
     "modificar_forecasting_metrics",
+    # modificar_forecasting_sources() (T116 F3, R/forecasting_persistence.R):
+    # the same fresh-read-then-write wrapper, for the deployment's sources
+    # table; its callers log (evento_sistema sembrar_catalogo):
+    # forecasting_completar_fuentes(), and test_t116_f3_yahoo section 6 falls
+    # if that event is ever removed.
+    "modificar_forecasting_sources",
     # save_pagar_hoy_with_retry() (found 2026-08-05, R/persistence.R) is a
     # generic retry wrapper around save_pagar_hoy() -- same shape as
     # .sync_staged above: called from multiple contexts (the AP and AR

@@ -266,6 +266,15 @@ ok("9.4 un hijo colgado: se mata al pasar el tope, «tiempo agotado», nada escr
    !isTRUE(job$is_alive()) && any(lineas_log == "mercado: refresco falló (tiempo agotado)") && .mem_escrituras == n &&
      is.null(.MERCADO_DATOS$job))
 srv$config(CONF)
+# 9.6 a child that LOOKS fine (a result) but failed: T74's case.
+falso <- function(r, err = character(), estado = 0L) list(get_result = function() r,
+  read_all_error_lines = function() err, get_exit_status = function() estado)
+bueno <- list(fix = NULL, divisas = NULL, bce = NULL, tasas = NULL, fallas = character())
+ok("9.6 un resultado con «Error» en el stderr del hijo, o con salida distinta de 0: se toma como falla (NULL)",
+   is.null(.mercado_resultado_hijo(falso(bueno, err = c("algo", "Error in f(): x")))) &&
+     is.null(.mercado_resultado_hijo(falso(bueno, estado = 1L))) &&
+     is.null(.mercado_resultado_hijo(falso("no es lista"))) &&
+     identical(.mercado_resultado_hijo(falso(bueno, err = "aviso sin importancia")), bueno))
 # 9.5 the child never touches S3 (statically: its function and what it loads write nothing).
 hijo_txt <- paste(deparse(.mercado_hijo), collapse = "\n")
 ok("9.5 el hijo solo baja: ni modificar_hd_admin, ni .s3_, ni aws.s3 en .mercado_hijo ni en .mercado_bajar_*",
