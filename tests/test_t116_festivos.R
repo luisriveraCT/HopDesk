@@ -86,7 +86,7 @@ asis <- paste(readLines(Sys.getenv("T116_ASISTENTE", "R/pasivos_wizard_module.R"
 motor <- paste(readLines("R/pasivos_engine.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 ok("6.4 el asistente de Pasivos arma la caché con festivos_cache() de las mismas políticas que pasa",
    grepl("policies_for_liability = pasivos_politicas_de(liab_row,", asis, fixed = TRUE) &&
-     grepl("structure(pols, festivos = festivos_cache(pols, overrides))", motor, fixed = TRUE) &&
+     grepl("structure(pols, festivos = festivos_cache(pols, overrides, years = ", motor, fixed = TRUE) &&
      !grepl("holidays <- tryCatch(shared$holiday_overrides_db()", asis, fixed = TRUE))
 
 cat("== 7. La ventana del día y la vista previa usan los ajustes manuales ==\n")
