@@ -78,6 +78,14 @@ ok("4.0 la corrida repetida no escribe nada (T80: el salto del job no escribe)",
 b <- avisos_de("cli-mx")
 ok("4.1 el lunes no lo duplica ni lo vuelve «nuevo» (contador 1, mismo id)",
    nrow(b) == 1L && identical(b$id, a$id) && identical(b$contador, 1L) && identical(b$actualizado, a$actualizado))
+# The race the job's own read cannot see (two runs that both read before
+# either wrote): avisos_agregar() rereads inside the write, and repetir =
+# FALSE keeps the clave single -- not counted again, not made "new".
+fila <- data.frame(pais = "MX", fecha = D("2027-11-02"), motivo = "Día de Muertos", stringsAsFactors = FALSE)
+q(avisos_agregar("cli-mx", inhabiles_aviso(fila), por = "sistema"))
+c2 <- avisos_de("cli-mx")
+ok("4.2 carrera: un segundo agregar del mismo aviso no lo duplica ni lo cuenta otra vez",
+   nrow(c2) == 1L && identical(c2$id, a$id) && identical(c2$contador, 1L) && identical(c2$actualizado, a$actualizado))
 
 cat("== 5. La configuración no se lee ==\n")
 n <- inhabiles_job("cli-x", D("2027-10-29"), contar, leer_config = function() stop("S3 caído"))
