@@ -67,6 +67,11 @@ DEV <- "antiguedad-rds-dev"
   if (!is.null(bucket) && !missing(bucket)) return(identical(as.character(bucket)[1], DEV))
   grepl(paste0("^s3://", DEV, "/"), as.character(object %||% "")[1])
 }
+# T120: the one test policy a forced catalog reads as (business days, forward).
+.arr_catalogo_prueba <- function() tibble::tibble(
+  id = "t120-prueba-habiles", name = "Prueba T120: días hábiles", type = "weekdays",
+  params = list(list(days = 1:5)), roll_direction = "forward", created_by = "arranque",
+  created_at = Sys.time(), updated_at = Sys.time())
 .arr_leer <- function(nombre) {   # functions shaped (object, bucket, ...)
   real <- get(nombre, envir = asNamespace("aws.s3")); force(nombre)
   function(object, bucket = NULL, ...) {
@@ -90,6 +95,22 @@ DEV <- "antiguedad-rds-dev"
       message("[ARRANQUE] tema forzado a ", tema_f, " para ", object)
       return(r)
     }
+    # ARR_FORZAR_POLITICA_CLIENTE (T120), the catalog: an empty or missing
+    # policy catalog of that client reads as one test policy (dev's has none).
+    cli_pc <- Sys.getenv("ARR_FORZAR_POLITICA_CLIENTE")
+    if (nombre %in% c("object_exists", "head_object") && nzchar(cli_pc) &&
+        grepl(paste0("(^|/)", cli_pc, "/policy_catalog[.]rds$"), object))
+      return(TRUE)   # the forced catalog exists (it reads as the test policy)
+    if (identical(nombre, "s3readRDS") && nzchar(cli_pc) &&
+        grepl(paste0("(^|/)", cli_pc, "/policy_catalog[.]rds$"), object)) {
+      r <- tryCatch(if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...),
+                    error = function(e) NULL)
+      if (!is.data.frame(r) || !nrow(r)) {
+        r <- .arr_catalogo_prueba()
+        message("[ARRANQUE] catálogo de políticas forzado (1 política de prueba) para ", object)
+      }
+      return(r)
+    }
     r <- if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...)
     # ARR_FORZAR_NIVEL + ARR_FORZAR_USUARIO (T69): in THIS process only, that
     # account reads as that tier (e.g. the client test user as "compras"),
@@ -110,11 +131,12 @@ DEV <- "antiguedad-rds-dev"
       cat_obj <- sub("pasivos_liabilities[.]rds$", "policy_catalog.rds", object)
       cat_r <- tryCatch(if (is.null(bucket)) real(object = cat_obj, ...) else real(object = cat_obj, bucket = bucket, ...),
                         error = function(e) NULL)
-      i <- which(r$estado %in% "active")[1]
+      if (!is.data.frame(cat_r) || !nrow(cat_r)) cat_r <- .arr_catalogo_prueba()
+      i <- which(!(r$estado %in% "deleted"))[1]
       if (is.data.frame(cat_r) && nrow(cat_r) && !is.na(i)) {
         if (!"policy_ids" %in% names(r)) r$policy_ids <- NA_character_
         r$policy_ids[i] <- as.character(cat_r$id[1])
-        otro <- which(r$estado %in% "active")[2]
+        otro <- which(!(r$estado %in% "deleted"))[2]
         message("[ARRANQUE] política forzada en 1 pasivo de ", object, " · con=", r$id[i],
                 " · sin=", if (!is.na(otro)) r$id[otro] else "", " · politica=", cat_r$id[1])
       }
