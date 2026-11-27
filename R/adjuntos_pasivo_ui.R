@@ -202,20 +202,25 @@ setup_adjuntos_pasivo <- function(input, output, session, shared, entidad_id) {
     if (is.null(d)) return(NULL)
     if (!nrow(d)) return(htmltools::div(class = "text-muted small", tr("comun.adjuntos.ninguno")))
     quitar <- adj_puede_editar(usr_vivo(), ENT)
+    # The wizard's ids are global: ns() is the identity. Named, so the T107
+    # guardians see which input each button sets.
+    ns <- shiny::NS(NULL)
     htmltools::div(class = "hdreq-ev-galeria",
       lapply(seq_len(nrow(d)), function(i) {
         r <- d[i, ]
         nombre <- if (identical(r$clase, "tabla")) (if (!is.na(r$titulo)) r$titulo else tr("comun.adjuntos.tabla.sin_titulo")) else r$nombre
         htmltools::div(class = "hdreq-ev-item",
-          htmltools::tags$button(type = "button", class = "hdreq-doc", title = tr("comun.adjuntos.descargar"),
-            onclick = sprintf("Shiny.setInputValue('pdoc_descargar_id', %s, {priority: 'event'})", jsonlite::toJSON(r$id, auto_unbox = TRUE)),
+          htmltools::tags$button(`data-hd-espera` = "no", type = "button", class = "hdreq-doc", title = tr("comun.adjuntos.descargar"),
+            onclick = sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})", ns("pdoc_descargar_id"),
+                              jsonlite::toJSON(r$id, auto_unbox = TRUE)),
             htmltools::tags$span(class = "hdreq-ev-tipo", if (identical(r$clase, "tabla")) tr("comun.adjuntos.tabla.tipo") else toupper(r$ext)),
             htmltools::tags$span(class = "hdreq-ev-nombre", nombre),
             htmltools::tags$span(class = "hdreq-ev-tam", tr(paste0("comun.adjuntos.tipo_doc.", r$tipo_doc))),
             .adjdoc_cfdi_resumen(r)),
-          if (quitar) htmltools::tags$button(type = "button", class = "btn btn-sm btn-link text-danger p-0 hdreq-quitar",
+          if (quitar) htmltools::tags$button(`data-hd-espera` = "auto", type = "button", class = "btn btn-sm btn-link text-danger p-0 hdreq-quitar",
             title = tr("comun.adjuntos.quitar"),
-            onclick = sprintf("Shiny.setInputValue('pdoc_quitar', %s, {priority: 'event'})", jsonlite::toJSON(r$id, auto_unbox = TRUE)),
+            onclick = sprintf("Shiny.setInputValue('%s', %s, {priority: 'event'})", ns("pdoc_quitar"),
+                              jsonlite::toJSON(r$id, auto_unbox = TRUE)),
             "✕"))
       }))
   })

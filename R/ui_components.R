@@ -1740,12 +1740,13 @@ hd_boton_listo <- function(session, id, ok = TRUE) {
 # when it has one.
 # id: the button's id, or (a tags$button without one) the input it sets.
 HD_BOTONES_SIN_ESPERA <- data.frame(
-  id = c("me_agenda_toggle", "ir", "ir", "tipo", "nivel", "ver_imagen", "ver_tabla", "descargar_id"),
+  id = c("me_agenda_toggle", "ir", "ir", "tipo", "nivel", "ver_imagen", "ver_tabla", "descargar_id", "pdoc_descargar_id"),
   archivo = c("R/manual_entry_handlers.R", "R/panorama_module.R", "R/panorama_module.R",
               "R/panorama_publicar_module.R", "R/panorama_publicar_module.R",
-              "R/requisiciones_module.R", "R/requisiciones_module.R", "R/requisiciones_module.R"),
+              "R/requisiciones_module.R", "R/requisiciones_module.R", "R/requisiciones_module.R",
+              "R/adjuntos_pasivo_ui.R"),
   pantalla = c("cal.dia.combinado", "pan", "pan", "pan.publicar", "pan.publicar",
-               "req.detalle.evidencia", "req.detalle.evidencia", "req.detalle.evidencia"),
+               "req.detalle.evidencia", "req.detalle.evidencia", "req.detalle.evidencia", "psv.asistente.documento"),
   razon = c("Interruptor en el navegador (Agregar a Agenda de hoy): cambia su propio texto y color; ningún observer responde al clic, el servidor lee me_agenda_active al guardar",
             "Título de un aviso que hace de enlace: solo navega (repetirlo da lo mismo) y el giro escondería el título mientras dura",
             "Tarjeta entera de Hoy: solo navega a su pestaña, y el giro dejaría la tarjeta en blanco",
@@ -1753,6 +1754,7 @@ HD_BOTONES_SIN_ESPERA <- data.frame(
             "Escala de niveles: dos clics seguidos fijan el rango desde/hasta; retener el primero perdería el segundo",
             "Miniatura de una evidencia: abre el visor; la imagen desaparecería bajo el giro",
             "Ficha de una tabla adjunta: abre el visor; el giro escondería la ficha",
-            "Ficha de un archivo adjunto: lo descarga (dos veces no daña nada); el giro escondería la ficha"),
+            "Ficha de un archivo adjunto: lo descarga (dos veces no daña nada); el giro escondería la ficha",
+            "Ficha de un documento del pasivo (T106): lo descarga (dos veces no daña nada); el giro escondería la ficha"),
   stringsAsFactors = FALSE)
 
