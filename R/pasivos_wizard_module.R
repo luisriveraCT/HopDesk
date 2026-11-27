@@ -1070,13 +1070,25 @@ pasivos_vista_amortizacion <- function(draft, completa = FALSE, provs = NULL, li
   cat_db <- tryCatch(shiny::isolate(shared$policy_catalog_db()), error = function(e) NULL)
   ids <- unique(as.character(unlist(wiz$draft$policy_ids %||% character())))
   ids <- ids[!is.na(ids) & nzchar(ids)]
-  if (length(ids)) ids <- if (is.data.frame(cat_db) && nrow(cat_db)) intersect(ids, cat_db$id) else character()
-  wiz$draft$policy_ids <- ids
   antes <- if (identical(wiz$mode, "edit")) {
     l <- tryCatch(shiny::isolate(shared$pasivos_liabilities_db()), error = function(e) NULL)
     r <- if (is.data.frame(l)) l[!is.na(l$id) & l$id == (wiz$edit_target_id %||% ""), , drop = FALSE] else NULL
     if (!is.null(r) && nrow(r)) pasivos_ids_politicas(r) else character()
   } else character()
+  # A catalog that did not load (NULL, or the jump could not read it) is NOT
+  # an empty one (T120 review): with policies involved the save would drop
+  # them and regenerate the dates without them. Nothing is saved; the
+  # liability keeps the policies it has, and the person is told.
+  sin_catalogo <- !is.data.frame(cat_db) ||
+    "policy_catalog" %in% tryCatch(shiny::isolate(shared$ctx_no_cargadas()), error = function(e) character())
+  if (sin_catalogo) {
+    if (!length(ids) && !length(antes)) return(TRUE)
+    tryCatch(shiny::showNotification(tr("tablas.pasivos.politicas.sin_catalogo"), type = "error", duration = 10),
+             error = function(e) NULL)
+    return(FALSE)
+  }
+  if (length(ids)) ids <- intersect(ids, cat_db$id)
+  wiz$draft$policy_ids <- ids
   if (identical(ids, antes)) return(TRUE)
   u <- tryCatch(shiny::isolate(shared$usuario()), error = function(e) NULL)
   if (isTRUE(puede(u, "can_manage_pasivos"))) return(TRUE)
@@ -1194,6 +1206,10 @@ pasivos_vista_provisiones <- function(draft, politicas = NULL) {
 
 # ── Main setup function ────────────────────────────────────────────────────────
 setup_pasivos_wizard <- function(input, output, session, shared) {
+
+  # T120: each opening of the wizard (pwiz_politicas_ui is drawn again for it:
+  # never the previous liability's policies from the browser's cache).
+  pwiz_abierto <- shiny::reactiveVal(0L)
 
   # The client's base currency (T33), read without a dependency: what a
   # selector starts on when nothing else says. Never a fixed code.
@@ -1457,6 +1473,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     last_tasa_touched("anual")
     pwiz_rate_dia_rv("ayer")
     pwiz_fetched_rates_rv(list())
+    pwiz_abierto(shiny::isolate(pwiz_abierto()) + 1L)   # T120
     shiny::showModal(.pwiz_modal())
   })
 
@@ -1495,6 +1512,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
       as.character(draft$recurrence_params$dates %||% character(0)),
       error = function(e) character()
     )
+    pwiz_abierto(shiny::isolate(pwiz_abierto()) + 1L)   # T120
     shiny::showModal(.pwiz_modal())
   })
 
@@ -1961,6 +1979,8 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
 
   # ── T120: payment policies in Revisión ───────────────────────────────────
   output$pwiz_politicas_ui <- shiny::renderUI({
+    pwiz_abierto()                                       # a new opening: drawn again
+    if (!identical(wiz$step_id, "revision")) return(NULL) # only on Revisión
     cat_db <- tryCatch(shared$policy_catalog_db(), error = function(e) NULL)
     u <- tryCatch(shared$usuario(), error = function(e) NULL)
     ids <- shiny::isolate(as.character(unlist(wiz$draft$policy_ids %||% character())))
@@ -1993,26 +2013,35 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   pwiz_pol_offset   <- shiny::reactiveVal(0L)
   pwiz_pol_selected <- shiny::reactiveVal(character(0))
   .pwiz_pol_cerrar <- function() { pwiz_pol_mode("list"); shinyjs::hide("pwiz_pol_editor_section") }
+  # The same server side as Configuración's editor (R/settings/settings_policies.R),
+  # with the wizard's ids; a new policy comes back selected on this liability.
+  # Mounted the first time "+ Nueva política" is pressed, not at setup: the
+  # wizard needs nothing of Configuración until then (and the fixtures that
+  # drive the wizard without it keep working).
+  pwiz_pol_montado <- FALSE
+  .pwiz_pol_montar <- function() {
+    if (pwiz_pol_montado) return(invisible(NULL))
+    pwiz_pol_montado <<- TRUE
+    .politica_editor_logica(input, output, session, shared, ns = .pwiz_pol_ns,
+      pol_mode = pwiz_pol_mode, pol_editing = pwiz_pol_editing,
+      pol_cal_offset = pwiz_pol_offset, pol_cal_selected = pwiz_pol_selected,
+      al_guardar = function(res) {
+        ids <- unique(c(as.character(unlist(wiz$draft$policy_ids %||% character())), res$pid))
+        wiz$draft$policy_ids <- ids
+        .pwiz_pol_cerrar()
+        db <- res$db
+        shiny::updateSelectizeInput(session, "pwiz_politicas",
+          choices = if (is.data.frame(db) && nrow(db)) stats::setNames(db$id, db$name) else character(), selected = ids)
+      },
+      al_cancelar = .pwiz_pol_cerrar)
+  }
   shiny::observeEvent(input$pwiz_pol_nueva, ignoreInit = TRUE, {
     if (!puede_o_avisa(shared, "can_manage_policies")) return()
+    .pwiz_pol_montar()
     pwiz_pol_mode("new"); pwiz_pol_editing(NULL); pwiz_pol_offset(0L); pwiz_pol_selected(character(0))
     output$pwiz_pol_editor_ui <- shiny::renderUI(.policy_editor_form(NULL, is_new = TRUE, ns = .pwiz_pol_ns))
     shinyjs::show("pwiz_pol_editor_section")
   })
-  # The same server side as Configuración's editor (R/settings/settings_policies.R),
-  # with the wizard's ids; a new policy comes back selected on this liability.
-  .politica_editor_logica(input, output, session, shared, ns = .pwiz_pol_ns,
-    pol_mode = pwiz_pol_mode, pol_editing = pwiz_pol_editing,
-    pol_cal_offset = pwiz_pol_offset, pol_cal_selected = pwiz_pol_selected,
-    al_guardar = function(res) {
-      ids <- unique(c(as.character(unlist(wiz$draft$policy_ids %||% character())), res$pid))
-      wiz$draft$policy_ids <- ids
-      .pwiz_pol_cerrar()
-      db <- res$db
-      shiny::updateSelectizeInput(session, "pwiz_politicas",
-        choices = if (is.data.frame(db) && nrow(db)) stats::setNames(db$id, db$name) else character(), selected = ids)
-    },
-    al_cancelar = .pwiz_pol_cerrar)
 
   shiny::observeEvent(input$pwiz_save, ignoreInit = TRUE, {
     if (!pasivos_autoriza("pasivos.edit_liability")) return()
@@ -2055,6 +2084,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
 
   shiny::observeEvent(input$pwiz_cancel_no,  ignoreInit = TRUE, {
     shiny::removeModal()
+    pwiz_abierto(shiny::isolate(pwiz_abierto()) + 1L)   # T120
     shiny::showModal(.pwiz_modal())
   })
   shiny::observeEvent(input$pwiz_cancel_yes, ignoreInit = TRUE, {
@@ -2075,6 +2105,11 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     easyClose = FALSE,
     shiny::uiOutput("pwiz_step_indicator"),
     shiny::uiOutput("pwiz_step_content"),
+    # T120: the liability's payment policies, OUTSIDE the step's redraw (a
+    # step drawn again repaints a nested output from the browser's cache --
+    # the T111 cause -- and the selection went back by itself). Shown only
+    # on Revisión; drawn again only when the wizard opens or the step changes.
+    shiny::uiOutput("pwiz_politicas_ui"),
     footer = shiny::uiOutput("pwiz_footer")
   )
 }

@@ -1413,6 +1413,7 @@
   "tablas.pasivos.amort.monto": "Monto",
   "tablas.pasivos.amort.vacio": "Sin amortización con los datos de ahora.",
   "tablas.pasivos.amort.reamortizada": "⚠ Re-amortización: el saldo declarado difiere del teórico. Las cuotas se recalcularon.",
+  "tablas.pasivos.politicas.sin_catalogo": "No se pudo leer el catálogo de políticas de pago. No se guardó nada, para no mover las fechas de este pasivo; sus políticas siguen como estaban. Intenta de nuevo en un momento.",
   "tablas.pasivos.politicas.titulo": "Políticas de pago",
   "tablas.pasivos.politicas.ayuda": "Mueven la fecha de pago de cada provisión para que no caiga en inhábil o festivo. Los intereses siguen contándose a la fecha del contrato. Solo se mueven las provisiones futuras sin confirmar ni editar a mano.",
   "tablas.pasivos.politicas.ninguna": "Sin política: se paga en la fecha del contrato",

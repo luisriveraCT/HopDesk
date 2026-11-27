@@ -800,12 +800,6 @@ pasivos_step_ui_revision <- function(draft, errors = list()) {
         shiny::uiOutput("pwiz_revision_summary")
       )
     ),
-    # T120: the liability's payment policies (drawn by the server: the
-    # catalog and the user's permissions), and the same editor as
-    # Configuración, inline ("+ Nueva política": a modal cannot open another).
-    shiny::fluidRow(
-      shiny::column(12, class = "mt-2", shiny::uiOutput("pwiz_politicas_ui"))
-    ),
     shiny::fluidRow(
       shiny::column(12, class = "mt-2",
         # T109: a financiero's title (and its "Ver tabla completa") comes with

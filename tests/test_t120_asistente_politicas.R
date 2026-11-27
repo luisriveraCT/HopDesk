@@ -166,7 +166,8 @@ dr <- list(categoria = "regular", nombre = "Renta", empresa = "NTS", parte = "X"
 L <- pasivos_wizard_draft_to_liability(dr, mode = "create", user = "t")
 ok("D.4 the draft's order survives the liability and back", identical(L$policy_ids, "p_fest,p_hab") &&
      identical(pasivos_liability_to_draft(L)$policy_ids, c("p_fest", "p_hab")))
-ok("D.5 Revisión has the policies block", grepl("pwiz_politicas_ui", html(pasivos_step_ui_revision(dr))))
+ok("D.5 the policies block is in the wizard's modal, outside the step's redraw (T120 review)",
+   grepl("pwiz_politicas_ui", html(.pwiz_modal())) && !grepl("pwiz_politicas_ui", html(pasivos_step_ui_revision(dr))))
 
 cat("== E. editing a liability to add a policy ==\n")
 catp <- tibble::tibble(id = c("p_hab", "p_fest"), name = c("H", "F"), type = c("weekdays", "skip_holidays"),

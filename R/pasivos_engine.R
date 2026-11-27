@@ -775,7 +775,36 @@ pasivos_politicas_de <- function(liability, catalog, overrides = NULL) {
          roll_direction = as.character(catalog$roll_direction[[i]] %||% "forward"))
   }))
   if (!length(pols)) return(vacio)
-  structure(pols, festivos = festivos_cache(pols, overrides))
+  structure(pols, festivos = festivos_cache(pols, overrides, years = .pasivos_anios_politicas(liability)))
+}
+
+# The years a liability's provisions can span (T120 review): from its start
+# (or today) to its end (or two years out), one more each side for rolls
+# across New Year. get_holidays() alone covers only the server's years.
+.pasivos_anios_politicas <- function(liability) {
+  hoy <- tryCatch(hoy_en(), error = function(e) Sys.Date())
+  ini <- tryCatch(as.Date(liability$fecha_inicio[1]), error = function(e) as.Date(NA))
+  fin <- pasivos_fecha_fin(liability)
+  if (is.na(ini) || ini > hoy) ini <- min(c(ini, hoy), na.rm = TRUE)
+  if (is.na(fin) || fin < hoy) fin <- hoy + 365L * 2L
+  a <- as.integer(format(ini, "%Y")) - 1L
+  b <- min(as.integer(format(fin, "%Y")) + 1L, a + 60L)
+  seq.int(a, b)
+}
+
+# T120 review: a future payment never lands in the past -- a backward roll
+# that would cross today takes the next valid day from today instead.
+.pasivos_fecha_politica <- function(fecha_calc, policies, holidays_cache, hoy) {
+  f <- tryCatch(compose_policies(fecha_calc, policies, holidays_cache), error = function(e) fecha_calc)
+  if (length(policies) && !is.na(f) && !is.na(fecha_calc) && fecha_calc >= hoy && f < hoy) {
+    # From today, only what makes a day valid (business days, holidays),
+    # forward: an offset or a month day applied again would go back again.
+    filtros <- Filter(function(p) isTRUE(p$type %in% c("weekdays", "skip_holidays")), policies)
+    filtros <- lapply(filtros, function(p) { p$roll_direction <- "forward"; p })
+    f <- tryCatch(compose_policies(hoy, filtros, holidays_cache), error = function(e) hoy)
+    if (is.na(f) || f < hoy) f <- hoy
+  }
+  as.Date(f)
 }
 
 # The catalog and the overrides read strictly, for a write (the daily
@@ -789,8 +818,15 @@ pasivos_politicas_de <- function(liability, catalog, overrides = NULL) {
     if (!"params" %in% names(cat_raw)) cat_raw[["params"]] <- vector("list", nrow(cat_raw))
     cat_raw
   }
+  # T120 review: a provision paid ahead may still be "provisional": what has
+  # a live payment (bancos_confirmados, confirmaciones_vigentes()) never moves.
+  conf <- leer_tabla_para_escribir(S3_KEYS$bancos_confirmados, client_id, .schema_bancos_confirmados)
+  vivas <- confirmaciones_vigentes(conf)
+  pagadas <- if (is.data.frame(vivas) && nrow(vivas) && "provision_id" %in% names(vivas))
+    unique(as.character(vivas$provision_id[!is.na(vivas$provision_id)])) else character()
   list(catalogo = catalogo,
-       overrides = leer_tabla_para_escribir(S3_KEYS$holiday_overrides, client_id, .schema_holiday_overrides))
+       overrides = leer_tabla_para_escribir(S3_KEYS$holiday_overrides, client_id, .schema_holiday_overrides),
+       pagadas = pagadas)
 }
 
 # T70: the pending provisions of a liability that fall after its end date:
@@ -977,10 +1013,7 @@ pasivos_generate_provisions <- function(liability,
 
       fecha_calc <- row_s$fecha
       # Apply policies
-      fecha_ef <- tryCatch(
-        compose_policies(fecha_calc, policies_for_liability, holidays_cache),
-        error = function(e) fecha_calc
-      )
+      fecha_ef <- .pasivos_fecha_politica(fecha_calc, policies_for_liability, holidays_cache, as.Date(today))
       pol_ids <- if (length(policies_for_liability)) {
         paste(vapply(policies_for_liability, function(p) p$id %||% "", character(1)),
               collapse = ",")
@@ -1103,10 +1136,7 @@ pasivos_generate_provisions <- function(liability,
 
     rows <- lapply(seq_along(dates), function(i) {
       fecha_calc <- dates[i]
-      fecha_ef <- tryCatch(
-        compose_policies(fecha_calc, policies_for_liability, holidays_cache),
-        error = function(e) fecha_calc
-      )
+      fecha_ef <- .pasivos_fecha_politica(fecha_calc, policies_for_liability, holidays_cache, as.Date(today))
       pol_ids <- if (length(policies_for_liability)) {
         paste(vapply(policies_for_liability, function(p) p$id %||% "", character(1)),
               collapse = ",")
@@ -1620,6 +1650,11 @@ PASIVOS_REFRESCO_UMBRAL <- c(relativo = 0.005, absoluto = 1)
   Reduce(`|`, lapply(cols, function(cl) !is.na(p[[cl]])))
 }
 
+# What depends on the payment date (T120 review): the exchange rate at that
+# date and what it converts, and the document number built from the date.
+PASIVOS_CAMPOS_FECHA_PAGO <- c("amount_pago", "fx_rate_used", "componente_capital", "componente_interes",
+                               "componente_fees", "componente_iva", "documento")
+
 # Pure: the provisions table brought up to date, and what changed (one row
 # per liability: motivo "tasa" | "horizonte" | "politica", actualizadas,
 # nuevas, reubicadas).
@@ -1675,7 +1710,8 @@ pasivos_refresco_calcular <- function(liabs, provs, hoy, client_id, politicas = 
     if (con_politica && nrow(existentes)) {
       fc <- as.Date(existentes$fecha_calculada)
       puede_mover <- existentes$estado %in% "provisional" & !.pasivos_con_override(existentes) &
-        !is.na(fc) & fc >= hoy & (length(pasivos_ids_politicas(L)) > 0L | movida_antes)
+        !is.na(fc) & fc >= hoy & (length(pasivos_ids_politicas(L)) > 0L | movida_antes) &
+        !(existentes$id %in% (politicas$pagadas %||% character()))   # a live payment: never moved
       mov <- existentes[puede_mover, , drop = FALSE]
       if (nrow(mov)) {
         k <- match(paste(mov$origin, as.Date(mov$fecha_calculada)), paste(g$origin, as.Date(g$fecha_calculada)))
@@ -1684,8 +1720,13 @@ pasivos_refresco_calcular <- function(liabs, provs, hoy, client_id, politicas = 
         cambia <- !is.na(k) & !is.na(f_nueva) & (is.na(f_vieja) | f_nueva != f_vieja)
         if (any(cambia)) {
           reubicadas <- mov[cambia, , drop = FALSE]
+          kk <- k[cambia]
           reubicadas$fecha_efectiva <- f_nueva[cambia]
           reubicadas$policy_ids     <- p_nueva[cambia]
+          # the exchange rate and the document at the new date, from the
+          # generator itself (the wizard's save gives the same row)
+          for (cl in intersect(PASIVOS_CAMPOS_FECHA_PAGO, intersect(names(g), names(reubicadas))))
+            reubicadas[[cl]] <- g[[cl]][kk]
         }
       }
     }
@@ -1696,8 +1737,8 @@ pasivos_refresco_calcular <- function(liabs, provs, hoy, client_id, politicas = 
     }
     if (nrow(reubicadas)) {
       k <- match(reubicadas$id, tabla$id)
-      tabla$fecha_efectiva[k] <- reubicadas$fecha_efectiva
-      tabla$policy_ids[k]     <- reubicadas$policy_ids
+      for (cl in intersect(c("fecha_efectiva", "policy_ids", PASIVOS_CAMPOS_FECHA_PAGO), names(tabla)))
+        tabla[[cl]][k] <- reubicadas[[cl]]
     }
     if (nrow(nuevas)) tabla <- dplyr::bind_rows(tabla, nuevas)
     cambios <- rbind(cambios, data.frame(
