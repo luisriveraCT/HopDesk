@@ -108,7 +108,8 @@ cat("\n-- el job en modo archivo --\n")
 sembrar()
 avisos_agregar("beta", list(tipo = "automatico", titulo = "b-viejo", vence = dias(45)))
 antes <- fx_firma()
-l <- job_correr("archivo", TRUE, ahora = AHORA)
+# Real mode: since T122 test mode archives nothing (tests/test_t122_job_prueba.R).
+l <- job_correr("archivo", FALSE, ahora = AHORA)
 ok("modo archivo: cuenta lo archivado en los clientes activos, sin enviar nada", {
   fx_cuenta(l, "archivados") == 4L && fx_cuenta(l, "clientes_ok") == 2L && !length(fx_enviados)
 })

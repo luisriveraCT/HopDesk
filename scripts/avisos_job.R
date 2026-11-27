@@ -49,7 +49,8 @@ JOB_EVENTOS <- c(
   "omitido_calculo", "omitido_sin_lunes", "omitido_destinatarios", "error_cliente",
   "destinatarios", "enviado", "fallido", "ya_enviado", "prueba_html", "alertas_umbral",
   "archivados", "sin_llave_nueva", "moneda_base_omision", "historial_fallido", "ya_corrido",
-  "avisos_inhabiles", "avisos_inhabiles_retirados", "inhabiles_regla_calculada")   # T116 F2
+  "avisos_inhabiles", "avisos_inhabiles_retirados", "inhabiles_regla_calculada",   # T116 F2
+  "prueba_no_escrito")   # T122: writes test mode skipped (it only writes avisos/prueba/*.html)
 
 .job <- new.env(parent = emptyenv())
 job_reiniciar <- function() .job$cuenta <- stats::setNames(integer(length(JOB_EVENTOS)), JOB_EVENTOS)
@@ -98,8 +99,10 @@ job_clientes <- function() {
   sort(unique(cid[!is.na(cid) & nzchar(cid) & cid != "hd-admin"]))
 }
 
-job_error <- function(cid, modo, e) {
+# T122: in test mode the error is only counted -- errores.rds is not written.
+job_error <- function(cid, modo, e, prueba = FALSE) {
   job_contar("error_cliente")
+  if (isTRUE(prueba)) return(job_contar("prueba_no_escrito"))
   tryCatch(modificar_tabla(.ERRORES_KEY, cid, .schema_errores, function(df) dplyr::bind_rows(df,
              tibble::tibble(cuando = as.POSIXct(Sys.time(), tz = "UTC"), modo = modo,
                             mensaje = substr(conditionMessage(e), 1L, 500L)))),
@@ -192,12 +195,22 @@ job_lunes <- function(cid, hoy, ahora, prueba, url) {
   sh <- x$shared
   ar <- x$df[x$df$Tipo %in% "AR", , drop = FALSE]
   base <- job_moneda_base(cid)
-  serie <- umbral_serie_guardar(cid, umbral_metricas(ar, hoy, sh$interco_v2(), sh$company_map(), ic_empresas_de(sh)))
+  nuevas <- umbral_metricas(ar, hoy, sh$interco_v2(), sh$company_map(), ic_empresas_de(sh))
+  # T122: test mode runs against prod (avisos.yml) and writes nothing but
+  # avisos/prueba/*.html: the series is built in memory (the same strict read
+  # and umbral_serie_agregar() that umbral_serie_guardar() uses), the alerts
+  # are counted, not published, and semana.rds -- the Monday snapshot Friday
+  # compares against -- is not overwritten.
+  serie <- if (prueba) {
+    job_contar("prueba_no_escrito")
+    umbral_serie_agregar(leer_tabla_para_escribir(.METRICAS_KEY, cid, .schema_metricas), nuevas)
+  } else umbral_serie_guardar(cid, nuevas)
   alertas <- umbral_evaluar(serie, hoy)
-  job_contar("alertas_umbral", umbral_publicar(cid, alertas, hoy))
+  if (prueba) job_contar("prueba_no_escrito", nrow(alertas))
+  job_contar("alertas_umbral", if (prueba) nrow(alertas) else umbral_publicar(cid, alertas, hoy))
   d <- correo_datos_lunes(x$df, sh, umbral_lunes(hoy), serie, alertas, x$sap_fecha, url = url,
                           moneda_base = base, tipos = job_tipos(x$df$Moneda, base), banco = avisos_banco(cid))
-  correo_semana_guardar(cid, x$df, d)
+  if (prueba) job_contar("prueba_no_escrito") else correo_semana_guardar(cid, x$df, d)
   dests <- job_destinatarios(cid)
   if (is.null(dests)) return(job_contar("omitido_destinatarios"))
   job_contar("destinatarios", nrow(dests))
@@ -233,7 +246,9 @@ job_viernes <- function(cid, hoy, ahora, prueba, url) {
   # the email (the next Friday simply has one week less to compare with).
   guardar <- function(f) !inherits(tryCatch(f(), error = function(e) e), "error")
   # Without a close (SAP not refreshed since Monday) there is nothing to keep.
-  if (!isTRUE(dv$sin_cierre)) {
+  # T122: test mode keeps neither (both are counted as skipped).
+  if (!isTRUE(dv$sin_cierre) && prueba) job_contar("prueba_no_escrito", 2L)
+  else if (!isTRUE(dv$sin_cierre)) {
     ok_h <- !is.null(historial) && guardar(function() correo_historial_guardar(cid, dv))
     ok_p <- !is.null(partidas) && guardar(function() correo_partidas_guardar(cid, dv$partidas_fila, dv$lunes))
     if (!ok_h || !ok_p) job_contar("historial_fallido")
@@ -247,8 +262,10 @@ job_viernes <- function(cid, hoy, ahora, prueba, url) {
   job_contar("clientes_ok")
 }
 
-job_archivo <- function(cid, ahora) {
-  r <- avisos_archivar(cid, ahora)
+# T122: in test mode it counts what it would archive, writing nothing.
+job_archivo <- function(cid, ahora, prueba = FALSE) {
+  r <- avisos_archivar(cid, ahora, simular = isTRUE(prueba))
+  if (isTRUE(prueba) && r$archivados > 0L) job_contar("prueba_no_escrito")
   if (!is.na(r$motivo)) return(job_contar(r$motivo))
   job_contar("archivados", r$archivados)
   job_contar("clientes_ok")
@@ -316,8 +333,8 @@ job_correr <- function(modo = Sys.getenv("AVISOS_MODO"), prueba = !identical(tol
       antes <- .job$cuenta
       ok <- tryCatch({ switch(modo, lunes = job_lunes(cid, hoy, ahora, prueba, url),
                                     viernes = job_viernes(cid, hoy, ahora, prueba, url),
-                                    archivo = job_archivo(cid, ahora)); TRUE },
-                     error = function(e) { job_error(cid, modo, e); FALSE })
+                                    archivo = job_archivo(cid, ahora, prueba)); TRUE },
+                     error = function(e) { job_error(cid, modo, e, prueba); FALSE })
       if (modo %in% c("lunes", "viernes") && !isTRUE(prueba))
         job_corrida_guardar(cid, modo, hoy, job_corrida_resultado(antes, .job$cuenta, ok), .job$cuenta - antes)
     }
