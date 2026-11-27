@@ -426,7 +426,9 @@ ACCIONES_STAFF <- list(
   mercado_inhabil_agregar = list(clase = "S"),
   mercado_anio_confirmar  = list(clase = "S"),
   mercado_anular          = list(clase = "S"),
-  ver_como                = list(clase = "S"),
+  # T116 F3: the system filling the global market caches (hd-admin/mercado/).
+  datos_mercado           = list(clase = "S"),
+  ver_como               = list(clase = "S"),
   ctx_load_fallido        = list(clase = "S"),
   hop_access_requested    = list(clase = "S"),
   hop_access_approved     = list(clase = "S"),

@@ -362,7 +362,8 @@ rebase_por_id <- function(nuevo, base, fresco, id_col) {
 .HD_ADMIN_SOLO_CRECEN <- c("client_registry.rds", "client_requests.rds", "hop_requests.rds",
                            "hop_grants.rds", "pending_invites.rds", "notifications.rds",
                            "username_index.rds", "email_queue.rds",
-                           "mercado/inhabiles.rds")   # T116 F2: voided, never removed
+                           "mercado/inhabiles.rds",   # T116 F2: voided, never removed
+                           "mercado/bce.rds", "mercado/tasas.rds")   # T116 F3: one row per date, only added
 
 .hd_admin_completar <- function(df, schema_fn) {
   if (is.null(df) || !is.data.frame(df)) return(schema_fn())

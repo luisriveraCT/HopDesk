@@ -27,11 +27,22 @@
 # real one, and get_holidays() then gives the rule.
 # =============================================================================
 
+# tasas (T116 F3): the reference rates of each market shown in Panorama's
+# «Tasas», by metric_id (R/forecasting_metric_registry.R, R/mercado_datos.R).
 MERCADO_PAISES <- list(
-  MX = list(nombre = "comun.mercado.pais.mx", moneda = "MXN", calendario = "MX"),
-  US = list(nombre = "comun.mercado.pais.us", moneda = "USD", calendario = "US"),
-  EU = list(nombre = "comun.mercado.pais.eu", moneda = "EUR", calendario = "EU")
+  MX = list(nombre = "comun.mercado.pais.mx", moneda = "MXN", calendario = "MX",
+            tasas = c("tiie28", "cetes28")),
+  US = list(nombre = "comun.mercado.pais.us", moneda = "USD", calendario = "US",
+            tasas = c("sofr", "fed_funds", "prime")),
+  EU = list(nombre = "comun.mercado.pais.eu", moneda = "EUR", calendario = "EU",
+            tasas = c("estr"))
 )
+
+# The market's quoting order (T116 F3): a pair is written "A/B" with A the one
+# that comes first here -- EUR/USD, USD/MXN, EUR/MXN, GBP/USD -- and its value
+# is B per one A. A currency outside the list goes after them all.
+MERCADO_ORDEN_COTIZACION <- c("EUR", "GBP", "USD", "CAD", "CHF", "JPY", "CNY", "MXN")
+MERCADO_BCE_EN <- "EUR"   # the ECB quotes every currency per euro
 
 mercado_pais_valido <- function(x) {
   x <- toupper(trimws(as.character(x)))

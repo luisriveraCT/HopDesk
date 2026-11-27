@@ -35,6 +35,8 @@ panoramaUI <- function(id) {
       shiny::div(class = "pan-rejilla",
         shiny::div(class = "pan-col-a",
           shiny::uiOutput(ns("clima")),
+          shiny::uiOutput(ns("mercado_tipos")),   # T116 F3 (R/mercado_datos.R)
+          shiny::uiOutput(ns("mercado_tasas")),
           shiny::uiOutput(ns("destacados"))),
         shiny::div(class = "pan-col-b",
           shiny::uiOutput(ns("hoy")),
@@ -682,6 +684,22 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
           tr_n("panorama.equipo.linea", e$acciones,
                personas = .pan_lista_nombres(nombres))))
     })
+
+    # ── «Tipos» and «Tasas» (T116 F3) ─────────────────────────────────────────
+    # Read from the global caches only (mercado_cache(), kept 10 minutes per
+    # process): Panorama never asks a source. The figures, their dates and
+    # sources, and «Sin dato reciente» come from R/mercado_datos.R.
+    mercado <- .pan_estable(shiny::reactive({
+      if (!isTRUE(activa())) return(NULL)
+      reloj()
+      if (!exists("mercado_cache", mode = "function")) return(NULL)
+      cfg <- tryCatch(shared$group_config(), error = function(e) NULL)
+      cache <- tryCatch(mercado_cache(), error = function(e) NULL)
+      if (is.null(cfg) || is.null(cache)) return(NULL)
+      list(tipos = mercado_tipos_cliente(cfg, cache), tasas = mercado_tasas_cliente(cfg, cache))
+    }))
+    output$mercado_tipos <- shiny::renderUI({ m <- mercado(); if (!is.null(m)) mercado_cuadro_ui(m$tipos, "panorama.mercado.tipos") })
+    output$mercado_tasas <- shiny::renderUI({ m <- mercado(); if (!is.null(m)) mercado_cuadro_ui(m$tasas, "panorama.mercado.tasas") })
 
     # ── La Cinta ──────────────────────────────────────────────────────────────
     output$cinta <- shiny::renderUI({

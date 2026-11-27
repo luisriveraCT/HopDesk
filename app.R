@@ -61,6 +61,9 @@ source("R/fx_banxico.R")
 # The rate of each currency against the base, with its origin (Banxico,
 # crossed, typed by the user today): Flujo's preview and Exportar.
 source("R/fx_tipos.R")
+# T116 F3: the market's rates for Panorama's «Tipos» and «Tasas» -- global
+# caches filled by a child process; Panorama only reads them.
+source("R/mercado_datos.R")
 # The Agenda's rows, read by Panorama and the Agenda alike (T60).
 source("R/agenda_filas.R")
 source("R/panorama_datos.R")
@@ -3111,10 +3114,14 @@ server <- function(input, output, session) {
 
   # Fire once after first render so startup rate fetch doesn't block the UI
   session$onFlushed(function() .refresh_variable_rates(), once = TRUE)
+  # T116 F3: the market caches, at most once an hour per process; the
+  # requests run in a child process, so no session waits for them.
+  session$onFlushed(function() tryCatch(mercado_datos_refrescar(), error = function(e) NULL), once = TRUE)
 
   observeEvent(input$btn_refresh, {
     removeModal()
     .refresh_variable_rates()
+    tryCatch(mercado_datos_refrescar(), error = function(e) NULL)   # T116 F3 (once an hour at most)
 
     # Force-reload S3 bancos data unconditionally so any edits made by other
     # concurrent users are visible immediately — independent of ERP connectivity.
