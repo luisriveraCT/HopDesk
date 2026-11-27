@@ -68,6 +68,7 @@ pasivos_objeto_limpio <- function(x) {
   tasa_tipo            = character(),   # "fija" | "variable_sofr" | "variable_tiie28" | "variable_prime" | "variable_otro"
   tasa_spread          = numeric(),
   convencion_dias      = character(),   # T115: PASIVOS_CONVENCIONES; NA = the one before T115 (efectiva fixed, act_360 variable)
+  policy_ids           = character(),   # T120: payment-policy catalog ids, in order, comma-joined; NA/"" = none
   tasa_estimate_method = character(),
   fecha_inicio         = as.Date(character()),
   fecha_vence          = as.Date(character()),

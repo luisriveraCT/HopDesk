@@ -43,6 +43,7 @@ pasivos_liability_to_draft <- function(row) {
     tasa_tipo              = r$tasa_tipo[1] %||% "fija",
     tasa_spread            = r$tasa_spread[1] %||% 0,
     convencion_dias        = pasivos_convencion(r),   # T115: its own, or the one it had before (same figures)
+    policy_ids             = pasivos_ids_politicas(r),   # T120: its payment policies, in order
     tasa_estimate_method   = r$tasa_estimate_method[1] %||% "",
     plazo_meses            = r$plazo_meses[1],
     dia_pago               = r$dia_pago[1],
@@ -192,6 +193,7 @@ pasivos_wizard_draft_to_liability <- function(draft, mode = "create",
                                  (draft$tasa_spread %||% 0) else NA_real_,
     convencion_dias          = if (identical(cat, "financiero") && pasivos_convencion_valida(draft$convencion_dias))
                                  draft$convencion_dias else NA_character_,   # T115
+    policy_ids               = .wiz_policy_ids_texto(draft$policy_ids),   # T120
     tasa_estimate_method     = draft$tasa_estimate_method %||% NA_character_,
     fecha_inicio             = fi,
     fecha_vence              = fv,
@@ -421,12 +423,8 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
   }
 
   # Generate provisions
-  # T116: the cache is country -> holidays (festivos_cache()), built from the
-  # same policies passed below and the staff's overrides -- never the
-  # overrides table itself.
-  politicas_pasivo <- list()
-  holidays <- festivos_cache(politicas_pasivo,
-                             tryCatch(shared$holiday_overrides_db(), error = function(e) NULL))
+  # T120: the liability's own policies (pasivos_politicas_de(), from the
+  # session's catalog), with their holidays and the staff's overrides (T116).
 
   gen_err <- character(0)
   generated <- tryCatch(
@@ -435,8 +433,8 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
       window_start           = hoy_cliente(shared),   # T75b: the client's day
       client_id              = tryCatch(shared$effective_client_id(), error = function(e) NULL),
       window_end             = NULL,
-      policies_for_liability = politicas_pasivo,
-      holidays_cache         = holidays
+      policies_for_liability = pasivos_politicas_de(liab_row, .wiz_politicas_ctx(shared)$catalogo,
+                                                    .wiz_politicas_ctx(shared)$overrides)
     ),
     error = function(e) {
       gen_err <<- conditionMessage(e)
@@ -787,10 +785,10 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
 # T109: the draft's cost from the SAME schedule as the amortization table
 # (the rate just fetched -- usar_indice = FALSE -- and the client's day), so
 # the summary and the table always add up to the same figures.
-.wiz_costeo <- function(draft) {
+.wiz_costeo <- function(draft, politicas = NULL) {
   liab <- tryCatch(pasivos_wizard_draft_to_liability(draft, mode = "create", user = "preview"), error = function(e) NULL)
   if (is.null(liab)) return(NULL)
-  tryCatch(pasivos_costeo(liab, hoy = hoy_cliente(), usar_indice = FALSE), error = function(e) NULL)
+  tryCatch(pasivos_costeo(liab, hoy = hoy_cliente(), usar_indice = FALSE, politicas = politicas), error = function(e) NULL)
 }
 
 # T115: annual <-> per-period rate (%) by the day-count convention: efectiva
@@ -809,8 +807,8 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
 # breakdown, what is still to pay (T109, when a payment is behind) and the
 # next 12 months; regular and tarjeta: per month and the next 12 months, and
 # with an end date the total up to it.
-.wiz_costeo_filas <- function(draft) {
-  c <- .wiz_costeo(draft)
+.wiz_costeo_filas <- function(draft, politicas = NULL) {
+  c <- .wiz_costeo(draft, politicas)
   if (is.null(c) || !nrow(c$filas)) return(list())
   f <- c$filas
   mm <- function(x) paste(monto_moneda(x, f$moneda), collapse = " \u00b7 ")
@@ -829,7 +827,7 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
   out
 }
 
-.wiz_revision_summary_html <- function(draft) {
+.wiz_revision_summary_html <- function(draft, politicas = NULL) {
   cat  <- draft$categoria  %||% ""
   flav <- draft$flavor     %||% ""
   cat_label <- switch(cat,
@@ -934,7 +932,7 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
   # T77: what it costs (pasivos_costeo(), from the engine; by currency,
   # never adding currencies). Opening a liability with ✎ lands on this step,
   # so this is also its detail.
-  rows <- c(rows, .wiz_costeo_filas(draft))
+  rows <- c(rows, .wiz_costeo_filas(draft, politicas))
   # T63: the liability's taxes, as the engine applies them to each payment.
   imps <- pasivos_impuestos_de(draft)
   if (length(imps)) rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.resumen"),
@@ -953,7 +951,7 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
   # payments, i.e. what was still to pay. That one now has its own line.
   if (length(imps)) {
     if (identical(cat, "financiero")) {
-      co <- .wiz_costeo(draft)
+      co <- .wiz_costeo(draft, politicas)
       if (!is.null(co) && nrow(co$filas)) {
         mm <- function(x) paste(monto_moneda(x, co$filas$moneda), collapse = " \u00b7 ")
         rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.total_plazo"), mm(co$filas$impuestos))))
@@ -961,7 +959,7 @@ pasivos_aviso_generacion <- function(draft, hoy = hoy_en()) {   # the client's d
           rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.por_pagar"), mm(co$filas$impuestos_faltan))))
       }
     } else {
-      v <- tryCatch(pasivos_vista_provisiones(draft), error = function(e) NULL)
+      v <- tryCatch(pasivos_vista_provisiones(draft, politicas), error = function(e) NULL)
       if (!is.null(v) && nrow(v)) {
         t <- tapply(v$impuestos, v$moneda, function(x) x[1])
         rows <- c(rows, list(c(tr("tablas.pasivos.impuestos.por_pago"),
@@ -1054,7 +1052,22 @@ pasivos_vista_amortizacion <- function(draft, completa = FALSE, provs = NULL, li
   filas
 }
 
-pasivos_vista_provisiones <- function(draft) {
+# T120: the draft's policies (ids, in order) as the liability stores them.
+.wiz_policy_ids_texto <- function(ids) {
+  ids <- unique(trimws(as.character(unlist(ids %||% character()))))
+  ids <- ids[!is.na(ids) & nzchar(ids) & !grepl(",", ids, fixed = TRUE)]
+  if (length(ids)) paste(ids, collapse = ",") else NA_character_
+}
+
+# T120: the session's policy catalog and holiday overrides, for the wizard's
+# generators (list(catalogo, overrides); NULL parts = none).
+.wiz_politicas_ctx <- function(shared) {
+  if (is.null(shared)) return(list(catalogo = NULL, overrides = NULL))
+  list(catalogo  = tryCatch(shiny::isolate(shared$policy_catalog_db()),    error = function(e) NULL),
+       overrides = tryCatch(shiny::isolate(shared$holiday_overrides_db()), error = function(e) NULL))
+}
+
+pasivos_vista_provisiones <- function(draft, politicas = NULL) {
   liab_row <- tryCatch(
     pasivos_wizard_draft_to_liability(draft, mode = "create", user = "preview"),
     error = function(e) NULL
@@ -1062,8 +1075,8 @@ pasivos_vista_provisiones <- function(draft) {
   if (is.null(liab_row)) return(NULL)
   provs <- tryCatch(
     pasivos_generate_provisions(liab_row, window_start = hoy_cliente(),
-                                 policies_for_liability = list(),
-                                 holidays_cache = list()),
+                                 policies_for_liability = pasivos_politicas_de(liab_row, politicas$catalogo,
+                                                                               politicas$overrides)),
     error = function(e) NULL
   )
   if (is.null(provs) || !nrow(provs)) return(NULL)
@@ -1129,7 +1142,7 @@ pasivos_vista_provisiones <- function(draft) {
   hd_table_server("pwiz_prov", tabla = "provisiones_asistente",
     datos = shiny::reactive({
       if (identical(wiz$draft$categoria %||% "", "financiero")) return(.wiz_vacia_prov)
-      pasivos_vista_provisiones(wiz$draft) %||% .wiz_vacia_prov
+      pasivos_vista_provisiones(wiz$draft, .wiz_politicas_ctx(shared)) %||% .wiz_vacia_prov
     }),
     columnas = list(
       col_fecha("fecha",  "tablas.pasivos.amort.fecha"),
@@ -1793,7 +1806,7 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
 
   # ── Revision outputs ────────────────────────────────────────────────────────
   output$pwiz_revision_summary <- shiny::renderUI({
-    .wiz_revision_summary_html(wiz$draft)
+    .wiz_revision_summary_html(wiz$draft, .wiz_politicas_ctx(shared))
   })
 
   output$pwiz_revision_schedule <- shiny::renderUI({
