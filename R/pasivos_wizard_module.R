@@ -318,7 +318,11 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
   before_row <- NULL
   liab_row   <- NULL
   motivo     <- NULL   # why the row was not built: "borrado" or the builder's error
-  liabs <- tryCatch(modificar_pasivos_liabilities(cid, function(fresco) {
+  # T108: the companies' map of earlier initials (CM29) is read once for both
+  # writes of this save, never kept for another. If it cannot be read here,
+  # each write reads it itself, as always (and stops if that fails).
+  mapa <- tryCatch(iniciales_mapa_vigente(cid), error = function(e) NULL)
+  liabs <- tryCatch(modificar_pasivos_liabilities(cid, mapa = mapa, cambio = function(fresco) {
     if (wiz$mode == "edit")
       before_row <<- fresco[!is.na(fresco$id) & fresco$id == (wiz$edit_target_id %||% ""), , drop = FALSE]
     # An archived liability is restored from the Papelera, never by editing it.
@@ -369,7 +373,13 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
     return(list(ok = FALSE, msg = tr("tablas.pasivos.error_construir", detalle = conditionMessage(motivo))))
   }
   shared$pasivos_liabilities_db(liabs)
-  bump_sync_version("pasivos_liabilities_db", client_id = cid)
+  # T108: the liabilities are announced with the provisions, in ONE bump, at
+  # the end. Until then their bump is pending: any other way out of this
+  # save -- no provisions, a generation error, provisions that failed to
+  # save, an error -- announces the liabilities alone. A table written is
+  # never left without its bump.
+  bump_liabs_pendiente <- TRUE
+  on.exit(if (bump_liabs_pendiente) bump_sync_version("pasivos_liabilities_db", client_id = cid), add = TRUE)
 
   # Record current fetched base rate in the forecasting store so provisions use it
   if (startsWith(liab_row$tasa_tipo %||% "fija", "variable_") &&
@@ -499,7 +509,7 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
   # it), so its own sync bump finds nothing new and does not recompute.
   escritas <- NULL
   prov_ok <- tryCatch({
-    escritas <- save_pasivos_provisions(new_provs, client_id = shared$effective_client_id(), base = existing)
+    escritas <- save_pasivos_provisions(new_provs, client_id = shared$effective_client_id(), base = existing, mapa = mapa)
     TRUE
   }, error = function(e) {
     message("[wizard] save_pasivos_provisions failed: ", conditionMessage(e))
@@ -525,7 +535,8 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
   }
   tryCatch(shared$suppress_ledger_prov_refresh(TRUE), error = function(e) NULL)
   shared$pasivos_provisions_db(if (is.data.frame(escritas)) escritas else new_provs)
-  bump_sync_version("pasivos_provisions_db", client_id = shared$effective_client_id())
+  bump_liabs_pendiente <- FALSE
+  bump_sync_version(c("pasivos_liabilities_db", "pasivos_provisions_db"), client_id = cid)
   if (nrow(tras_fin)) .pasivos_fin_a_papelera(tras_fin, liab_row, user, shared)   # T70
 
   # Audit -- previously captured only 5 identity columns (id/categoria/

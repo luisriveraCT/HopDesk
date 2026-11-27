@@ -3088,6 +3088,11 @@ modificar_group_config <- function(cambio, client_id, evento = NULL) {
   stats::setNames(cur[deja], old[deja])
 }
 
+# The current map of earlier initials, read strictly from S3 (a failed read
+# stop()s): what iniciales_vigentes() applies.
+iniciales_mapa_vigente <- function(client_id)
+  .iniciales_mapa(.s3_leer_para_escribir(S3_KEYS$empresas, client_id))
+
 # The safety net of CM29: what is written to `tabla` (a key of
 # .INICIALES_COLUMNAS) never carries a company's earlier initials -- a session
 # that loaded before a rename (a stale copy, a form already open) writes them
@@ -3095,10 +3100,15 @@ modificar_group_config <- function(cambio, client_id, evento = NULL) {
 # session's copy (that is the stale one); a failed read stop()s and nothing is
 # saved. Each translation is counted in a message (initials and table keys
 # only). Returns df, translated.
-iniciales_vigentes <- function(df, tabla, client_id) {
+#
+# mapa (T108): the map iniciales_mapa_vigente() read, for a save that writes
+# two tables (the wizard: liabilities and provisions) and so read empresas.rds
+# twice a few milliseconds apart. Only within that one save, never kept
+# between saves; NULL (the default) reads it here, as always.
+iniciales_vigentes <- function(df, tabla, client_id, mapa = NULL) {
   cols <- .INICIALES_COLUMNAS[[tabla]]
   if (is.null(cols) || !is.data.frame(df) || !nrow(df) || !any(names(cols) %in% names(df))) return(df)
-  mapa <- .iniciales_mapa(.s3_leer_para_escribir(S3_KEYS$empresas, client_id))
+  if (is.null(mapa)) mapa <- iniciales_mapa_vigente(client_id)
   n <- 0L; pares <- character(0)
   for (old in names(mapa)) {
     nuevo <- .rni_tabla(tabla, old, mapa[[old]])(df)

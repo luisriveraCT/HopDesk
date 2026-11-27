@@ -67,11 +67,17 @@ register_synced <- function(name, s3_key, loader, per_session_loader = NULL) {
 # alongside this) can tell "the data saved fine, but the cross-session
 # staleness broadcast for it didn't" apart from "everything worked," instead
 # of that distinction being silently swallowed here.
+#
+# T108: `name` may be several tables changed by one save (the wizard writes
+# liabilities and provisions): the stamp is read, merged and written ONCE for
+# all of them -- the same merge per name, the same "not read, not written".
+# One name behaves exactly as before. An unregistered name warns and is
+# left out; with none left, FALSE.
 bump_sync_version <- function(name, client_id = NULL) {
-  if (!name %in% names(.SYNC_REGISTRY)) {
-    warning("[sync_bus] bump_sync_version called for unregistered key: ", name)
-    return(invisible(FALSE))
-  }
+  fuera <- name[!name %in% names(.SYNC_REGISTRY)]
+  for (nm in fuera) warning("[sync_bus] bump_sync_version called for unregistered key: ", nm)
+  name <- setdiff(name, fuera)
+  if (!length(name)) return(invisible(FALSE))
   # T103 (F2): the stamp is ONE file holding every table's version, and this
   # used to upload this process's whole list as it stood. A process that had
   # not merged S3's lately -- a fresh one (a script, a job, an app that saves
@@ -88,8 +94,8 @@ bump_sync_version <- function(name, client_id = NULL) {
   if (exists(".s3_leer_para_escribir", mode = "function")) {
     en_s3 <- tryCatch(.s3_leer_para_escribir(S3_KEYS$sync_versions, client_id), error = function(e) e)
     if (inherits(en_s3, "error")) {
-      .GlobalEnv$.sync_versions[[name]] <- (.GlobalEnv$.sync_versions[[name]] %||% 0L) + 1L
-      message("[sync_bus] version stamp not read, so not written (", name, "): ", conditionMessage(en_s3))
+      for (nm in name) .GlobalEnv$.sync_versions[[nm]] <- (.GlobalEnv$.sync_versions[[nm]] %||% 0L) + 1L
+      message("[sync_bus] version stamp not read, so not written (", paste(name, collapse = ", "), "): ", conditionMessage(en_s3))
       return(invisible(FALSE))
     }
     if (is.list(en_s3))
@@ -99,8 +105,8 @@ bump_sync_version <- function(name, client_id = NULL) {
           .GlobalEnv$.sync_versions[[nm]] <- v
       }
   }
-  .GlobalEnv$.sync_versions[[name]] <-
-    (.GlobalEnv$.sync_versions[[name]] %||% 0L) + 1L
+  for (nm in name)
+    .GlobalEnv$.sync_versions[[nm]] <- (.GlobalEnv$.sync_versions[[nm]] %||% 0L) + 1L
 
   # Write a cross-process stamp to S3 so other R workers detect this bump.
   # Suppress the verbose .s3_write log and swallow errors so a transient S3

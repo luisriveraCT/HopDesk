@@ -87,10 +87,15 @@ pasivos_liabilities_como_se_leen <- function(obj)
   df
 }
 
+# CM29's net (iniciales_vigentes()) with the map a save already read (T108),
+# or without it -- then the call is exactly the one it always was.
+.pasivos_iniciales <- function(df, tabla, client_id, mapa = NULL)
+  if (is.null(mapa)) iniciales_vigentes(df, tabla, client_id) else iniciales_vigentes(df, tabla, client_id, mapa = mapa)
+
 # Returns (invisibly) the table written (T108: modificar_pasivos_liabilities()
 # keeps exactly that, without reading the companies again).
-save_pasivos_liabilities <- function(df, client_id = NULL) {
-  escrito <- iniciales_vigentes(df, "pasivos_liabilities", client_id)   # never earlier initials (CM29)
+save_pasivos_liabilities <- function(df, client_id = NULL, mapa = NULL) {
+  escrito <- .pasivos_iniciales(df, "pasivos_liabilities", client_id, mapa)   # never earlier initials (CM29)
   .s3_write(escrito, S3_KEYS$pasivos_liabilities, client_id = client_id)
   invisible(escrito)
 }
@@ -102,13 +107,14 @@ save_pasivos_liabilities <- function(df, client_id = NULL) {
 # failed read or write stop()s. The Lista and the wizard used to write the
 # session's whole copy: a row another session had just changed went back to
 # what this session held.
-modificar_pasivos_liabilities <- function(client_id, cambio) {
+modificar_pasivos_liabilities <- function(client_id, cambio, mapa = NULL) {
   if (is.null(client_id) || !nzchar(client_id))
     stop("modificar_pasivos_liabilities: sin client_id", call. = FALSE)
   fresco <- pasivos_liabilities_como_se_leen(.s3_leer_para_escribir(S3_KEYS$pasivos_liabilities, client_id))
   nuevo <- cambio(fresco)
   if (identical(nuevo, fresco)) return(invisible(fresco))
-  escrito <- save_pasivos_liabilities(nuevo, client_id = client_id)
+  escrito <- if (is.null(mapa)) save_pasivos_liabilities(nuevo, client_id = client_id)
+             else save_pasivos_liabilities(nuevo, client_id = client_id, mapa = mapa)
   if (!is.data.frame(escrito)) escrito <- nuevo   # a stand-in save (tests) that returns TRUE
   invisible(pasivos_liabilities_como_se_leen(escrito))
 }
@@ -128,18 +134,18 @@ pasivos_provisions_como_se_leen <- function(obj) .normalize(obj, .schema_pasivos
 # a provision another session created, converted or paid meanwhile is kept.
 # With `base`, it returns the table written (that rebase, as a load returns
 # it): what the saving session keeps (T108). Without it, TRUE as always.
-save_pasivos_provisions <- function(df, client_id = NULL, permitir_reduccion = FALSE, base = NULL) {
+save_pasivos_provisions <- function(df, client_id = NULL, permitir_reduccion = FALSE, base = NULL, mapa = NULL) {
   if (!is.null(base) && !is.null(client_id) && nzchar(client_id)) {
     nuevo <- .normalize(df, .schema_pasivos_provision)
     base  <- .normalize(base, .schema_pasivos_provision)
     # CM29: never a company's earlier initials, translated after the rebase.
     escrito <- modificar_tabla(S3_KEYS$pasivos_provisions, client_id, .schema_pasivos_provision,
-                    function(fresco) iniciales_vigentes(rebase_por_id(nuevo, base, fresco, "id"),
-                                                        "pasivos_provisions", client_id),
+                    function(fresco) .pasivos_iniciales(rebase_por_id(nuevo, base, fresco, "id"),
+                                                        "pasivos_provisions", client_id, mapa),
                     permitir_reduccion = permitir_reduccion)
     return(invisible(pasivos_provisions_como_se_leen(escrito)))
   }
-  df <- iniciales_vigentes(.normalize(df, .schema_pasivos_provision), "pasivos_provisions", client_id)   # CM29
+  df <- .pasivos_iniciales(.normalize(df, .schema_pasivos_provision), "pasivos_provisions", client_id, mapa)   # CM29
   # The flag only when set: a normal save stays the exact call it always was.
   if (isTRUE(permitir_reduccion))
     .s3_write(df, S3_KEYS$pasivos_provisions, client_id = client_id,
