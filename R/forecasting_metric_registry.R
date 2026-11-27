@@ -180,15 +180,17 @@ forecasting_completar_fuentes <- function() {
   cambiadas
 }
 
-# TRUE for each metric row still exactly as the old seed left it on Yahoo.
+# TRUE for each metric row still exactly as the old seed left it on Yahoo:
+# primary yahoo and fetch_params exactly list(ticker = <the seed's ticker>) --
+# any other field or value means somebody edited it.
 .fcs_es_yahoo_de_semilla <- function(m) {
-  tk <- vapply(seq_len(nrow(m)), function(i) {
+  vapply(seq_len(nrow(m)), function(i) {
+    id <- m$metric_id[i]
+    if (!identical(m$primary_source_id[i], "yahoo") || !id %in% names(.FCS_YAHOO_SEMILLA)) return(FALSE)
     fp <- m$fetch_params[[i]]
     if (is.list(fp) && length(fp) && is.list(fp[[1]])) fp <- fp[[1]]
-    as.character((if (is.list(fp)) fp$ticker else NULL) %||% NA_character_)[1]
-  }, character(1))
-  m$primary_source_id %in% "yahoo" & m$metric_id %in% names(.FCS_YAHOO_SEMILLA) &
-    !is.na(tk) & tk == unname(.FCS_YAHOO_SEMILLA[m$metric_id])
+    is.list(fp) && identical(names(fp), "ticker") && identical(as.character(fp$ticker), .FCS_YAHOO_SEMILLA[[id]])
+  }, logical(1))
 }
 
 # The client's catalog: each metric still as the old seed left it on Yahoo

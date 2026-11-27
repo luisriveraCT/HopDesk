@@ -94,10 +94,12 @@ v2 <- CACHE; v2$tasas <- data.frame(fecha = D("2026-11-23"), metric_id = "sofr",
 ok("2.3 SOFR del lunes 23, hoy viernes 27: el 26 (Acción de Gracias) no cuenta -> 3, se muestra",
    isTRUE(filas_por(mercado_tasas_cliente(cfg("USD", "US"), v2, A("2026-11-27")), "sofr")$reciente))
 t <- mercado_tasas_cliente(cfg("MXN", "MX"), CACHE, A("2026-11-20"))
-ok("2.4 CETES 28 (semanal) del 12, hoy 20: 6 días hábiles y sigue (tope 7); TIIE del 19 también",
+ok("2.4 CETES 28 (semanal) del 12, hoy 20: 5 días hábiles (el 16 no cuenta) y sigue (tope 7); TIIE del 19 también",
    isTRUE(filas_por(t, "cetes28")$reciente) && isTRUE(filas_por(t, "tiie28")$reciente))
 t <- mercado_tasas_cliente(cfg("MXN", "MX"), CACHE, A("2026-11-24"))
-ok("2.5 ...el 24 CETES ya pasa de 7 (no se muestra), y TIIE del 19 pasa de 3", !filas_por(t, "cetes28")$reciente &&
+ok("2.5a el 24: CETES lleva justo 7 (se muestra)", isTRUE(filas_por(t, "cetes28")$reciente))
+t <- mercado_tasas_cliente(cfg("MXN", "MX"), CACHE, A("2026-11-25"))
+ok("2.5 ...el 25 CETES ya pasa de 7 (no se muestra), y TIIE del 19 pasa de 3", !filas_por(t, "cetes28")$reciente &&
      !filas_por(t, "tiie28")$reciente)
 sin <- CACHE; sin$fix <- NULL
 t <- mercado_tipos_cliente(cfg("MXN", "US"), sin, HOY)
@@ -145,9 +147,10 @@ ok("5.1 mercado_cache() y los cuadros leen solo las cachés", is.list(c1) && !in
      nrow(mercado_tipos_cliente(cfg("MXN", c("US", "EU")), c1, HOY)) == 2L &&
      identical(filas_por(mercado_tasas_cliente(cfg("USD", "US"), c1, HOY), "sofr")$valor, 3.94))
 for (e in espias) assign(e, originales[[e]], envir = globalenv())
-poner(MERCADO_TASAS_LLAVE, .schema_mercado_tasas, transform(CACHE$tasas[0, ], obtenido_en = character()))
+extra <- data.frame(fecha = D("2026-11-20"), metric_id = "tiie28", valor = 7.2, fuente = "banxico", obtenido_en = "x")
+poner(MERCADO_TASAS_LLAVE, .schema_mercado_tasas, rbind(transform(CACHE$tasas, obtenido_en = "x"), extra))   # the cache only grows
 ok("5.2 dentro de 10 minutos, el memo (no relee S3)", nrow(mercado_cache(HOY + 300)$tasas) == nrow(CACHE$tasas))
-ok("5.3 pasados 10 minutos, relee", !nrow(mercado_cache(HOY + 700)$tasas))
+ok("5.3 pasados 10 minutos, relee", nrow(mercado_cache(HOY + 700)$tasas) == nrow(CACHE$tasas) + 1L)
 ok("5.4 caché ilegible: NULL esa parte, nunca un error", {
   .MERCADO_DATOS$memo <- NULL
   k <- .s3_key(MERCADO_BCE_LLAVE, client_id = .HD_ADMIN_CID)
@@ -174,7 +177,7 @@ Sys.setenv(HD_ECB_URL = srv$url, HD_NYFED_URL = srv$url, HD_BANXICO_URL = srv$ur
            FRED_API_KEY = "", BANXICO_TOKEN = TOKEN)          # FRED: no key, no network
 lineas_log <- character()
 con_log <- function(expr) withCallingHandlers(expr, message = function(m) {
-  if (startsWith(conditionMessage(m), "mercado:")) lineas_log <<- c(lineas_log, conditionMessage(m))
+  if (startsWith(conditionMessage(m), "mercado:")) lineas_log <<- c(lineas_log, trimws(conditionMessage(m)))
   invokeRestart("muffleMessage") })
 s3_memoria_reset()
 .MERCADO_DATOS$intento <- NULL; .MERCADO_DATOS$memo <- NULL

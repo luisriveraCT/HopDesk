@@ -305,6 +305,11 @@ mercado_cache <- function(ahora = Sys.time()) {
   fila(if (reciente) serie$valor[i] else NA_real_, f, reciente)
 }
 
+# The calendar a figure's age is counted in: its publisher's (Banxico's FIX
+# is not late on a US holiday, nor the ECB's rate on a Mexican one).
+.mercado_calendario_fuente <- function(fuente)
+  switch(fuente %||% "", banxico = , banxico_fix = "MX", ecb = "EU", nyfed = , fred = "US", "MX")
+
 # The pair of two currencies as the market writes it: c(A, B), value B per A.
 .mercado_par <- function(x, y) {
   r <- function(m) { k <- match(m, MERCADO_ORDEN_COTIZACION); if (is.na(k)) length(MERCADO_ORDEN_COTIZACION) + 1L else k }
@@ -348,12 +353,11 @@ mercado_tipos_cliente <- function(cfg, cache, ahora = Sys.time()) {
   hoy <- hoy_en(ZONA_OMISION, ahora)
   monedas <- setdiff(unique(vapply(MERCADO_PAISES[paises], `[[`, "", "moneda")), base)
   if (!length(monedas)) return(.mercado_filas_vacias())
-  cal_de <- function(m) { p <- mercado_pais_de_moneda(m); if (is.na(p)) "MX" else MERCADO_PAISES[[p]]$calendario }
   filas <- lapply(monedas, function(m) {
     par <- .mercado_par(m, base)
     s <- .mercado_serie_par(par[1], par[2], cache, base = base)
     .mercado_fila(paste(par, collapse = "/"), paste(par, collapse = "/"), "tipo", s$serie, s$fuente,
-                  cal_de(par[1]), MERCADO_MAX_DIAS, hoy, cruzado = s$cruzado)
+                  .mercado_calendario_fuente(s$fuente), MERCADO_MAX_DIAS, hoy, cruzado = s$cruzado)
   })
   do.call(rbind, filas)
 }
