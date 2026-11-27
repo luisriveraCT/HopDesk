@@ -16,6 +16,10 @@
 #   7  the refresh in the background (the app's way): returns at once, a
 #      child fetches, the caches are written when it ends
 #   8  Panorama only reads: no source, no refresh in panorama_module.R
+#   9  the T74 lessons: the child's errors reach the app's log (never its
+#      text, a URL or the token); absolute paths, any working directory;
+#      a hung child killed; the token by environment, never in its command
+#      line (7.2, 7.5); the child never touches S3
 #
 # Run from project root:  Rscript tests/test_t116_f3_cuadros.R
 # =============================================================================
@@ -155,51 +159,118 @@ ok("5.4 caché ilegible: NULL esa parte, nunca un error", {
 
 cat("== 6. El refresco (en línea) ==\n")
 FECHAS <- c("2026-11-17", "2026-11-18", "2026-11-19")
+TOKEN <- "tok-de-prueba-123"
+VALORES_BX <- list(SF43718 = 18.4, SF46405 = 18.41, SF46410 = 20.3, SF46407 = 23.3, SF46406 = 0.12,
+                   SF290383 = 2.5, SF60632 = 13.1, SF43783 = 7.1, SF43936 = 6.2)
 CONF <- list(ecb = list(modo = "ok", fechas = FECHAS,
                         valores = list(USD = 1.1, MXN = 20.2, GBP = 0.8, JPY = 170, CAD = 1.5, CNY = 7.9,
                                        "B.EU000A2X2A25.WT" = 2.445)),
-             nyfed = list(modo = "ok", fechas = FECHAS, valores = list(sofr = 3.94, effr = 3.88)))
+             nyfed = list(modo = "ok", fechas = FECHAS, valores = list(sofr = 3.94, effr = 3.88)),
+             banxico = list(modo = "ok", token_esperado = TOKEN, fechas = FECHAS, valores = VALORES_BX))
 srv <- mercado_falso_iniciar(CONF)
 on.exit(srv$parar(), add = TRUE)
 llaves <- Sys.getenv(c("FRED_API_KEY", "BANXICO_TOKEN"))
-Sys.setenv(HD_ECB_URL = srv$url, HD_NYFED_URL = srv$url, FRED_API_KEY = "", BANXICO_TOKEN = "")  # FRED and Banxico: no network
+Sys.setenv(HD_ECB_URL = srv$url, HD_NYFED_URL = srv$url, HD_BANXICO_URL = srv$url,
+           FRED_API_KEY = "", BANXICO_TOKEN = TOKEN)          # FRED: no key, no network
+lineas_log <- character()
+con_log <- function(expr) withCallingHandlers(expr, message = function(m) {
+  if (startsWith(conditionMessage(m), "mercado:")) lineas_log <<- c(lineas_log, conditionMessage(m))
+  invokeRestart("muffleMessage") })
 s3_memoria_reset()
 .MERCADO_DATOS$intento <- NULL; .MERCADO_DATOS$memo <- NULL
-r <- mercado_datos_refrescar(HOY, en_fondo = FALSE)
+r <- con_log(mercado_datos_refrescar(HOY, en_fondo = FALSE))
 c6 <- mercado_cache(HOY)
-ok("6.1 llena el BCE (6 monedas × 3 días) y las tasas que respondieron (SOFR y EFFR de la Fed de NY, €STR del BCE)",
-   identical(r, "ok") && nrow(c6$bce) == 18L && setequal(unique(c6$tasas$metric_id), c("sofr", "fed_funds", "estr")) &&
+ok("6.1 llena el FIX, las divisas de Banxico, el BCE (6 × 3) y las tasas que respondieron",
+   nrow(c6$fix) == 3L && nrow(c6$divisas) == 18L && nrow(c6$bce) == 18L &&
+     setequal(unique(c6$tasas$metric_id), c("tiie28", "cetes28", "sofr", "fed_funds", "estr")) &&
      all(c6$tasas$fuente[c6$tasas$metric_id == "sofr"] == "nyfed"), paste(r, nrow(c6$bce)))
-ok("6.2 sin token de Banxico: ni FIX ni divisas (nada inventado)", is.null(c6$fix) || !nrow(c6$fix))
+ok("6.2 Prime (FRED sin llave) no llegó: «falla» y una línea en el log que la nombra, sin URL ni token",
+   identical(r, "falla") && length(lineas_log) == 1L && grepl("^mercado: refresco falló \\(.*tasa:prime", lineas_log) &&
+     !grepl("http|127\\.0\\.0\\.1|tok-de", lineas_log), paste(lineas_log, collapse = " | "))
 ok("6.3 otra vez dentro de la hora: «espera», sin pedir nada", { srv$log_borrar(); identical(mercado_datos_refrescar(HOY + 60, en_fondo = FALSE), "espera") && !nrow(srv$log()) })
 n <- .mem_escrituras
-ok("6.4 forzado con las mismas cifras: no escribe", identical(mercado_datos_refrescar(HOY + 120, forzar = TRUE, en_fondo = FALSE), "ok") &&
-     .mem_escrituras == n)
-c2 <- CONF; c2$ecb$fechas <- c(FECHAS, "2026-11-20"); c2$nyfed$fechas <- c(FECHAS, "2026-11-20"); srv$config(c2)
+q(mercado_datos_refrescar(HOY + 120, forzar = TRUE, en_fondo = FALSE))
+ok("6.4 forzado con las mismas cifras: no escribe", .mem_escrituras == n)
+c2 <- CONF; for (k in c("ecb", "nyfed", "banxico")) c2[[k]]$fechas <- c(FECHAS, "2026-11-20"); srv$config(c2)
 q(mercado_datos_refrescar(A("2026-11-20"), forzar = TRUE, en_fondo = FALSE))
 c7 <- mercado_cache(A("2026-11-20"))
-ok("6.5 un día nuevo: solo se agrega (6 filas más en el BCE), nada se repite",
-   nrow(c7$bce) == 24L && !anyDuplicated(paste(c7$bce$fecha, c7$bce$moneda)))
+ok("6.5 un día nuevo: solo se agrega (6 filas más en el BCE, 1 en el FIX), nada se repite",
+   nrow(c7$bce) == 24L && nrow(c7$fix) == 4L && !anyDuplicated(paste(c7$bce$fecha, c7$bce$moneda)))
 s3_memoria_reset()
-srv$config(list(ecb = list(modo = "falla500"), nyfed = list(modo = "falla500")))
-n <- .mem_escrituras
-ok("6.6 todo caído: «falla», nada escrito", identical(mercado_datos_refrescar(HOY, forzar = TRUE, en_fondo = FALSE), "falla") &&
-     .mem_escrituras == n)
+srv$config(list(ecb = list(modo = "falla500"), nyfed = list(modo = "falla500"), banxico = list(modo = "falla500", token_esperado = TOKEN)))
+n <- .mem_escrituras; lineas_log <- character()
+r <- con_log(mercado_datos_refrescar(HOY, forzar = TRUE, en_fondo = FALSE))
+ok("6.6 todo caído: «falla», nada escrito, una sola línea que nombra lo que falló",
+   identical(r, "falla") && .mem_escrituras == n && length(lineas_log) == 1L && grepl("bce:USD", lineas_log) &&
+     grepl("banxico:SF43718", lineas_log) && grepl("tasa:sofr", lineas_log))
+Sys.setenv(BANXICO_TOKEN = ""); lineas_log <- character()
+srv$config(CONF); srv$log_borrar()
+q0 <- con_log(mercado_datos_refrescar(HOY, forzar = TRUE, en_fondo = FALSE))
+ok("6.7 sin token de Banxico: no se pide a Banxico y lo dice («banxico:sin_token»)",
+   !any(grepl("SieAPIRest", srv$log()$ruta)) && any(grepl("banxico:sin_token", lineas_log)))
+Sys.setenv(BANXICO_TOKEN = TOKEN)
 
 cat("== 7. En segundo plano (como en la app) ==\n")
-srv$config(CONF)
-s3_memoria_reset()
+esperar_hijo <- function(seg = 90) {
+  fin <- Sys.time() + seg
+  con_log(while (!is.null(.MERCADO_DATOS$job) && Sys.time() < fin) { later::run_now(1); Sys.sleep(0.2) })
+}
+srv$config(CONF); srv$log_borrar()
+s3_memoria_reset(); lineas_log <- character()
 .MERCADO_DATOS$intento <- NULL; .MERCADO_DATOS$memo <- NULL
 t0 <- Sys.time()
 r <- mercado_datos_refrescar(HOY)
 ok("7.1 vuelve enseguida con «lanzado»", identical(r, "lanzado") && as.numeric(difftime(Sys.time(), t0, units = "secs")) < 5)
-ok("7.2 mientras corre el hijo: «corriendo» (nunca dos a la vez)", identical(mercado_datos_refrescar(HOY, forzar = TRUE), "corriendo"))
-fin <- Sys.time() + 90
-while (!is.null(.MERCADO_DATOS$job) && Sys.time() < fin) { later::run_now(1); Sys.sleep(0.2) }
+job <- .MERCADO_DATOS$job
+linea_cmd <- tryCatch(paste(job$get_cmdline(), collapse = " "), error = function(e) "")
+ok("7.2 el token nunca va en la línea de comandos del hijo (la lista de procesos)", nzchar(linea_cmd) && !grepl(TOKEN, linea_cmd, fixed = TRUE))
+ok("7.3 mientras corre: «corriendo» (nunca dos a la vez)", identical(mercado_datos_refrescar(HOY, forzar = TRUE), "corriendo"))
+esperar_hijo()
 c8 <- mercado_cache(HOY + 3600)
-ok("7.3 al terminar el hijo, las cachés quedan escritas (por el proceso principal)",
-   is.null(.MERCADO_DATOS$job) && !is.null(c8$bce) && nrow(c8$bce) == 18L && "sofr" %in% c8$tasas$metric_id)
-Sys.setenv(FRED_API_KEY = llaves[[1]], BANXICO_TOKEN = llaves[[2]], HD_ECB_URL = "", HD_NYFED_URL = "")
+lg <- srv$log()
+ok("7.4 al terminar, el proceso principal escribió las cachés (FIX, BCE y tasas)",
+   is.null(.MERCADO_DATOS$job) && nrow(c8$fix) == 3L && nrow(c8$bce) == 18L && "sofr" %in% c8$tasas$metric_id)
+ok("7.5 el token llegó al hijo por su entorno: Banxico lo recibió en el encabezado", any(lg$consulta == "token=ok") && !any(lg$consulta == "token=no"))
+ok("7.6 lo que falló en el hijo (Prime) quedó en el log de la app", any(grepl("^mercado: refresco falló .*tasa:prime", lineas_log)))
+
+cat("== 9. Las lecciones de la T74 ==\n")
+# 9.1 the child's errors are not hidden: a file it cannot load.
+s3_memoria_reset(); lineas_log <- character(); .MERCADO_DATOS$intento <- NULL
+n <- .mem_escrituras
+mercado_datos_refrescar(HOY, archivos = c(.mercado_archivos_hijo(), file.path(normalizePath("."), "R/no_existe.R")))
+esperar_hijo()
+ok("9.1 un hijo que truena (archivo que no existe): «mercado: refresco falló (proceso hijo)», nada escrito",
+   any(lineas_log == "mercado: refresco falló (proceso hijo)") && .mem_escrituras == n, paste(lineas_log, collapse = " | "))
+# 9.2 the child does not depend on the working directory.
+s3_memoria_reset(); lineas_log <- character(); .MERCADO_DATOS$intento <- NULL
+assign("HD_APP_DIR", normalizePath(".", winslash = "/"), envir = globalenv())
+antes <- setwd(tempdir())
+r <- mercado_datos_refrescar(HOY)
+setwd(antes)
+esperar_hijo()
+ok("9.2 lanzado desde otro directorio (como Rtmp*): carga por rutas absolutas y llena las cachés",
+   identical(r, "lanzado") && nrow(mercado_cache(HOY + 7200)$bce) == 18L)
+ok("9.3 el hijo recibe rutas absolutas, ninguna relativa", all(grepl("^([A-Za-z]:)?/", .mercado_archivos_hijo())))
+# 9.4 a hung child is killed past its limit.
+srv$config(modifyList(CONF, list(banxico = list(modo = "lento", segundos = 20))))
+s3_memoria_reset(); lineas_log <- character(); .MERCADO_DATOS$intento <- NULL
+tope <- MERCADO_HIJO_TOPE_SEG; assign("MERCADO_HIJO_TOPE_SEG", 3, envir = globalenv())
+n <- .mem_escrituras
+mercado_datos_refrescar(HOY); job <- .MERCADO_DATOS$job
+esperar_hijo(30)
+assign("MERCADO_HIJO_TOPE_SEG", tope, envir = globalenv())
+ok("9.4 un hijo colgado: se mata al pasar el tope, «tiempo agotado», nada escrito, y se puede lanzar otro",
+   !isTRUE(job$is_alive()) && any(lineas_log == "mercado: refresco falló (tiempo agotado)") && .mem_escrituras == n &&
+     is.null(.MERCADO_DATOS$job))
+srv$config(CONF)
+# 9.5 the child never touches S3 (statically: its function and what it loads write nothing).
+hijo_txt <- paste(deparse(.mercado_hijo), collapse = "\n")
+ok("9.5 el hijo solo baja: ni modificar_hd_admin, ni .s3_, ni aws.s3 en .mercado_hijo ni en .mercado_bajar_*",
+   !grepl("modificar_|\\.s3_|aws\\.s3|s3save", paste(hijo_txt, paste(deparse(.mercado_bajar_todo), collapse = ""),
+                                                     paste(deparse(.mercado_bajar_banxico), collapse = ""),
+                                                     paste(deparse(.mercado_bajar_bce), collapse = ""),
+                                                     paste(deparse(.mercado_bajar_tasas), collapse = ""))))
+Sys.setenv(FRED_API_KEY = llaves[[1]], BANXICO_TOKEN = llaves[[2]], HD_ECB_URL = "", HD_NYFED_URL = "", HD_BANXICO_URL = "")
 srv$parar()
 
 cat("== 8. Panorama solo lee ==\n")

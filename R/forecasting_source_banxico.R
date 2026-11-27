@@ -16,9 +16,13 @@ fcs_fetch_banxico <- function(metric, date_from, date_to) {
                 error_msg = "BANXICO_TOKEN not configured"))
   }
 
+  # T116 F3: HD_BANXICO_URL may point it ONLY to 127.0.0.1 (the tests' fake
+  # server, tests/helpers/mercado_falso.R); otherwise Banxico's own.
+  base <- if (exists(".fcs_url_local", mode = "function"))
+    .fcs_url_local("HD_BANXICO_URL", "https://www.banxico.org.mx") else "https://www.banxico.org.mx"
   url <- sprintf(
-    "https://www.banxico.org.mx/SieAPIRest/service/v1/series/%s/datos/%s/%s",
-    serie,
+    "%s/SieAPIRest/service/v1/series/%s/datos/%s/%s",
+    base, serie,
     format(as.Date(date_from), "%Y-%m-%d"),
     format(as.Date(date_to),   "%Y-%m-%d")
   )

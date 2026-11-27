@@ -53,19 +53,33 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
 }
 
 # ── Filling the caches ───────────────────────────────────────────────────────
-# The requests run in a child R process (callr::r_bg, the T74 Excel pattern):
-# a slow or silent source never blocks the sessions (one R process serves
-# them all). The child only fetches and returns rows -- it never touches S3;
-# the main process adds them to the caches when it ends.
+# The requests run in a child R process (callr::r_bg), with the lessons of
+# the Flujo's Excel (T74 F1):
+#   - a child hides its errors behind a clean exit: the result AND its
+#     stderr are checked, and every failure leaves one line in the app's
+#     log, «mercado: refresco falló (<fuente>)» -- the source's name only,
+#     never a URL, a header or the token;
+#   - its working directory is R's temp folder: it is given absolute paths
+#     (HD_APP_DIR, set when global.R loaded) and loads only what fetching
+#     needs;
+#   - it never touches S3: it returns rows, and the main process writes;
+#   - one child at a time per process; one past MERCADO_HIJO_TOPE_SEG is
+#     killed;
+#   - BANXICO_TOKEN (and FRED_API_KEY) reach it through its environment,
+#     inherited, never through its arguments (visible in the process list).
+# Each piece returns list(filas, fallas): the rows (or NULL) and the names of
+# what failed ("bce:USD", "tasa:sofr", "banxico:SF46410", "banxico:sin_token").
 
-# Banxico's FIX and the currencies it publishes (the series of fx_banxico.R),
-# as rows of their own caches. NULL when nothing came.
 .mercado_bajar_banxico <- function(hoy, obtenido) {
-  if (!nzchar(Sys.getenv("BANXICO_TOKEN", ""))) return(list(fix = NULL, divisas = NULL))
+  if (!nzchar(Sys.getenv("BANXICO_TOKEN", "")))
+    return(list(fix = NULL, divisas = NULL, fallas = "banxico:sin_token"))
+  fallas <- character()
   pedir <- function(id, serie) {
     r <- tryCatch(fcs_fetch_banxico(list(metric_id = id, fetch_params = list(list(serie = serie))),
                                     hoy - MERCADO_DIAS_ATRAS, hoy), error = function(e) NULL)
-    if (is.null(r) || !identical(r$status, "ok") || is.null(r$rows) || !nrow(r$rows)) return(NULL)
+    if (is.null(r) || !identical(r$status, "ok") || is.null(r$rows) || !nrow(r$rows)) {
+      fallas <<- c(fallas, paste0("banxico:", serie)); return(NULL)
+    }
     data.frame(fecha = as.Date(r$rows$fecha), valor = as.numeric(r$rows$value), stringsAsFactors = FALSE)
   }
   f <- pedir("usd_mxn", FX_FIX_SERIE)
@@ -76,28 +90,29 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
     if (is.null(d)) NULL else data.frame(fecha = d$fecha, moneda = m, serie = FX_DIVISAS_SERIES[[m]], valor = d$valor,
                                          obtenido_en = obtenido, stringsAsFactors = FALSE)
   })
-  list(fix = fix, divisas = do.call(rbind, partes))
+  list(fix = fix, divisas = do.call(rbind, partes), fallas = fallas)
 }
 
-# The ECB's per-euro figures of the last days, or NULL.
 .mercado_bajar_bce <- function(hoy, obtenido) {
+  fallas <- character()
   partes <- lapply(.mercado_bce_monedas(), function(m) {
     r <- tryCatch(.fcs_ecb_serie("EXR", sprintf("D.%s.%s.SP00.A", m, MERCADO_BCE_EN), hoy - MERCADO_DIAS_ATRAS, hoy),
                   error = function(e) NULL)
-    if (is.null(r) || !identical(r$status, "ok")) return(NULL)
+    if (is.null(r) || !identical(r$status, "ok")) { fallas <<- c(fallas, paste0("bce:", m)); return(NULL) }
     data.frame(fecha = r$datos$fecha, moneda = m, valor = r$datos$valor, obtenido_en = obtenido, stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, partes)
-  if (is.null(out) || !nrow(out)) NULL else out
+  list(filas = if (is.null(out) || !nrow(out)) NULL else out, fallas = fallas)
 }
 
-# The reference rates of the last days, each from the first of its sources
-# (the seed's primary, then its fallbacks) that answers. NULL when none did.
+# Each reference rate from the first of its sources (the seed's primary,
+# then its fallbacks) that answers.
 .mercado_bajar_tasas <- function(hoy, obtenido) {
   semilla <- .seed_forecasting_metrics()
+  fallas <- character()
   partes <- lapply(.mercado_tasas_todas(), function(id) {
     m <- semilla[semilla$metric_id == id, , drop = FALSE]
-    if (!nrow(m)) return(NULL)
+    if (!nrow(m)) { fallas <<- c(fallas, paste0("tasa:", id)); return(NULL) }
     metrica <- as.list(m[1, ])
     for (fuente in c(metrica$primary_source_id, unlist(metrica$fallback_source_ids[[1]]))) {
       f <- paste0("fcs_fetch_", fuente)
@@ -107,29 +122,42 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
       return(data.frame(fecha = as.Date(r$rows$fecha), metric_id = id, valor = as.numeric(r$rows$value),
                         fuente = fuente, obtenido_en = obtenido, stringsAsFactors = FALSE))
     }
+    fallas <<- c(fallas, paste0("tasa:", id))
     NULL
   })
   out <- do.call(rbind, partes)
-  if (is.null(out) || !nrow(out)) NULL else out
+  list(filas = if (is.null(out) || !nrow(out)) NULL else out, fallas = fallas)
 }
 
-# Everything, in one go: list(fix, divisas, bce, tasas), each rows or NULL.
+# Everything: list(fix, divisas, bce, tasas, fallas).
 .mercado_bajar_todo <- function(hoy, obtenido) {
   b <- .mercado_bajar_banxico(hoy, obtenido)
-  list(fix = b$fix, divisas = b$divisas, bce = .mercado_bajar_bce(hoy, obtenido),
-       tasas = .mercado_bajar_tasas(hoy, obtenido))
+  e <- .mercado_bajar_bce(hoy, obtenido)
+  t <- .mercado_bajar_tasas(hoy, obtenido)
+  list(fix = b$fix, divisas = b$divisas, bce = e$filas, tasas = t$filas, fallas = c(b$fallas, e$fallas, t$fallas))
 }
 
-# The child: loads only what fetching needs, from the app's root, and fetches.
-# Never reads nor writes S3.
-.mercado_hijo <- function(app_dir, hoy, obtenido) {
-  setwd(app_dir)
+# What the child loads: absolute paths under the app's root (its own
+# working directory is R's temp folder).
+.mercado_archivos_hijo <- function(app_dir = get0("HD_APP_DIR", envir = globalenv(),
+                                                  ifnotfound = normalizePath(getwd(), winslash = "/")))
+  file.path(app_dir, c("R/forecasting_metric_registry.R", "R/forecasting_source_banxico.R",
+                       "R/forecasting_source_fred.R", "R/forecasting_source_ecb.R",
+                       "R/forecasting_source_nyfed.R", "R/fx_banxico.R", "R/mercado.R", "R/mercado_datos.R"))
+
+# The child. Arguments: file paths, a date and a timestamp -- nothing secret.
+# Never reads nor writes S3; never depends on its working directory.
+.mercado_hijo <- function(archivos, hoy, obtenido) {
   assign("%||%", function(a, b) if (is.null(a)) b else a, envir = globalenv())
-  for (f in c("R/zona.R", "R/forecasting_metric_registry.R", "R/forecasting_source_banxico.R",
-              "R/forecasting_source_fred.R", "R/forecasting_source_ecb.R", "R/forecasting_source_nyfed.R",
-              "R/fx_banxico.R", "R/mercado.R", "R/mercado_datos.R"))
-    sys.source(f, envir = globalenv())
+  for (f in archivos) sys.source(f, envir = globalenv())
   suppressWarnings(suppressMessages(.mercado_bajar_todo(as.Date(hoy), obtenido)))
+}
+
+# One line in the app's log per refresh that failed somewhere.
+.mercado_log_falla <- function(fuentes) {
+  fuentes <- unique(fuentes[nzchar(fuentes)])
+  if (length(fuentes)) message("mercado: refresco falló (", paste(fuentes, collapse = ", "), ")")
+  invisible(length(fuentes))
 }
 
 # Adds to a global cache only the rows whose (fecha, por) it lacks; an
@@ -152,30 +180,45 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
   }, error = function(e) FALSE)
 }
 
-# What the child brought, into the caches. "ok" or "falla".
+# What the fetch brought, into the caches (the main process). Logs what
+# failed -- to fetch or to save. "ok" (everything fetched and saved) or
+# "falla".
 .mercado_guardar <- function(r) {
-  if (!is.list(r)) return("falla")
+  if (!is.list(r)) { .mercado_log_falla("proceso hijo"); return("falla") }
   callado <- function(x) suppressWarnings(suppressMessages(x))
-  ok <- c(
-    callado(.mercado_agregar(FX_FIX_LLAVE, .schema_fx_fix, r$fix, NULL, "FIX de Banxico")),
-    callado(.mercado_agregar(FX_DIVISAS_LLAVE, .schema_fx_divisas, r$divisas, "moneda", "Divisas de Banxico")),
-    callado(.mercado_agregar(MERCADO_BCE_LLAVE, .schema_mercado_bce, r$bce, "moneda", "Tipos de referencia del BCE")),
-    callado(.mercado_agregar(MERCADO_TASAS_LLAVE, .schema_mercado_tasas, r$tasas, "metric_id",
-                             "Tasas de referencia de mercado")))
+  guardado <- c(
+    fix     = callado(.mercado_agregar(FX_FIX_LLAVE, .schema_fx_fix, r$fix, NULL, "FIX de Banxico")),
+    divisas = callado(.mercado_agregar(FX_DIVISAS_LLAVE, .schema_fx_divisas, r$divisas, "moneda", "Divisas de Banxico")),
+    bce     = callado(.mercado_agregar(MERCADO_BCE_LLAVE, .schema_mercado_bce, r$bce, "moneda", "Tipos de referencia del BCE")),
+    tasas   = callado(.mercado_agregar(MERCADO_TASAS_LLAVE, .schema_mercado_tasas, r$tasas, "metric_id",
+                                       "Tasas de referencia de mercado")))
   .MERCADO_DATOS$memo <- NULL            # the next read sees what was just added
-  if (all(ok) && !all(vapply(r[c("fix", "divisas", "bce", "tasas")], is.null, logical(1)))) "ok" else "falla"
+  fallas <- c(as.character(r$fallas %||% character()), paste0("guardar:", names(guardado)[!guardado]))
+  .mercado_log_falla(fallas)
+  if (!length(fallas)) "ok" else "falla"
 }
 
-MERCADO_HIJO_TOPE_SEG <- 180   # a child still running after this is stopped
+MERCADO_HIJO_TOPE_SEG <- 180   # a child still running after this is killed
+
+# What a finished child left: its result, or NULL when it failed -- an error
+# (get_result() stops), a non-zero exit, or an error line in its stderr
+# (whose text is never copied to the log: only that it failed).
+.mercado_resultado_hijo <- function(job) {
+  r <- tryCatch(job$get_result(), error = function(e) NULL)
+  err <- tryCatch(paste(job$read_all_error_lines(), collapse = "\n"), error = function(e) "")
+  estado <- tryCatch(job$get_exit_status(), error = function(e) NA_integer_)
+  if (is.null(r) || !is.list(r) || !identical(as.integer(estado), 0L) || grepl("(^|\n)Error", err)) NULL else r
+}
 
 # Fills the caches, at most once every MERCADO_REINTENTO_SEG per process
-# (forzar skips that), never two at a time. en_fondo (the app): the requests
-# go to a child process and this returns "lanzado" at once; the caches are
-# written when it ends (a later() tick checks every 2 s). en_fondo = FALSE
-# (tests, scripts): fetches and writes here and returns "ok" or "falla".
-# Also "espera" (asked too recently) and "corriendo" (a child is running).
-# Never stops, never prints.
-mercado_datos_refrescar <- function(ahora = Sys.time(), forzar = FALSE, en_fondo = TRUE) {
+# (forzar skips that). en_fondo (the app): the requests go to a child and this
+# returns "lanzado" at once; a later() tick every 2 s writes what it brought
+# when it ends, or kills it past MERCADO_HIJO_TOPE_SEG. en_fondo = FALSE
+# (tests, scripts): fetches and writes here; "ok" or "falla". Also "espera"
+# (asked too recently) and "corriendo" (a child is alive: never two). Never
+# stops; prints only the failure line.
+mercado_datos_refrescar <- function(ahora = Sys.time(), forzar = FALSE, en_fondo = TRUE,
+                                    archivos = .mercado_archivos_hijo()) {
   job <- .MERCADO_DATOS$job
   if (!is.null(job) && isTRUE(tryCatch(job$is_alive(), error = function(e) FALSE))) return("corriendo")
   ultimo <- .MERCADO_DATOS$intento
@@ -186,30 +229,28 @@ mercado_datos_refrescar <- function(ahora = Sys.time(), forzar = FALSE, en_fondo
   obtenido <- format(ahora, tz = "UTC", "%Y-%m-%dT%H:%M:%SZ")
   if (!isTRUE(en_fondo))
     return(tryCatch(.mercado_guardar(suppressWarnings(suppressMessages(.mercado_bajar_todo(hoy, obtenido)))),
-                    error = function(e) "falla"))
+                    error = function(e) { .mercado_log_falla("proceso"); "falla" }))
   tryCatch({
-    app_dir <- get0("HD_APP_DIR", envir = globalenv(), ifnotfound = normalizePath(getwd(), winslash = "/"))
-    job <- callr::r_bg(.mercado_hijo, args = list(app_dir = app_dir, hoy = format(hoy), obtenido = obtenido),
-                       wd = app_dir, supervise = TRUE)
+    job <- callr::r_bg(.mercado_hijo, args = list(archivos = archivos, hoy = format(hoy), obtenido = obtenido),
+                       supervise = TRUE)       # the environment (and the tokens in it) is inherited
     .MERCADO_DATOS$job <- job
     inicio <- Sys.time()
     revisar <- function() {
       if (isTRUE(tryCatch(job$is_alive(), error = function(e) FALSE))) {
-        if (as.numeric(difftime(Sys.time(), inicio, units = "secs")) > MERCADO_HIJO_TOPE_SEG) {
-          tryCatch(job$kill(), error = function(e) NULL)
-          .MERCADO_DATOS$job <- NULL
-          return(invisible())
-        }
-        return(later::later(revisar, delay = 2))
+        if (as.numeric(difftime(Sys.time(), inicio, units = "secs")) <= MERCADO_HIJO_TOPE_SEG)
+          return(invisible(later::later(revisar, delay = 2)))
+        tryCatch(job$kill(), error = function(e) NULL)
+        .MERCADO_DATOS$job <- NULL
+        .mercado_log_falla("tiempo agotado")
+        return(invisible())
       }
       .MERCADO_DATOS$job <- NULL
-      r <- tryCatch(job$get_result(), error = function(e) NULL)
-      tryCatch(.mercado_guardar(r), error = function(e) NULL)
+      tryCatch(.mercado_guardar(.mercado_resultado_hijo(job)), error = function(e) .mercado_log_falla("guardar"))
       invisible()
     }
     later::later(revisar, delay = 2)
     "lanzado"
-  }, error = function(e) "falla")
+  }, error = function(e) { .mercado_log_falla("proceso hijo"); "falla" })
 }
 
 # ── Reading the caches (never a source) ──────────────────────────────────────

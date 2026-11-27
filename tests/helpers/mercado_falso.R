@@ -18,7 +18,12 @@
 #                fechas = c("2027-11-24", ...),
 #                valores = list(USD = 1.0975, GBP = 0.83755, ..., "B.EU000A2X2A25.WT" = 2.445),
 #                fechas_de = list(GBP = c(...))),          # optional, per series
-#   nyfed = list(modo = ..., fechas = c(...), valores = list(sofr = 3.94, effr = 3.88)))
+#   nyfed = list(modo = ..., fechas = c(...), valores = list(sofr = 3.94, effr = 3.88)),
+#   banxico = list(modo = "ok"|"falla500"|"lento", segundos = 10, token_esperado = "...",
+#                  fechas = c(...), valores = list(SF43718 = 18.4, ...)))
+#   GET /SieAPIRest/service/v1/series/<serie>/datos/<desde>/<hasta> (HD_BANXICO_URL)
+#       -> {"bmx": {"series": [{"datos": [{"fecha": dd/mm/aaaa, "dato"}]}]}};
+#       401 without the expected Bmx-Token. The log says token=ok|no, never the token.
 # A series without a value answers 404 (as the ECB does for an unknown key).
 # log(): one row per GET -- ruta, consulta.
 # =============================================================================
@@ -58,6 +63,21 @@ mercado_falso_iniciar <- function(config) {
         if (is.null(v) || identical(n$modo, "vacio")) return(responder(200L, "application/json", "{\"refRates\":[]}"))
         rr <- lapply(n$fechas, function(f) list(effectiveDate = f, type = toupper(tasa), percentRate = v))
         return(responder(200L, "application/json", as.character(jsonlite::toJSON(list(refRates = rr), auto_unbox = TRUE))))
+      }
+      # Banxico SIE: /SieAPIRest/service/v1/series/<serie>/datos/<desde>/<hasta>.
+      # Logs only WHETHER the Bmx-Token header was the expected one -- never it.
+      if (length(partes) == 8L && partes[1] == "SieAPIRest" && partes[4] == "series" && partes[6] == "datos") {
+        b <- conf$banxico; serie <- partes[5]
+        tok <- if (identical(req$HTTP_BMX_TOKEN %||% "", b$token_esperado %||% "-")) "token=ok" else "token=no"
+        cat(paste(ruta, tok, sep = "\t"), "\n", file = log, append = TRUE, sep = "")
+        if (identical(b$modo, "lento")) Sys.sleep(as.numeric(b$segundos %||% 10))
+        if (!identical(tok, "token=ok")) return(responder(401L, "application/json", "{}"))
+        if (identical(b$modo, "falla500")) return(responder(500L, "application/json", "{}"))
+        v <- b$valores[[serie]]
+        datos <- if (is.null(v)) list() else lapply(b$fechas, function(f)
+          list(fecha = format(as.Date(f), "%d/%m/%Y"), dato = format(v, nsmall = 4)))
+        cuerpo <- list(bmx = list(series = list(list(idSerie = serie, titulo = "ficticia", datos = datos))))
+        return(responder(200L, "application/json", as.character(jsonlite::toJSON(cuerpo, auto_unbox = TRUE))))
       }
       responder(404L, "text/plain", "no existe")
     })
