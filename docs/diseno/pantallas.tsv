@@ -12,8 +12,6 @@ pieza.hd_modal	Ventana estándar (hd_modal)	modal	pieza.hd_table	R/hd_table.R	mo
 pieza.hd_table	Motor de tablas (hd_table)	pieza		R/hd_table.R	fn:hd_table_ui				pendiente	Las 59 tablas; cada una está en su pantalla
 pieza.hd_table.excel	Exportar cualquier tabla a Excel	excel	pieza.hd_table	R/hd_table.R	descarga:excel				pendiente	La pieza excel del motor: cada tabla la hereda
 pan	Panorama	pestana		app.R	nav:PAN				pendiente	
-pan.alertas	Alertas del equipo	panel	pan	R/avisos_alertas_module.R	fn:alertas_equipo_ui			alertas_equipo	pendiente	OJO: alertas_equipo_ui() no se llama en ningún lado hoy
-pan.alertas.editar	Editar alertas de una persona	modal	pan.alertas	R/avisos_alertas_module.R	modal:alertas_equipo_server@tabla$accion()				pendiente	
 pan.avisos_de	De quién recibo avisos	modal	pan	R/panorama_module.R	modal:panoramaServer@input$req_avisos_abrir			avisos_de	pendiente	
 pan.publicar	Publicar y Publicadas	panel	pan	R/panorama_publicar_module.R	fn:panoramaPublicarUI			avisos_publicados	pendiente	
 cal	Calendario	pestana		app.R	nav:CAL				pendiente	
@@ -61,6 +59,7 @@ ic.saldos	Saldos y facturas intercompany	panel	ic	R/interco_module.R	fn:intercoU
 psv	Pasivos	pestana		app.R	nav:PSV				pendiente	
 psv.asistente	Asistente de pasivo	modal	psv.lista	R/pasivos_wizard_module.R	modal:.pwiz_modal			amortizacion;provisiones_asistente	pendiente	
 psv.asistente.cancelar	¿Salir del asistente?	modal	psv.asistente	R/pasivos_wizard_module.R	modal:setup_pasivos_wizard@input$pwiz_cancel				pendiente	Sin título; revisar
+psv.asistente.documento	Documento adjunto del pasivo	descarga	psv.asistente	R/adjuntos_pasivo_ui.R	descarga:pdoc_descargar				pendiente	T106: el archivo tal cual se subió (PDF, XML, Excel...)
 psv.comprobante	Gestionar comprobante de provisión	modal	psv.tabla	R/pasivos_module.R	modal:pasivos_manage_converted_modal_ui				pendiente	
 psv.comprobante.eliminar	¿Eliminar provisión?	modal	psv.comprobante	R/pasivos_module.R	modal:setup_pasivos_module@input$pcm_delete_provision				pendiente	
 psv.conflictos	Confirmación de cambios	modal	psv.tabla	R/pasivos_edit_confirm_module.R	modal:.pec_modal_ui			conflictos_pasivo	pendiente	
