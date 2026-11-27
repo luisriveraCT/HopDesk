@@ -153,8 +153,12 @@ cat("== D. the wizard ==\n")
 mk_wiz <- function(ids, mode = "create", target = NULL) {
   w <- reactiveValues(draft = list(policy_ids = ids), mode = mode, edit_target_id = target); w }
 sh <- function(u = admin, liabs = NULL) c(sesion(u), list(pasivos_liabilities_db = reactiveVal(liabs)))
-ok("D.1 only the catalog's ids are kept, in the draft's order", isolate({
-  w <- mk_wiz(c("p1", "nope")); .wiz_politicas_autoriza(w, sh()) && identical(w$draft$policy_ids, "p1") }))
+# T120 (6.6): an id neither the session's catalog nor S3's has is never
+# dropped in silence -- the save is refused (said); known ids keep their order.
+ok("D.1 an id no catalog has refuses the save (never dropped in silence); known ids keep the draft's order", isolate({
+  w <- mk_wiz(c("p1", "nope")); w2 <- mk_wiz("p1")
+  !.wiz_politicas_autoriza(w, sh()) && identical(w$draft$policy_ids, c("p1", "nope")) &&
+    .wiz_politicas_autoriza(w2, sh()) && identical(w2$draft$policy_ids, "p1") }))
 sin_pas <- list(user = "c", tier = "admin", permisos = stats::setNames(list(FALSE), "can_manage_pasivos"))
 ok("D.2 assigning without can_manage_pasivos is refused on the server", isolate(!.wiz_politicas_autoriza(mk_wiz("p1"), sh(sin_pas))))
 lib <- data.frame(id = "L", policy_ids = "p1", stringsAsFactors = FALSE)
