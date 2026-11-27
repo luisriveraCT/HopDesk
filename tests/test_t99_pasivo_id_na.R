@@ -25,7 +25,7 @@ source("R/monedas.R"); source("R/zona.R")
 for (f in c("R/pasivos_schemas.R", "R/bancos_persistence.R", "R/pasivos_persistence.R",
             "R/pasivos_capabilities.R", "R/pasivos_audit.R", "R/forecasting_resolve.R",
             "R/policy_engine.R", "R/pasivos_engine.R", "R/pasivos_wizard_validate.R", "R/pasivos_wizard_steps.R",
-            "R/pasivos_wizard_module.R", "R/i18n.R", "R/pasivos_table_pivot.R",
+            "R/pasivos_wizard_module.R", "R/adjuntos_s3.R", "R/adjuntos_registro.R", "R/adjuntos_almacen.R", "R/adjuntos_documentos.R", "R/adjuntos_cfdi.R", "R/adjuntos_pasivo_ui.R", "R/i18n.R", "R/pasivos_table_pivot.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R", "R/ui_components.R"))
   suppressMessages(source(f))
 for (e in parse("R/global.R", keep.source = FALSE))

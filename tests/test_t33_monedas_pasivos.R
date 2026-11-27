@@ -128,7 +128,7 @@ test_that("the table's server without moneda_base_cliente (an old shared): MXN, 
 F_WMOD  <- Sys.getenv("WMOD_R",  "R/pasivos_wizard_module.R")
 F_STEPS <- Sys.getenv("STEPS_R", "R/pasivos_wizard_steps.R")
 F_PMOD  <- Sys.getenv("PMOD_R",  "R/pasivos_module.R")
-for (f in c("R/pasivos_engine.R", F_STEPS, F_WMOD)) suppressMessages(source(f))
+for (f in c("R/pasivos_engine.R", F_STEPS, F_WMOD, "R/adjuntos_s3.R", "R/adjuntos_registro.R", "R/adjuntos_almacen.R", "R/adjuntos_documentos.R", "R/adjuntos_cfdi.R", "R/adjuntos_pasivo_ui.R")) suppressMessages(source(f))
 cargar(F_PMOD, "pasivos_convert_modal_ui")
 elegida <- function(ui, id) {
   h <- paste(as.character(ui), collapse = "")
