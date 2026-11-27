@@ -150,6 +150,10 @@
     observador = new MutationObserver(function () {
       Object.keys(ULTIMO).forEach(function (id) {
         var el = document.getElementById(id);
+        // T102: a container that waits to be seen (data-vista) is painted only
+        // from what the server sends when it is seen -- never from this copy,
+        // which may be older than the data.
+        if (el && esperaVista(el)) return;
         if (el && (!TABLAS[id] || TABLAS[id].root !== el)) pintarDesde(ULTIMO[id]);
       });
     });
@@ -3148,6 +3152,13 @@
     }
   };
 
+  // T102: declared before registrar() runs (it may run at once).
+  var VISTA_N = 0;
+  function esperaVista(el) { return el.getAttribute('data-vista') === '1'; }
+  var vistaObs = window.ResizeObserver ? new ResizeObserver(function (entradas) {
+    entradas.forEach(function (e) { reportarVista(e.target); });
+  }) : null;
+
   (function registrar() {
     if (window.Shiny && Shiny.addCustomMessageHandler) {
       Shiny.addCustomMessageHandler('hdt-datos', recibir);
@@ -3159,6 +3170,10 @@
       Shiny.addCustomMessageHandler('hdt-ediciones', recibirEdiciones);
       Shiny.addCustomMessageHandler('hdt-opciones', recibirOpciones);
       Shiny.addCustomMessageHandler('hdt-casillas', recibirCasillas);
+      // T102: every (re)connection is a new session that knows nothing of
+      // which containers can be seen -- and this script may arrive after it.
+      if (window.jQuery) jQuery(document).on('shiny:connected', function () { setTimeout(reportarTodas, 0); });
+      if (conectada()) reportarTodas();
       pedirPerdidos();
     }
     else setTimeout(registrar, 20);
@@ -3182,7 +3197,34 @@
     var app = window.Shiny && Shiny.shinyapp;
     return !!(app && app.isConnected && app.isConnected() && Shiny.setInputValue);
   }
+  // T102: with options(hdt.esperar_vista) a container carries data-vista="1"
+  // and says when it can be seen -- offsetWidth > 0, the criterion
+  // observarVisible() already uses: a hidden tab, a closed modal, <details>,
+  // accordion or conditionalPanel all measure 0 -- as ns + "hdt_vista" =
+  // {v: 1|0, n}, n being this container (a re-created one has another n, and
+  // gets its data again). The server sends a table's data only while v = 1.
+  // Reported again on every (re)connection: a new session knows nothing.
+  function reportarVista(el, forzar) {
+    if (!el.id || !conectada() || !document.body.contains(el)) return;
+    var v = (!vistaObs || el.offsetWidth > 0) ? 1 : 0;   // without ResizeObserver: counted as seen
+    if (!forzar && el.hdtVistaV === v) return;
+    el.hdtVistaV = v;
+    if (!el.hdtVistaN) el.hdtVistaN = ++VISTA_N;
+    Shiny.setInputValue(el.getAttribute('data-ns') + 'hdt_vista', { v: v, n: el.hdtVistaN }, { priority: 'event' });
+  }
+  function vigilarVista(el) {
+    if (el.hdtVistaObs) return;
+    el.hdtVistaObs = true;
+    if (vistaObs) vistaObs.observe(el);
+    reportarVista(el, true);
+  }
+  function reportarTodas() {
+    Array.prototype.forEach.call(document.querySelectorAll('.hdt[data-ns][data-vista="1"]'), function (el) {
+      if (el.hdtVistaObs) reportarVista(el, true); else vigilarVista(el);
+    });
+  }
   function pedirSiFalta(el) {
+    if (esperaVista(el)) { vigilarVista(el); return; }
     if (!el.id || ULTIMO[el.id] || el.hdtPedido || !conectada()) return;
     el.hdtPedido = true;
     Shiny.setInputValue(el.getAttribute('data-ns') + 'hdt_pedir', Date.now(), { priority: 'event' });

@@ -158,7 +158,9 @@ ok("c.5 the engine merges a message's words into the page's dictionary before dr
 ok("c.7 the page's <head> merges into HD_I18N, never replaces it (it also comes with the first table a renderUI draws, after other tables' words arrived)",
    grepl("window.HD_I18N=Object.assign(window.HD_I18N||{},", as.character(i18n_head()), fixed = TRUE) &&
      !grepl("window.HD_I18N={", as.character(i18n_head()), fixed = TRUE))
-ok("c.6 hdtable.js's version moved (browsers drop the old copy)", grepl("hdtable.js?v=48", leer("R/hd_table.R"), fixed = TRUE))
+# At least 48 (T118's): a later change moves it again (T102: 49), never back.
+ok("c.6 hdtable.js's version moved (browsers drop the old copy)",
+   isTRUE(as.integer(sub(".*hdtable\\.js\\?v=([0-9]+).*", "\\1", grep("hdtable\\.js\\?v=", leer("R/hd_table.R"), value = TRUE)[1])) >= 48L))
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

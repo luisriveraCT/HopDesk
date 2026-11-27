@@ -59,7 +59,7 @@ hd_table_deps <- function() {
     htmltools::tags$link(rel = "stylesheet", href = paste0("hd_temas.css?v=", v_tema)),
     htmltools::tags$link(rel = "stylesheet", href = paste0("hd_clasico_legado.css?v=", v_tema)),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=33"),
-    htmltools::tags$script(src = "hdtable.js?v=48")
+    htmltools::tags$script(src = "hdtable.js?v=49")
   ))
 }
 
@@ -81,6 +81,9 @@ hd_table_ui <- function(id, alto = "auto") {
     hd_table_deps(),
     htmltools::div(
       id = ns("hdt"), class = paste(c("hdt", if (auto) "hdt-auto", if (ventana) "hdt-llenar"), collapse = " "), `data-ns` = ns(""),
+      # T102: with options(hdt.esperar_vista = TRUE) (app.R) the browser says
+      # when this container can be seen, and its data come only then.
+      `data-vista` = if (isTRUE(getOption("hdt.esperar_vista"))) "1",
       style = if (!auto) paste0("--hdt-alto:", alto, ";"),
       htmltools::div(class = "hdt-cargando", tr("comun.cargando"))
     )
@@ -920,6 +923,15 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
     # while building the rows is caught: message() + log_action and the
     # table says so; req()/validate() (shiny.silent.error) go through as
     # before. Here, not in each module: every table gets it.
+    # T102: with options(hdt.esperar_vista = TRUE) a table's data go only
+    # while its container can be seen (the browser's hdt_vista: {v, n}, n =
+    # the container). Hidden, the observer reads nothing -- no datos(), no
+    # dependency -- so a table nobody opens costs nothing; seen again, it
+    # reads what is current and sends it once. `enviado` is what was last
+    # sent to which container: the same data to the same container is never
+    # sent twice. Without the option (tests, fixtures): as before.
+    esperar <- isTRUE(getOption("hdt.esperar_vista"))
+    enviado <- new.env(parent = emptyenv())
     shiny::observe({
       input$hdt_pedir
       # T69: a session whose tier may not receive this table never gets its
@@ -929,6 +941,10 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
       if (is.function(permitida) && !isTRUE(tryCatch(permitida(tabla), error = function(e) {
         message("[T69] table gate failed for '", tabla, "': ", conditionMessage(e)); FALSE })))
         return()
+      # T102: after the gate, never before -- seen or not never opens it.
+      vista <- if (esperar) input$hdt_vista
+      if (esperar && !(is.list(vista) && identical(as.integer(vista$v), 1L))) return()
+      sin_cambio <- FALSE
       carga <- tryCatch({
         df <- datos()
         shiny::req(!is.null(df))
@@ -937,7 +953,11 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         if (is.function(columnas)) hd_columna_editable(cols, tabla, piezas_tabla)
         if (is.function(columnas)) hd_columnas_piezas(cols, tabla, piezas_tabla)
         if (is.function(columnas)) hd_columna_opcion(cols, tabla, piezas_tabla)
-        c(list(
+        firma <- if (esperar) list(n = vista$n, df = df, cols = cols,
+                                   enc = if (!is.null(encabezado)) isTRUE(encabezado()),
+                                   oc = if (!is.null(acciones_ocultas)) tryCatch(as.character(unlist(acciones_ocultas())),
+                                     error = function(e) { if (inherits(e, "shiny.silent.error")) stop(e); NULL }))
+        if (esperar && identical(firma, enviado$firma)) { sin_cambio <- TRUE; NULL } else c(list(
         id       = ns("hdt"),
         tabla    = tabla,
         filas    = hd_filas(df, cols, id_col),
@@ -988,7 +1008,11 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
           carga$textos$contador, carga$textos$banda,
           lapply(carga$acciones_barra, function(a) if (is.list(a)) a[["confirmar_texto"]]),
           carga$periodo$fijar_titulo))
-      if (!is.null(carga)) session$sendCustomMessage("hdt-datos", carga)
+      if (sin_cambio) return()
+      if (!is.null(carga)) {
+        session$sendCustomMessage("hdt-datos", carga)
+        if (esperar) enviado$firma <- firma
+      }
     })
 
     # A line above the table in the warning tone ("Se pegaron 340 filas; se
