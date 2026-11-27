@@ -763,7 +763,7 @@ banda_ok <- vapply(names(tema$HD_TEMAS), function(t) {
   tk     <- c(tema$.HD_COMUNES, tema$HD_TEMAS[[t]]$tokens)
   fondos <- c(.banda(t, "oscuro-fondo-0d1b3e"), .banda(t, "oscuro-borde-1b3d7a"))
   texto  <- .banda(t, "oscuro-texto-ffffff")
-  boton  <- if (isTRUE(tema$HD_TEMAS[[t]]$puente)) tk[["barra-texto"]] else "#F8F9FA"   # Bootstrap's light
+  boton  <- if (isTRUE(tema$HD_TEMAS[[t]]$puente)) tk[["barra-texto"]] else "#ECF0F1"   # flatly's light (measured in Chrome, T6-11)
   all(vapply(fondos, function(f)
     tema$tema_contraste(.mezcla_hex(texto, f, 0.75), f) >= 4.5 &&
       tema$tema_contraste(tk[["oscuro-texto-2"]], f) >= 3 &&

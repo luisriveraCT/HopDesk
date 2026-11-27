@@ -151,6 +151,11 @@ mostrar_pestana <- function(v) isTRUE(tryCatch(ev(sprintf("(%s)(%s)", MOSTRAR_JS
 # Clásico's roles instead of Marca's fixed values. Inside .hd-marca they may
 # differ from master (debe = TRUE: they must, or the change is not there);
 # outside .hd-marca they stay the same. Every other view: 0 differences.
+# Once the base itself carries T6-10 (.HD_MARCA_MAPA in its tema_registro.R,
+# master since 8739e70f), the "must change" views can no longer change
+# against it: they are reported, not required (T6-11 Chrome run, 2026-11-27).
+.BASE_CON_610 <- nzchar(BASE) && file.exists(file.path(BASE, "R/tema_registro.R")) &&
+  any(grepl(".HD_MARCA_MAPA", readLines(file.path(BASE, "R/tema_registro.R"), warn = FALSE), fixed = TRUE))
 .CAMBIO_ESPERADO <- list(
   PAN       = list(debe = TRUE,  motivo = "Panorama (.hd-marca.hd-panorama) in Clásico's roles"),
   REQ       = list(debe = TRUE,  motivo = "Requisiciones' folders panel (.hdreq-lado.hd-marca)"),
@@ -772,7 +777,10 @@ for (quien in quienes) {
     # (Never name a local here "dentro": it is the sign-in check's function.)
     if (v %in% names(.CAMBIO_ESPERADO)) {
       en_mk <- difs_k %in% en_marca
-      if (.CAMBIO_ESPERADO[[v]]$debe)
+      if (.CAMBIO_ESPERADO[[v]]$debe && .BASE_CON_610)
+        cat(sprintf("      | [%s] %s: la base ya trae la T6-10 (%s): no se exige cambio, %d differences inside .hd-marca\n",
+                    quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(en_mk)))
+      else if (.CAMBIO_ESPERADO[[v]]$debe)
         ok(sprintf("[%s] %s: CAMBIO ESPERADO (%s): %d differences inside .hd-marca (must be > 0)",
                    quien, nombre, .CAMBIO_ESPERADO[[v]]$motivo, sum(en_mk)), sum(en_mk) > 0L)
       else cat(sprintf("      | [%s] %s: cambio permitido dentro de .hd-marca (%s): %d differences\n",
@@ -797,10 +805,16 @@ for (quien in quienes) {
     # left #555 / acento / btn-outline-secondary for the band's own tokens.
     # Only that piece, only in the Usuarios views; its contrast is checked in
     # tests/test_temas_guardian.R.
+    # Its new classes (opacity-75, btn-outline-light) change the elements'
+    # keys, so the piece shows up as "only in master / only in branch" rather
+    # than as compared differences: both count as the change (first Chrome
+    # run, 2026-11-27, printed nothing).
     en_badge <- startsWith(v, "TIERS") & grepl("-header_badge", difs_k, fixed = TRUE)
-    if (any(en_badge)) {
-      cat(sprintf("      | [%s] %s: cambio permitido (T6-11: contraste de la banda de Tiers, cambio intencional): %d differences\n",
-                  quien, nombre, sum(en_badge)))
+    solo_badge <- if (startsWith(v, "TIERS"))
+      sum(grepl("-header_badge", c(setdiff(names(eb), comunes), setdiff(names(er), comunes)), fixed = TRUE)) else 0L
+    if (any(en_badge) || solo_badge > 0L) {
+      cat(sprintf("      | [%s] %s: cambio permitido (T6-11: contraste de la banda de Tiers, cambio intencional): %d differences, %d elements only on one side (new classes)\n",
+                  quien, nombre, sum(en_badge), solo_badge))
       difs <- difs[!en_badge]; difs_k <- difs_k[!en_badge]
     }
     if (!ok(sprintf("[%s] %s: %d elements compared, same computed style within ΔE %g (only in master %d, only in branch %d)",
