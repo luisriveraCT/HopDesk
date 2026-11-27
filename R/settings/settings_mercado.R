@@ -34,8 +34,10 @@ mercado_boton_hub <- function(usuario) {
     tags$p(class = "small text-muted mb-2", tr("tablas.ajustes.mercado.ayuda")),
     div(class = "d-flex flex-wrap gap-2 align-items-end mb-2",
       div(selectInput("mer_pais", tr("tablas.ajustes.mercado.pais"), choices = paises, selected = "MX", width = "180px")),
-      div(numericInput("mer_anio", tr("tablas.ajustes.mercado.anio"), value = anio_hoy + 1L,
-                       min = .FESTIVOS_ANIOS_TOPE[1], max = .FESTIVOS_ANIOS_TOPE[2], step = 1, width = "110px")),
+      # hd_numero_input() (T107): the browser does not enforce min/max -- the
+      # writers (modificar_mercado_*, R/mercado.R) refuse a year outside .FESTIVOS_ANIOS_TOPE.
+      div(hd_numero_input("mer_anio", tr("tablas.ajustes.mercado.anio"), formato = "entero", value = anio_hoy + 1L,
+                          min = .FESTIVOS_ANIOS_TOPE[1], max = .FESTIVOS_ANIOS_TOPE[2], step = 1, width = "110px")),
       uiOutput("mer_estado", inline = TRUE)),
     hd_table_ui("mercado_t", alto = "40vh"),
     div(class = "d-flex flex-wrap gap-2 align-items-end mt-2",

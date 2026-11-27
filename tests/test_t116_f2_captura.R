@@ -115,6 +115,15 @@ ok("3.3 staff: el panel se dibuja", grepl("mercado_t", paste(unlist(panel), coll
 ok("3.4 staff: agrega el día y confirma el año (dos filas, quién las capturó)",
    is.data.frame(t1) && nrow(t1) == 2L && setequal(t1$tipo, c("dia", "anio")) && all(t1$capturado_por == "u.hopdesk"))
 ok("3.5 ...y get_holidays(MX, 2027) ya es la lista oficial", identical(get_holidays("MX", 2027), as.Date("2027-11-02")))
+ok("3.5b el año va en hd_numero_input (entero, sin separador): «2028», no «2,028»",
+   grepl('id="mer_anio"[^>]*class="form-control hd-numero"', paste(unlist(panel), collapse = "")) &&
+     grepl('data-formato="entero"', paste(unlist(panel), collapse = ""), fixed = TRUE))
+q(correr(usuario_de("hopdesk"), function(session, output) {
+  session$setInputs(mer_pais = "MX", mer_anio = 1999)       # below .FESTIVOS_ANIOS_TOPE (2000)
+  session$setInputs(mer_confirmar = 1)
+}))
+ok("3.5c un año fuera del tope (el navegador no lo impide): el escritor lo rechaza, nada se confirma",
+   identical(nrow(.mem[[llave]]), 2L))
 q(correr(usuario_de("hopdesk"), function(session, output) {
   session$setInputs(mer_pais = "MX", mer_anio = 2027)
   session$setInputs(mer_desconfirmar = 1)
