@@ -150,6 +150,7 @@
   "niveles.nombre.analysis": "Analysis",
   "niveles.nombre.compras": "Purchasing",
   "niveles.ver_como": "View as",
+  "niveles.ctx.volviendo": "Returning home…",
   "niveles.ver_como_ayuda": "Changes this session's permissions and tabs. Your identity does not change.",
   "niveles.viendo_como": "Viewing as {nivel}",
   "permisos.denegado_generico": "You don't have permission for this. Ask whoever manages your company's users.",

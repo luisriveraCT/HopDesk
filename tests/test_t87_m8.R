@@ -195,6 +195,24 @@ r2 <- correr(FALSE, list(list(nombre = "casa", usuario = staff), list(nombre = "
 ok("4.10 not the admin deployment: staff at home see the client tabs (as before M8)", completo_igual(r2$casa, TODAS))
 ok("4.11 not the admin deployment: a client sees its tabs", completo_igual(r2$cliente, ves(menu_visible(u(FINANZAS), P))))
 
+# T117: every selectable entry counts, not only the client tabs.
+movs <- function(r, paso) r[[paso]]$movidas
+r3 <- correr(TRUE, list(
+  list(nombre = "casa", usuario = staff, nav = "TIERS"),
+  list(nombre = "salto", salto = "acme"),
+  list(nombre = "compras", usuario = vc(COMPRAS)),
+  list(nombre = "en_req", nav = "REQ"),
+  list(nombre = "admin_cal", usuario = vc(ADMIN), nav = "CAL"),
+  list(nombre = "a_casa", usuario = staff, salto = NULL)))
+ok("4.12 T117 (contraprueba): staff at home on Usuarios, a visible entry -- not moved",
+   !length(movs(r3, "casa")))
+ok("4.13 T117 THE FINDING: 'ver como' Compras while on Usuarios -- moved to Compras' first tab, so Usuarios is not left drawn",
+   identical(utils::tail(movs(r3, "compras"), 1), intersect(P, LISTA_COMPRAS)[1]) && length(movs(r3, "compras")) == 1L)
+ok("4.14 T117 (contraprueba): on a tab Compras sees -- not moved", length(movs(r3, "en_req")) == 1L)
+ok("4.15 T117: back home from CAL -- moved to Usuarios (the first entry staff see at home), the client's tab is not left drawn",
+   identical(utils::tail(movs(r3, "a_casa"), 1), "TIERS") && length(movs(r3, "a_casa")) == 2L)
+ok("4.16 T117: never to GRUPO (the dropdown, not a panel)", !"GRUPO" %in% unlist(lapply(r3, `[[`, "movidas")))
+
 cat("== 5. The one-writer guardian ==\n")
 ENTRADA <- "data-value|nav-link|dropdown-item|navbar-nav|nav-item"
 ESCRIBE <- paste0("setProperty\\(\\s*\\\\?['\"]display|removeProperty\\(\\s*\\\\?['\"]display|\\.style\\.display\\s*=|",

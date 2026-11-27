@@ -421,7 +421,37 @@ ui <- bslib::page_navbar(
   ),
   bslib::nav_spacer(),
   bslib::nav_item(
-    uiOutput("navbar_user_badge")
+    uiOutput("navbar_user_badge"),
+    # T117: going back home takes ~10 s to redraw the header and this card
+    # (the jump reloads every table); until then they still named the client.
+    # On the click that goes home -- and only then: never a jump into a
+    # client, never when already home -- both say "Volviendo a casa…" at
+    # once. Each sign leaves when its output gets its new value or an error,
+    # and after 30 s whatever happens (it must never stay). Wrapped in HTML():
+    # tags$script escapes & < > (T106); the code has none anyway.
+    tags$style(HTML(".hd-ctx-volviendo > *{display:none!important}.hd-ctx-volviendo::after{content:attr(data-hd-volviendo);font-size:.75rem;opacity:.85;white-space:nowrap}")),
+    tags$script(HTML(sprintf("(function(){
+  var CASA = '%s', IDS = ['trs-header_badge', 'navbar_user_badge'];
+  function quitar(el) { clearTimeout(el._hdVolviendo); el.classList.remove('hd-ctx-volviendo'); el.removeAttribute('data-hd-volviendo'); }
+  $(document).on('click', '#trs-modal_ctx_confirm', function() {
+    var s = document.getElementById('trs-modal_ctx_select');
+    var destino = s ? (s.selectize ? s.selectize.getValue() : s.value) : '';
+    if (destino !== CASA) return;
+    if (!document.getElementById('ver_como_sel')) return;
+    var texto = window.hdT ? window.hdT('niveles.ctx.volviendo') : '';
+    IDS.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      quitar(el);
+      el.setAttribute('data-hd-volviendo', texto);
+      el.classList.add('hd-ctx-volviendo');
+      el._hdVolviendo = setTimeout(function() { quitar(el); }, 30000);
+    });
+  });
+  $(document).on('shiny:value shiny:error', function(e) {
+    if (e.target ? IDS.indexOf(e.target.id) !== -1 : false) quitar(e.target);
+  });
+})();", .HD_ADMIN_CID)))
   ),
   bslib::nav_item(
     actionButton("btn_logout",
@@ -1986,13 +2016,19 @@ server <- function(input, output, session) {
     vis <- menu_vis()
     if (!is.null(vis)) shinyjs::runjs(menu_js_pintar(vis))
   }, priority = -1)
-  # The active client tab just hidden (a "ver como", a tier change): go to the
-  # first client tab the session may see. Moves the tab, never paints.
+  # The active tab just hidden (a "ver como", a tier change, a jump in or
+  # back home): go to the first entry the session may see -- the client tabs
+  # in their order, then Usuarios and Empresas. Every selectable entry counts
+  # (T117: only the client tabs did, so "ver como" Compras left Usuarios and
+  # its system accounts drawn, and going home left the client's tab drawn).
+  # GRUPO is the dropdown, not a panel. Moves the tab, never paints.
   observe({
     vis <- menu_vis()
-    fin <- if (is.null(vis)) character() else names(vis)[vis & names(vis) %in% HD_PESTANAS_FINANCIERAS]
-    if (length(fin) && isTRUE(input$nav %in% setdiff(HD_PESTANAS_FINANCIERAS, fin)))
-      updateNavbarPage(session, "nav", selected = fin[1])
+    if (is.null(vis)) return()
+    sel <- setdiff(names(vis), "GRUPO")
+    ver <- sel[vis[sel]]
+    if (length(ver) && isTRUE(input$nav %in% setdiff(sel, ver)))
+      updateNavbarPage(session, "nav", selected = ver[1])
   }, priority = -1)
 
   # ── Admin deployment: the staff landing tab and the hop grants ──────────────
@@ -2075,7 +2111,9 @@ server <- function(input, output, session) {
     else NULL
 
     tags$span(
-      style = "display:flex; align-items:center; gap:6px; margin:4px 4px 4px 0; font-size:.8rem; opacity:.9; color:var(--hd-barra-texto);",
+      # flex-wrap (T117): inside the ☰ card (~300 px at 1293) the name, two
+      # pills and "Ver como" do not fit on one line; they wrap, never clip.
+      style = "display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:4px 4px 4px 0; font-size:.8rem; opacity:.9; color:var(--hd-barra-texto); min-width:0;",
       icon("user-circle"),
       tags$span(name),
       tags$span(nivel_nombre(tier), style = sprintf(
