@@ -1003,6 +1003,21 @@ tiers_invitaciones_server <- function(id, permitido, staff, own_client, refresh)
   })
 }
 
+# The header's "Cliente: …" (T117): the group's visible name when the data
+# has one; home without one says so in words (never the internal id
+# .HD_ADMIN_CID on screen); any other client without one keeps its id.
+tiers_ctx_etiqueta <- function(grps, cid) {
+  nombre <- tryCatch({
+    if (is.data.frame(grps) && all(c("client_id", "name") %in% names(grps))) {
+      hit <- grps[!is.na(grps$client_id) & grps$client_id == cid & !is.na(grps$name) & nzchar(grps$name), , drop = FALSE]
+      if (nrow(hit)) hit$name[1] else NA_character_
+    } else NA_character_
+  }, error = function(e) NA_character_)
+  if (!is.na(nombre)) nombre
+  else if (identical(cid, .HD_ADMIN_CID)) tr("niveles.ctx.casa")
+  else cid
+}
+
 tiersServer <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
@@ -1077,12 +1092,7 @@ tiersServer <- function(id, shared) {
       # Resolve display name for the active client context
       grps       <- shared$grupos_db()
       active_cid <- current_client_id()
-      ctx_label  <- tryCatch({
-        if (!is.null(grps) && "client_id" %in% names(grps)) {
-          hit <- grps[!is.na(grps$client_id) & grps$client_id == active_cid, , drop = FALSE]
-          if (nrow(hit)) hit$name[1] else active_cid
-        } else active_cid
-      }, error = function(e) active_cid)
+      ctx_label  <- tiers_ctx_etiqueta(grps, active_cid)
 
       tags$div(
         class = "ms-auto d-flex align-items-center gap-2",

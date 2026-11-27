@@ -150,6 +150,7 @@
   "niveles.nombre.analysis": "Analysis",
   "niveles.nombre.compras": "Purchasing",
   "niveles.ver_como": "View as",
+  "niveles.ctx.casa": "HopDesk · home",
   "niveles.ctx.volviendo": "Returning home…",
   "niveles.ver_como_ayuda": "Changes this session's permissions and tabs. Your identity does not change.",
   "niveles.viendo_como": "Viewing as {nivel}",

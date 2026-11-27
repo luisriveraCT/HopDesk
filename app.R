@@ -421,37 +421,7 @@ ui <- bslib::page_navbar(
   ),
   bslib::nav_spacer(),
   bslib::nav_item(
-    uiOutput("navbar_user_badge"),
-    # T117: going back home takes ~10 s to redraw the header and this card
-    # (the jump reloads every table); until then they still named the client.
-    # On the click that goes home -- and only then: never a jump into a
-    # client, never when already home -- both say "Volviendo a casa…" at
-    # once. Each sign leaves when its output gets its new value or an error,
-    # and after 30 s whatever happens (it must never stay). Wrapped in HTML():
-    # tags$script escapes & < > (T106); the code has none anyway.
-    tags$style(HTML(".hd-ctx-volviendo > *{display:none!important}.hd-ctx-volviendo::after{content:attr(data-hd-volviendo);font-size:.75rem;opacity:.85;white-space:nowrap}")),
-    tags$script(HTML(sprintf("(function(){
-  var CASA = '%s', IDS = ['trs-header_badge', 'navbar_user_badge'];
-  function quitar(el) { clearTimeout(el._hdVolviendo); el.classList.remove('hd-ctx-volviendo'); el.removeAttribute('data-hd-volviendo'); }
-  $(document).on('click', '#trs-modal_ctx_confirm', function() {
-    var s = document.getElementById('trs-modal_ctx_select');
-    var destino = s ? (s.selectize ? s.selectize.getValue() : s.value) : '';
-    if (destino !== CASA) return;
-    if (!document.getElementById('ver_como_sel')) return;
-    var texto = window.hdT ? window.hdT('niveles.ctx.volviendo') : '';
-    IDS.forEach(function(id) {
-      var el = document.getElementById(id);
-      if (!el) return;
-      quitar(el);
-      el.setAttribute('data-hd-volviendo', texto);
-      el.classList.add('hd-ctx-volviendo');
-      el._hdVolviendo = setTimeout(function() { quitar(el); }, 30000);
-    });
-  });
-  $(document).on('shiny:value shiny:error', function(e) {
-    if (e.target ? IDS.indexOf(e.target.id) !== -1 : false) quitar(e.target);
-  });
-})();", .HD_ADMIN_CID)))
+    uiOutput("navbar_user_badge")
   ),
   bslib::nav_item(
     actionButton("btn_logout",
@@ -2097,7 +2067,43 @@ server <- function(input, output, session) {
             tags$option(value = t, selected = if (identical(t, isolate(tier_efectivo()))) NA,
                         nivel_nombre(t))
           })
-        )
+        ),
+        # T117: going back home takes ~10 s to redraw the header and this
+        # card (the jump reloads every table); until then they still named
+        # the client. On the click that goes home -- and only then: never a
+        # jump into a client -- both say "Volviendo a casa…" at once. Each
+        # sign leaves with its output's new value or an error, and after 30 s
+        # whatever happens (it must never stay). It is HERE, in the staff-only
+        # part of the card, so a client's page never carries the home id or
+        # this logic (M1). Bound once per page (window flag); its CSS goes to
+        # <head> so it outlives this card. HTML(): tags$script escapes
+        # & < > (T106); HTML() keeps the CSS's '>' as it is.
+        tags$script(HTML(sprintf("(function(){
+  if (window.hdVolviendoCasa) return;
+  window.hdVolviendoCasa = true;
+  var CASA = %s, TEXTO = %s, IDS = ['trs-header_badge', 'navbar_user_badge'];
+  var css = document.createElement('style');
+  css.textContent = '.hd-ctx-volviendo > *{display:none!important}.hd-ctx-volviendo::after{content:attr(data-hd-volviendo);font-size:.75rem;opacity:.85;white-space:nowrap}';
+  document.head.appendChild(css);
+  function quitar(el) { clearTimeout(el._hdVolviendo); el.classList.remove('hd-ctx-volviendo'); el.removeAttribute('data-hd-volviendo'); }
+  $(document).on('click', '#trs-modal_ctx_confirm', function() {
+    var s = document.getElementById('trs-modal_ctx_select');
+    var destino = s ? (s.selectize ? s.selectize.getValue() : s.value) : '';
+    if (destino !== CASA) return;
+    if (!document.getElementById('ver_como_sel')) return;
+    IDS.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      quitar(el);
+      el.setAttribute('data-hd-volviendo', TEXTO);
+      el.classList.add('hd-ctx-volviendo');
+      el._hdVolviendo = setTimeout(function() { quitar(el); }, 30000);
+    });
+  });
+  $(document).on('shiny:value shiny:error', function(e) {
+    if (e.target ? IDS.indexOf(e.target.id) !== -1 : false) quitar(e.target);
+  });
+})();", jsonlite::toJSON(.HD_ADMIN_CID, auto_unbox = TRUE), jsonlite::toJSON(tr("niveles.ctx.volviendo"), auto_unbox = TRUE))))
       )
     } else NULL
 
