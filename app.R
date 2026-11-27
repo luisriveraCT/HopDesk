@@ -28,6 +28,7 @@
 # global.R only does idempotent work (library() calls, readRenviron(),
 # constant/function (re)definitions) -- there is no correctness reason to
 # ever skip re-running it, only a now-proven-dangerous one.
+options(hdt.esperar_vista = TRUE)   # T102: a table's data go only once it can be seen (R/hd_table.R)
 source("R/global.R")
 
 source("R/pagar_hoy_module.R")
