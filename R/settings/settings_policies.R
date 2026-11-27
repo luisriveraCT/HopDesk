@@ -226,7 +226,9 @@
 }
 
 # ── Editor form (rendered once when editor opens) ────────────────────────────
-.policy_editor_form <- function(pol = NULL, is_new = TRUE) {
+# ns (T120): the Pasivos wizard draws this same editor with its own ids
+# (pwiz_pol_*); Configuración keeps the ids it always had (ns = identity).
+.policy_editor_form <- function(pol = NULL, is_new = TRUE, ns = identity) {
   current_name <- pol$name           %||% ""
   current_type <- pol$type           %||% "weekdays"
   current_roll <- pol$roll_direction %||% "forward"
@@ -241,12 +243,12 @@
     div(class = "row g-2 mb-2",
       div(class = "col-md-6",
         tags$label(class = "form-label small fw-semibold mb-1", "Nombre"),
-        textInput("pol_name", NULL, value = current_name,
+        textInput(ns("pol_name"), NULL, value = current_name,
                   placeholder = "Ej: Fin de mes MXN", width = "100%")
       ),
       div(class = "col-md-6",
         tags$label(class = "form-label small fw-semibold mb-1", "Tipo"),
-        selectInput("pol_type", NULL, width = "100%",
+        selectInput(ns("pol_type"), NULL, width = "100%",
           choices = c(
             "Días hábiles (Lun–Vie)"   = "weekdays",
             "Excluir festivos"                         = "skip_holidays",
@@ -259,12 +261,12 @@
       )
     ),
 
-    uiOutput("pol_params_ui"),
+    uiOutput(ns("pol_params_ui")),
 
-    div(id = "pol_roll_dir_section",
+    div(id = ns("pol_roll_dir_section"),
       tags$label(class = "form-label small fw-semibold d-block mb-1",
                  "Cuando cae en día no válido"),
-      radioButtons("pol_roll_direction", NULL, inline = TRUE,
+      radioButtons(ns("pol_roll_direction"), NULL, inline = TRUE,
         choices = c(
           "Adelantar (siguiente válido)"  = "forward",
           "Retroceder (válido anterior)"  = "backward"
@@ -276,15 +278,15 @@
     tags$hr(class = "my-2"),
     tags$label(class = "form-label small fw-semibold d-block mb-1",
                tagList(icon("eye"), " Vista previa")),
-    uiOutput("pol_preview_ui"),
+    uiOutput(ns("pol_preview_ui")),
 
     tags$hr(class = "my-3"),
     div(class = "d-flex gap-2",
       if (.puede_politicas())
-        actionButton("pol_btn_save",
+        actionButton(ns("pol_btn_save"),
           tagList(icon("floppy-disk"), " Guardar"),
           class = "btn btn-primary btn-sm"),
-      actionButton("pol_btn_cancel",
+      actionButton(ns("pol_btn_cancel"),
         tagList(icon("xmark"), " Cancelar"),
         class = "btn btn-outline-secondary btn-sm")
     )
@@ -292,13 +294,13 @@
 }
 
 # ── Dynamic params sub-form ───────────────────────────────────────────────────
-.policy_params_ui <- function(type, params = list()) {
+.policy_params_ui <- function(type, params = list(), ns = identity) {
   switch(type,
     weekdays = {
       sel <- if (length(params$days)) as.character(as.integer(params$days)) else as.character(1:5)
       div(class = "mb-2",
         tags$label(class = "form-label small fw-semibold mb-1", "Días permitidos"),
-        checkboxGroupInput("pol_param_days", NULL, inline = TRUE,
+        checkboxGroupInput(ns("pol_param_days"), NULL, inline = TRUE,
           choiceValues = as.character(1:7),
           choiceNames  = c("Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"),
           selected = sel
@@ -310,7 +312,7 @@
       div(class = "mb-2",
         tags$label(class = "form-label small fw-semibold mb-1",
                    "Calendario de festivos"),
-        selectInput("pol_param_country", NULL, width = "260px",
+        selectInput(ns("pol_param_country"), NULL, width = "260px",
           choices = c(
             "México (LFT + CNBV)"        = "MX",
             "Estados Unidos (Federal)"         = "US",
@@ -340,7 +342,7 @@
                "Si el mes no tiene ese día (ej. día 31 en febrero), ",
                "se usa el último día hábil del mes."),
         div(style = "max-width: 380px;",
-          checkboxGroupInput("pol_param_month_days", NULL, inline = TRUE,
+          checkboxGroupInput(ns("pol_param_month_days"), NULL, inline = TRUE,
             choiceValues = as.character(1:31),
             choiceNames  = as.character(1:31),
             selected = sel_days
@@ -355,10 +357,10 @@
         tags$label(class = "form-label small fw-semibold mb-1",
                    "Días a desplazar"),
         div(class = "d-flex align-items-center gap-2 flex-wrap",
-          hd_numero_input("pol_param_n", NULL, formato = "entero",
+          hd_numero_input(ns("pol_param_n"), NULL, formato = "entero",
                           value = n_val, min = -365L, max = 365L, step = 1L,
                           width = "110px"),
-          selectInput("pol_param_unit", NULL,
+          selectInput(ns("pol_param_unit"), NULL,
             choices  = c("naturales" = "naturales", "hábiles" = "habiles"),
             selected = unit_val,
             width    = "120px"),
@@ -372,14 +374,14 @@
 }
 
 # ── Collect params from form inputs ──────────────────────────────────────────
-.collect_policy_params <- function(type, input) {
+.collect_policy_params <- function(type, input, ns = identity) {
   switch(type,
-    weekdays      = list(days = sort(as.integer(input$pol_param_days %||% as.character(1:5)))),
-    skip_holidays = list(country = toupper(trimws(input$pol_param_country %||% "MX"))),
+    weekdays      = list(days = sort(as.integer(input[[ns("pol_param_days")]] %||% as.character(1:5)))),
+    skip_holidays = list(country = toupper(trimws(input[[ns("pol_param_country")]] %||% "MX"))),
     last_day      = list(),
-    month_days    = list(days = sort(as.integer(input$pol_param_month_days %||% c("15","30")))),
-    offset_days   = list(n    = as.integer(input$pol_param_n    %||% 0L),
-                         unit = input$pol_param_unit %||% "naturales"),
+    month_days    = list(days = sort(as.integer(input[[ns("pol_param_month_days")]] %||% c("15","30")))),
+    offset_days   = list(n    = as.integer(input[[ns("pol_param_n")]]    %||% 0L),
+                         unit = input[[ns("pol_param_unit")]] %||% "naturales"),
     list()
   )
 }
@@ -387,7 +389,7 @@
 # =============================================================================
 # Interactive dual-month calendar preview
 # =============================================================================
-.policy_cal_preview_render <- function(type, params, roll, hcache, offset, selected) {
+.policy_cal_preview_render <- function(type, params, roll, hcache, offset, selected, ns = identity) {
 
   today   <- Sys.Date()
   m1_date <- lubridate::floor_date(today, "month") + months(as.integer(offset))
@@ -467,7 +469,7 @@
             style   = paste0(sty, "cursor:pointer;"),
             title   = ds,
             onclick = sprintf(
-              "Shiny.setInputValue('pol_cal_click','%s',{priority:'event'})", ds
+              "Shiny.setInputValue('%s','%s',{priority:'event'})", ns("pol_cal_click"), ds
             )
           )
         else
@@ -537,7 +539,7 @@
           )))
     })
 
-    list_id <- "pol_hol_list"
+    list_id <- ns("pol_hol_list")
     scroll_js <- if (scroll_top > 0L)
       sprintf("setTimeout(function(){var el=document.getElementById('%s');if(el)el.scrollTop=%d;},80);",
               list_id, scroll_top)
@@ -569,7 +571,7 @@
       ),
       div(style = "display:flex;align-items:center;gap:10px;",
         tags$button(style = btn_sty,
-          onclick = paste0("Shiny.setInputValue('pol_cal_nav',",
+          onclick = paste0("Shiny.setInputValue('", ns("pol_cal_nav"), "',",
                            "{dir:-1,nonce:Math.random()},{priority:'event'})"),
           HTML("&#8249;")
         ),
@@ -578,7 +580,7 @@
           sprintf("%s → %s", m1_lbl, m2_lbl)
         ),
         tags$button(style = btn_sty,
-          onclick = paste0("Shiny.setInputValue('pol_cal_nav',",
+          onclick = paste0("Shiny.setInputValue('", ns("pol_cal_nav"), "',",
                            "{dir:1,nonce:Math.random()},{priority:'event'})"),
           HTML("&#8250;")
         )
@@ -711,6 +713,250 @@
 # =============================================================================
 # settings_policies_observer
 # =============================================================================
+# ── The editor's server side, for Configuración and the Pasivos wizard (T120) ──
+# Its ids are ns("pol_*"): identity in Configuración (the ids it always had),
+# "pwiz_pol_*" in the wizard, which draws the same editor inside its Revisión
+# step (a modal cannot open another modal: it would close the wizard).
+# al_guardar(res) runs after a save that worked (res: politica_guardar()'s),
+# al_cancelar() on Cancelar.
+.politica_editor_logica <- function(input, output, session, shared, ns = identity,
+                                    pol_mode, pol_editing, pol_cal_offset, pol_cal_selected,
+                                    al_guardar = function(res) NULL, al_cancelar = function() NULL) {
+  # Dynamic params sub-form (reactive to type changes) -------------------------
+  output[[ns("pol_params_ui")]] <- renderUI({
+    req(!is.null(input[[ns("pol_type")]]))
+    pol <- isolate(pol_editing())
+    current_params <- if (!is.null(pol) && pol_mode() %in% c("edit") &&
+                          identical(pol$type, input[[ns("pol_type")]])) {
+      pol$params %||% list()
+    } else {
+      list()
+    }
+    .policy_params_ui(input[[ns("pol_type")]], current_params, ns = ns)
+  })
+
+  # Show/hide roll-direction section based on type -----------------------------
+  observeEvent(input[[ns("pol_type")]], {
+    req(!is.null(input[[ns("pol_type")]]))
+    if (input[[ns("pol_type")]] == "last_day") {
+      shinyjs::hide(ns("pol_roll_dir_section"))
+      shinyjs::runjs(sprintf("var el = document.querySelector('input[name=%s][value=backward]'); if(el) el.click();",
+                             ns("pol_roll_direction")))
+    } else {
+      shinyjs::show(ns("pol_roll_dir_section"))
+    }
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+  # Live preview — interactive dual-month calendar ----------------------------
+  output[[ns("pol_preview_ui")]] <- renderUI({
+    req(!is.null(input[[ns("pol_type")]]))
+    type <- input[[ns("pol_type")]]
+    roll <- input[[ns("pol_roll_direction")]] %||% "forward"
+    params <- switch(type,
+      weekdays      = list(days = as.integer(input[[ns("pol_param_days")]] %||% as.character(1:5))),
+      skip_holidays = list(country = toupper(input[[ns("pol_param_country")]] %||% "MX")),
+      last_day      = list(),
+      month_days    = list(days = sort(as.integer(
+                        input[[ns("pol_param_month_days")]] %||% c("15","30")))),
+      offset_days   = list(n    = as.integer(input[[ns("pol_param_n")]]    %||% 0L),
+                           unit = input[[ns("pol_param_unit")]] %||% "naturales"),
+      list()
+    )
+    # T116: with the staff's holiday overrides, as the policy saves it.
+    hcache <- if (type == "skip_holidays")
+      festivos_cache(list(list(params = params)),
+                     tryCatch(shared$holiday_overrides_db(), error = function(e) NULL))
+    else list()
+    .policy_cal_preview_render(
+      type     = type,
+      params   = params,
+      roll     = roll,
+      hcache   = hcache,
+      offset   = pol_cal_offset(),
+      selected = pol_cal_selected(),
+      ns       = ns
+    )
+  })
+
+  # Calendar navigation (‹ › buttons) ----------------------------------------
+  observeEvent(input[[ns("pol_cal_nav")]], {
+    dir <- as.integer(input[[ns("pol_cal_nav")]]$dir %||% 1L)
+    pol_cal_offset(pol_cal_offset() + dir)
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+  # Dot click — toggle a date in/out of the selection -------------------------
+  observeEvent(input[[ns("pol_cal_click")]], {
+    ds  <- as.character(input[[ns("pol_cal_click")]] %||% "")
+    req(nzchar(ds))
+    sel <- pol_cal_selected()
+    if (ds %in% sel) pol_cal_selected(sel[sel != ds])
+    else             pol_cal_selected(c(sel, ds))
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+  # Reset selection when policy type changes ----------------------------------
+  observeEvent(input[[ns("pol_type")]], {
+    pol_cal_selected(character(0))
+  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+
+  # Save -----------------------------------------------------------------------
+  observeEvent(input[[ns("pol_btn_save")]], {
+    if (!puede_o_avisa(shared, "can_manage_policies")) return()
+    nm <- trimws(input[[ns("pol_name")]] %||% "")
+    if (!nzchar(nm)) {
+      showNotification(tr("tablas.ajustes.aviso.politica_nombre_requerido"), type = "warning")
+      return()
+    }
+    type <- input[[ns("pol_type")]] %||% "weekdays"
+    roll <- input[[ns("pol_roll_direction")]] %||% "forward"
+    if (type == "last_day") roll <- "backward"
+    # T66: the field no longer stops a text, a decimal or a number out of
+    # -365..365; checked here. Empty or a text (NA) used to become 0 days.
+    if (identical(type, "offset_days")) {
+      rev_n <- hd_numero_revisar(if (is.null(input[[ns("pol_param_n")]])) 0 else input[[ns("pol_param_n")]],
+                                 tr("tablas.ajustes.politicas.dias_desplazar"),
+                                 min = -365, max = 365, entero = TRUE)
+      if (!rev_n$ok) {
+        showNotification(rev_n$aviso, type = "warning"); return()
+      }
+    }
+
+    params <- tryCatch(.collect_policy_params(type, input, ns), error = function(e) list())
+
+    mode <- isolate(pol_mode())
+    now  <- Sys.time()
+    user <- tryCatch(shared$current_user_info()$username, error = function(e) "")
+
+    pid <- if (mode == "new") NULL else isolate(pol_editing())$id
+    res <- politica_guardar(shared, mode = mode, pid = pid, nombre = nm, tipo = type,
+                            params = params, roll = roll, user = user)
+    if (isTRUE(res$ok)) {
+      al_guardar(res)
+      showNotification(
+        if (mode == "new") tr("tablas.ajustes.aviso.politica_creada") else tr("tablas.ajustes.aviso.politica_actualizada"),
+        type = "message", duration = 3
+      )
+    } else showNotification(res$aviso, type = "error", duration = 5)
+  }, ignoreInit = TRUE)
+
+  # Cancel editor --------------------------------------------------------------
+  observeEvent(input[[ns("pol_btn_cancel")]], {
+    al_cancelar()
+  }, ignoreInit = TRUE)
+
+  invisible(NULL)
+}
+
+# The write of a new or edited policy (T120: Configuración's editor and the
+# Pasivos wizard's). Checks can_manage_policies on the server; applies the
+# change to S3's catalog as it is now (CM34c), bumps it, updates the session's
+# copy and logs it. An edited policy re-places, right away, the provisional
+# future provisions of the liabilities that use it (the daily refresh, forced
+# for this client). Returns list(ok, db, pid, mode) or list(ok = FALSE, aviso).
+politica_guardar <- function(shared, mode, pid = NULL, nombre, tipo, params, roll, user = "") {
+  if (!isTRUE(tryCatch(puede(isolate(shared$usuario()), "can_manage_policies"), error = function(e) FALSE)))
+    return(list(ok = FALSE, aviso = permiso_denegado_texto(tryCatch(isolate(shared$usuario()), error = function(e) NULL),
+                                                          "can_manage_policies")))
+  # CM38: after a client jump that could not read the catalog, the session's
+  # copy is empty -- saving it would wipe this client's policies.
+  if ("policy_catalog" %in% tryCatch(isolate(shared$ctx_no_cargadas()), error = function(e) character()))
+    return(list(ok = FALSE, aviso = tr("comun.ctx.guardar_bloqueado")))
+  now <- Sys.time()
+  if (identical(mode, "new")) pid <- uuid::UUIDgenerate()
+  cambio <- function(fresco) {
+    if (identical(mode, "new"))
+      return(dplyr::bind_rows(fresco, tibble::tibble(
+        id = pid, name = nombre, type = tipo, params = list(params), roll_direction = roll,
+        created_by = user, created_at = now, updated_at = now)))
+    idx <- which(fresco$id == pid)
+    if (!length(idx))   # deleted by another session meanwhile
+      stop(structure(class = c("politica_no_encontrada", "error", "condition"),
+                     list(message = "policy not found", call = NULL)))
+    fresco$name[idx]           <- nombre
+    fresco$type[idx]           <- tipo
+    fresco$params[idx]         <- list(params)
+    fresco$roll_direction[idx] <- roll
+    fresco$updated_at[idx]     <- now
+    fresco
+  }
+  cid <- shared$effective_client_id()
+  tryCatch({
+    new_db <- modificar_policy_catalog(cambio, client_id = cid)
+    bump_sync_version("policy_catalog_db", client_id = cid)
+    shared$policy_catalog_db(new_db)
+    log_action(
+      user        = user,
+      module      = "settings_policies",
+      action      = if (identical(mode, "new")) "crear_politica" else "editar_politica",
+      description = paste0(if (identical(mode, "new")) "Política creada: " else "Política editada: ", nombre,
+                           " (tipo=", tipo, ", roll=", roll, ")"),
+      target_id   = pid,
+      metadata    = list(name = nombre, type = tipo, roll_direction = roll, params = params),
+      client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
+      viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
+    )
+    if (!identical(mode, "new")) .politica_reubicar_pasivos(shared, cid, pid)
+    list(ok = TRUE, db = new_db, pid = pid, mode = mode)
+  }, politica_no_encontrada = function(e) {
+    list(ok = FALSE, aviso = tr("tablas.ajustes.aviso.politica_no_encontrada_recarga"))
+  }, error = function(e) {
+    list(ok = FALSE, aviso = tr("tablas.ajustes.aviso.error_guardar", error = e$message))
+  })
+}
+
+# T120: the liabilities (not deleted) that use policy `pid`, read strictly
+# from S3 (a failed read stop()s: deleting is then refused, never allowed
+# blind). Returns their names.
+# Self-contained on purpose (no Pasivos helper): Configuración's fixtures
+# load this file without the Pasivos engine.
+politica_pasivos_que_usan <- function(cid, pid) {
+  l <- .s3_leer_para_escribir(S3_KEYS$pasivos_liabilities, cid)
+  if (is.null(l) || !is.data.frame(l) || !nrow(l) || !"policy_ids" %in% names(l)) return(character())
+  ids <- lapply(as.character(l$policy_ids), function(v)
+    if (is.na(v) || !nzchar(v)) character() else trimws(strsplit(v, ",", fixed = TRUE)[[1]]))
+  usa <- vapply(ids, function(x) pid %in% x, logical(1))
+  if ("estado" %in% names(l)) usa <- usa & !(l$estado %in% "deleted")
+  nombres <- if ("nombre" %in% names(l)) as.character(l$nombre[usa]) else as.character(l$id[usa])
+  sort(unique(nombres))
+}
+
+# T120: an edited policy re-places the provisions of the liabilities that use
+# it now, not tomorrow (the daily refresh, forced for this client). A failure
+# is logged and left to the next refresh; the policy is saved anyway.
+.politica_reubicar_pasivos <- function(shared, cid, pid) {
+  usan <- tryCatch(politica_pasivos_que_usan(cid, pid), error = function(e) character())
+  if (!length(usan)) return(invisible(NULL))
+  res <- tryCatch(pasivos_refrescar_provisiones(cid, hoy = hoy_cliente(shared), forzar = TRUE),
+                  error = function(e) { message("[politicas] reubicar pasivos: ", conditionMessage(e)); NULL })
+  if (!is.null(res) && !is.null(res$tabla)) {
+    tryCatch(shared$pasivos_provisions_db(res$tabla), error = function(e) NULL)
+    tryCatch(bump_sync_version("pasivos_provisions_db", client_id = cid), error = function(e) NULL)
+  }
+  # The refresh logs each liability in the Pasivos history; this says why.
+  tryCatch(log_action(
+    user        = tryCatch(shared$current_user(), error = function(e) "system"),
+    module      = "settings_policies",
+    action      = "reubicar_provisiones_politica",
+    description = paste0("Política editada: provisiones de ", paste(usan, collapse = ", "), " reubicadas"),
+    target_id   = pid,
+    metadata    = list(pasivos = usan, reubicadas = if (!is.null(res$cambios)) sum(res$cambios$reubicadas %||% 0L) else 0L),
+    client_id             = cid,
+    viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL)
+  ), error = function(e) NULL)
+  invisible(NULL)
+}
+
+# T120: deleting a policy that liabilities use is refused: they are listed,
+# to take it off them first. Nothing is removed silently.
+.policy_delete_bloqueado_modal <- function(pol_name, pasivos) {
+  modalDialog(
+    title = tagList(icon("triangle-exclamation"), " ", tr("tablas.ajustes.politicas.borrar_bloqueado_titulo")),
+    tags$p(tr("tablas.ajustes.politicas.borrar_bloqueado", politica = pol_name)),
+    tags$ul(class = "mb-2", lapply(pasivos, tags$li)),
+    footer = actionButton("pol_delete_cancel", tr("comun.cerrar"), class = "btn btn-secondary btn-sm"),
+    size = "s", easyClose = FALSE
+  )
+}
+
 settings_policies_observer <- function(input, output, session, shared) {
 
   session$userData$puede_politicas <- function()
@@ -753,79 +999,13 @@ settings_policies_observer <- function(input, output, session, shared) {
     .policies_list_render(.get_catalog())
   })
 
-  # Dynamic params sub-form (reactive to type changes) -------------------------
-  output$pol_params_ui <- renderUI({
-    req(!is.null(input$pol_type))
-    pol <- isolate(pol_editing())
-    current_params <- if (!is.null(pol) && pol_mode() %in% c("edit") &&
-                          identical(pol$type, input$pol_type)) {
-      pol$params %||% list()
-    } else {
-      list()
-    }
-    .policy_params_ui(input$pol_type, current_params)
-  })
-
-  # Show/hide roll-direction section based on type -----------------------------
-  observeEvent(input$pol_type, {
-    req(!is.null(input$pol_type))
-    if (input$pol_type == "last_day") {
-      shinyjs::hide("pol_roll_dir_section")
-      shinyjs::runjs("var el = document.querySelector('input[name=pol_roll_direction][value=backward]'); if(el) el.click();")
-    } else {
-      shinyjs::show("pol_roll_dir_section")
-    }
-  }, ignoreInit = TRUE, ignoreNULL = TRUE)
-
-  # Live preview — interactive dual-month calendar ----------------------------
-  output$pol_preview_ui <- renderUI({
-    req(!is.null(input$pol_type))
-    type <- input$pol_type
-    roll <- input$pol_roll_direction %||% "forward"
-    params <- switch(type,
-      weekdays      = list(days = as.integer(input$pol_param_days %||% as.character(1:5))),
-      skip_holidays = list(country = toupper(input$pol_param_country %||% "MX")),
-      last_day      = list(),
-      month_days    = list(days = sort(as.integer(
-                        input$pol_param_month_days %||% c("15","30")))),
-      offset_days   = list(n    = as.integer(input$pol_param_n    %||% 0L),
-                           unit = input$pol_param_unit %||% "naturales"),
-      list()
-    )
-    # T116: with the staff's holiday overrides, as the policy saves it.
-    hcache <- if (type == "skip_holidays")
-      festivos_cache(list(list(params = params)),
-                     tryCatch(shared$holiday_overrides_db(), error = function(e) NULL))
-    else list()
-    .policy_cal_preview_render(
-      type     = type,
-      params   = params,
-      roll     = roll,
-      hcache   = hcache,
-      offset   = pol_cal_offset(),
-      selected = pol_cal_selected()
-    )
-  })
-
-  # Calendar navigation (‹ › buttons) ----------------------------------------
-  observeEvent(input$pol_cal_nav, {
-    dir <- as.integer(input$pol_cal_nav$dir %||% 1L)
-    pol_cal_offset(pol_cal_offset() + dir)
-  }, ignoreInit = TRUE, ignoreNULL = TRUE)
-
-  # Dot click — toggle a date in/out of the selection -------------------------
-  observeEvent(input$pol_cal_click, {
-    ds  <- as.character(input$pol_cal_click %||% "")
-    req(nzchar(ds))
-    sel <- pol_cal_selected()
-    if (ds %in% sel) pol_cal_selected(sel[sel != ds])
-    else             pol_cal_selected(c(sel, ds))
-  }, ignoreInit = TRUE, ignoreNULL = TRUE)
-
-  # Reset selection when policy type changes ----------------------------------
-  observeEvent(input$pol_type, {
-    pol_cal_selected(character(0))
-  }, ignoreInit = TRUE, ignoreNULL = TRUE)
+  # The editor's sub-form, preview, save and cancel (T120: shared with the
+  # Pasivos wizard, which draws the same editor with its own ids).
+  .politica_editor_logica(input, output, session, shared, ns = identity,
+    pol_mode = pol_mode, pol_editing = pol_editing,
+    pol_cal_offset = pol_cal_offset, pol_cal_selected = pol_cal_selected,
+    al_guardar  = function(res) { pol_trigger(pol_trigger() + 1L); .close_editor() },
+    al_cancelar = function() .close_editor())
 
   # "Nueva política" button ----------------------------------------------------
   observeEvent(input$pol_btn_new, {
@@ -847,6 +1027,14 @@ settings_policies_observer <- function(input, output, session, shared) {
       .open_editor(pol = pol, mode = "edit")
 
     } else if (act$action == "delete") {
+      # T120: liabilities that use it block the deletion (a failed read too).
+      pasivos <- tryCatch(politica_pasivos_que_usan(shared$effective_client_id(), act$id), error = function(e) NA_character_)
+      if (length(pasivos) && !identical(pasivos, NA_character_)) {
+        showModal(.policy_delete_bloqueado_modal(act$name %||% act$id, pasivos)); return()
+      }
+      if (identical(pasivos, NA_character_)) {
+        showNotification(tr("tablas.ajustes.politicas.borrar_sin_lectura"), type = "error"); return()
+      }
       pp_now   <- tryCatch(shared$partner_policies_db(), error = function(e) NULL)
       affected <- if (!is.null(pp_now) && nrow(pp_now))
         unique(pp_now$parte[pp_now$policy_id == act$id])
@@ -884,92 +1072,6 @@ settings_policies_observer <- function(input, output, session, shared) {
       shinyjs::show("policies_assign_section")
     }
   }, ignoreInit = TRUE, ignoreNULL = TRUE)
-
-  # Save -----------------------------------------------------------------------
-  observeEvent(input$pol_btn_save, {
-    if (!puede_o_avisa(shared, "can_manage_policies")) return()
-    nm <- trimws(input$pol_name %||% "")
-    if (!nzchar(nm)) {
-      showNotification(tr("tablas.ajustes.aviso.politica_nombre_requerido"), type = "warning")
-      return()
-    }
-    type <- input$pol_type %||% "weekdays"
-    roll <- input$pol_roll_direction %||% "forward"
-    if (type == "last_day") roll <- "backward"
-    # T66: the field no longer stops a text, a decimal or a number out of
-    # -365..365; checked here. Empty or a text (NA) used to become 0 days.
-    if (identical(type, "offset_days")) {
-      rev_n <- hd_numero_revisar(if (is.null(input$pol_param_n)) 0 else input$pol_param_n,
-                                 tr("tablas.ajustes.politicas.dias_desplazar"),
-                                 min = -365, max = 365, entero = TRUE)
-      if (!rev_n$ok) {
-        showNotification(rev_n$aviso, type = "warning"); return()
-      }
-    }
-
-    params <- tryCatch(.collect_policy_params(type, input), error = function(e) list())
-
-    mode <- isolate(pol_mode())
-    now  <- Sys.time()
-    user <- tryCatch(shared$current_user_info()$username, error = function(e) "")
-
-    # CM38: after a client jump that could not read the catalog, the session's
-    # copy is empty -- saving it would wipe this client's policies.
-    if ("policy_catalog" %in% tryCatch(isolate(shared$ctx_no_cargadas()), error = function(e) character())) {
-      showNotification(tr("comun.ctx.guardar_bloqueado"), type = "error"); return()
-    }
-    # CM34c: the change is applied to S3's catalog as it is now, never to the
-    # session's copy: another session's new or edited policy stays.
-    pid <- if (mode == "new") uuid::UUIDgenerate() else isolate(pol_editing())$id
-    cambio <- function(fresco) {
-      if (mode == "new")
-        return(dplyr::bind_rows(fresco, tibble::tibble(
-          id = pid, name = nm, type = type, params = list(params), roll_direction = roll,
-          created_by = user, created_at = now, updated_at = now)))
-      idx <- which(fresco$id == pid)
-      if (!length(idx))   # deleted by another session meanwhile
-        stop(structure(class = c("politica_no_encontrada", "error", "condition"),
-                       list(message = "policy not found", call = NULL)))
-      fresco$name[idx]           <- nm
-      fresco$type[idx]           <- type
-      fresco$params[idx]         <- list(params)
-      fresco$roll_direction[idx] <- roll
-      fresco$updated_at[idx]     <- now
-      fresco
-    }
-
-    tryCatch({
-      new_db <- modificar_policy_catalog(cambio, client_id = shared$effective_client_id())
-      bump_sync_version("policy_catalog_db", client_id = shared$effective_client_id())
-      shared$policy_catalog_db(new_db)
-      pol_trigger(pol_trigger() + 1L)
-      .close_editor()
-      showNotification(
-        if (mode == "new") tr("tablas.ajustes.aviso.politica_creada") else tr("tablas.ajustes.aviso.politica_actualizada"),
-        type = "message", duration = 3
-      )
-      log_action(
-        user        = user,
-        module      = "settings_policies",
-        action      = if (mode == "new") "crear_politica" else "editar_politica",
-        description = paste0(if (mode == "new") "Política creada: " else "Política editada: ", nm,
-                             " (tipo=", type, ", roll=", roll, ")"),
-        target_id   = pid,
-        metadata    = list(name = nm, type = type, roll_direction = roll, params = params),
-        client_id             = tryCatch(shared$effective_client_id(), error = function(e) NULL),
-        viewer_home_client_id = tryCatch(shared$home_client_id(),      error = function(e) NULL)
-      )
-    }, politica_no_encontrada = function(e) {
-      showNotification(tr("tablas.ajustes.aviso.politica_no_encontrada_recarga"), type = "error")
-    }, error = function(e) {
-      showNotification(tr("tablas.ajustes.aviso.error_guardar", error = e$message), type = "error", duration = 5)
-    })
-  }, ignoreInit = TRUE)
-
-  # Cancel editor --------------------------------------------------------------
-  observeEvent(input$pol_btn_cancel, {
-    .close_editor()
-  }, ignoreInit = TRUE)
 
   # Assign: close helper -------------------------------------------------------
   .close_assign <- function() {
@@ -1067,6 +1169,15 @@ settings_policies_observer <- function(input, output, session, shared) {
     }
     del_id   <- isolate(pol_editing())$id
     if (is.null(del_id)) return()   # nothing chosen: nothing deleted, nothing said
+    # T120: checked again on S3 as it is now (another session may have
+    # assigned it meanwhile); a failed read refuses too.
+    pasivos <- tryCatch(politica_pasivos_que_usan(shared$effective_client_id(), del_id), error = function(e) NA_character_)
+    if (length(pasivos)) {
+      removeModal()
+      if (identical(pasivos, NA_character_)) showNotification(tr("tablas.ajustes.politicas.borrar_sin_lectura"), type = "error")
+      else showModal(.policy_delete_bloqueado_modal(del_id, pasivos))
+      return()
+    }
     db       <- .get_catalog()
     del_name <- { m <- db$name[db$id == del_id]; if (length(m)) m[1] else del_id }
     cid      <- shared$effective_client_id()

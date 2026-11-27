@@ -170,7 +170,8 @@ ok(guarda(bloque("R/pagar_hoy_module.R", "observeEvent(input$ph_link_supplier", 
    "alias link: refuses before saving when the alias map was not read")
 ok(guarda(bloque("R/pagar_hoy_module.R", "observeEvent(input$ph_unlink_supplier", "modificar_parte_alias_map("), "parte_alias_map"),
    "alias unlink: refuses before saving when the alias map was not read")
-ok(guarda(bloque("R/settings/settings_policies.R", "observeEvent(input$pol_btn_save", "modificar_policy_catalog("), "policy_catalog"),
+# T120: the save is politica_guardar() (Configuración and the Pasivos wizard).
+ok(guarda(bloque("R/settings/settings_policies.R", "politica_guardar <- function(", "modificar_policy_catalog("), "policy_catalog"),
    "policy save: refuses before saving when the catalog was not read")
 ok(guarda(bloque("R/settings/settings_policies.R", "observeEvent(input$pol_delete_confirm", "modificar_policy_catalog("), "policy_catalog"),
    "policy delete: refuses before saving when the catalog was not read")

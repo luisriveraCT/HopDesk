@@ -200,7 +200,9 @@ ok("Socios con can_manage_policies: “Aplicar políticas” y “Revertir”",
 # ── Static: each handler's first line is the check ───────────────────────────
 for (h in names(HANDLERS)) {
   src <- readLines(file.path("R/settings", HANDLERS[[h]]$archivo), encoding = "UTF-8")
-  i <- which(trimws(src) == sprintf("observeEvent(input$%s, {", h))
+  # T120: the editor's handlers take their id through ns() (shared with the
+  # Pasivos wizard): observeEvent(input[[ns("pol_btn_save")]], { counts too.
+  i <- which(trimws(src) %in% c(sprintf("observeEvent(input$%s, {", h), sprintf('observeEvent(input[[ns("%s")]], {', h)))
   ok(sprintf("%s empieza revisando %s", h, HANDLERS[[h]]$permiso),
      length(i) == 1L && identical(trimws(src[i + 1L]), sprintf('if (!puede_o_avisa(shared, "%s")) return()', HANDLERS[[h]]$permiso)))
 }

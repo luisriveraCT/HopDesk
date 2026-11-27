@@ -81,9 +81,12 @@ ok("6.2 compose_policies respeta el ajuste con la lista; con la tabla de ajustes
      identical(suppressWarnings(compose_policies(D("2027-11-02"), list(p_sk), ov)), D("2027-11-03")))
 ok("6.3 sin políticas, sin países: lista vacía", identical(festivos_cache(list(), ov), stats::setNames(list(), character())))
 asis <- paste(readLines(Sys.getenv("T116_ASISTENTE", "R/pasivos_wizard_module.R"), warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+# T120: the wizard passes the liability's own policies (pasivos_politicas_de()),
+# whose holiday cache is festivos_cache() of those same policies + overrides.
+motor <- paste(readLines("R/pasivos_engine.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
 ok("6.4 el asistente de Pasivos arma la caché con festivos_cache() de las mismas políticas que pasa",
-   grepl("holidays <- festivos_cache(politicas_pasivo,", asis, fixed = TRUE) &&
-     grepl("policies_for_liability = politicas_pasivo,", asis, fixed = TRUE) &&
+   grepl("policies_for_liability = pasivos_politicas_de(liab_row,", asis, fixed = TRUE) &&
+     grepl("structure(pols, festivos = festivos_cache(pols, overrides))", motor, fixed = TRUE) &&
      !grepl("holidays <- tryCatch(shared$holiday_overrides_db()", asis, fixed = TRUE))
 
 cat("== 7. La ventana del día y la vista previa usan los ajustes manuales ==\n")

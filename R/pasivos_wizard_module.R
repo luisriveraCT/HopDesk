@@ -1059,6 +1059,31 @@ pasivos_vista_amortizacion <- function(draft, completa = FALSE, provs = NULL, li
   if (length(ids)) paste(ids, collapse = ",") else NA_character_
 }
 
+# T120: the ids of the embedded policy editor (Configuración's own, with the
+# wizard's prefix: "pwiz_pol_name", never Configuración's "pol_name").
+.pwiz_pol_ns <- function(x) paste0("pwiz_", x)
+
+# T120: the draft's policies before saving: only ids the catalog has (in the
+# draft's order), and a change of them (vs. the saved liability; vs. none
+# when creating) needs can_manage_pasivos. FALSE = refused (said).
+.wiz_politicas_autoriza <- function(wiz, shared) {
+  cat_db <- tryCatch(shiny::isolate(shared$policy_catalog_db()), error = function(e) NULL)
+  ids <- unique(as.character(unlist(wiz$draft$policy_ids %||% character())))
+  ids <- ids[!is.na(ids) & nzchar(ids)]
+  if (length(ids)) ids <- if (is.data.frame(cat_db) && nrow(cat_db)) intersect(ids, cat_db$id) else character()
+  wiz$draft$policy_ids <- ids
+  antes <- if (identical(wiz$mode, "edit")) {
+    l <- tryCatch(shiny::isolate(shared$pasivos_liabilities_db()), error = function(e) NULL)
+    r <- if (is.data.frame(l)) l[!is.na(l$id) & l$id == (wiz$edit_target_id %||% ""), , drop = FALSE] else NULL
+    if (!is.null(r) && nrow(r)) pasivos_ids_politicas(r) else character()
+  } else character()
+  if (identical(ids, antes)) return(TRUE)
+  u <- tryCatch(shiny::isolate(shared$usuario()), error = function(e) NULL)
+  if (isTRUE(puede(u, "can_manage_pasivos"))) return(TRUE)
+  tryCatch(shiny::showNotification(permiso_denegado_texto(u, "can_manage_pasivos"), type = "error"), error = function(e) NULL)
+  FALSE
+}
+
 # T120: the session's policy catalog and holiday overrides, for the wizard's
 # generators (list(catalogo, overrides); NULL parts = none).
 .wiz_politicas_ctx <- function(shared) {
@@ -1934,6 +1959,61 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
     }
   })
 
+  # ── T120: payment policies in Revisión ───────────────────────────────────
+  output$pwiz_politicas_ui <- shiny::renderUI({
+    cat_db <- tryCatch(shared$policy_catalog_db(), error = function(e) NULL)
+    u <- tryCatch(shared$usuario(), error = function(e) NULL)
+    ids <- shiny::isolate(as.character(unlist(wiz$draft$policy_ids %||% character())))
+    choices <- if (is.data.frame(cat_db) && nrow(cat_db)) stats::setNames(cat_db$id, cat_db$name) else character()
+    asigna <- isTRUE(puede(u, "can_manage_pasivos"))
+    crea   <- isTRUE(puede(u, "can_manage_policies"))
+    shiny::tagList(
+      shiny::tags$h6(tr("tablas.pasivos.politicas.titulo")),
+      shiny::tags$p(class = "small text-muted mb-1", tr("tablas.pasivos.politicas.ayuda")),
+      if (asigna)
+        shiny::selectizeInput("pwiz_politicas", NULL, choices = choices, selected = intersect(ids, choices),
+                              multiple = TRUE, width = "100%",
+                              options = list(plugins = list("remove_button"),
+                                             placeholder = tr("tablas.pasivos.politicas.ninguna")))
+      else shiny::tags$p(class = "small mb-1",
+             if (length(intersect(ids, choices))) paste(names(choices)[match(intersect(ids, choices), choices)], collapse = " \u00b7 ")
+             else tr("tablas.pasivos.politicas.ninguna")),
+      if (asigna && crea)
+        shiny::actionLink("pwiz_pol_nueva", shiny::tagList(shiny::icon("plus"), " ", tr("tablas.pasivos.politicas.nueva"))),
+      shiny::div(id = "pwiz_pol_editor_section", class = "border rounded p-2 mt-2", style = "display:none;",
+                 shiny::uiOutput("pwiz_pol_editor_ui"))
+    )
+  })
+  shiny::observeEvent(input$pwiz_politicas, ignoreNULL = FALSE, ignoreInit = TRUE, {
+    if (!identical(wiz$step_id, "revision")) return()
+    wiz$draft$policy_ids <- as.character(input$pwiz_politicas %||% character())
+  })
+  pwiz_pol_mode     <- shiny::reactiveVal("list")
+  pwiz_pol_editing  <- shiny::reactiveVal(NULL)
+  pwiz_pol_offset   <- shiny::reactiveVal(0L)
+  pwiz_pol_selected <- shiny::reactiveVal(character(0))
+  .pwiz_pol_cerrar <- function() { pwiz_pol_mode("list"); shinyjs::hide("pwiz_pol_editor_section") }
+  shiny::observeEvent(input$pwiz_pol_nueva, ignoreInit = TRUE, {
+    if (!puede_o_avisa(shared, "can_manage_policies")) return()
+    pwiz_pol_mode("new"); pwiz_pol_editing(NULL); pwiz_pol_offset(0L); pwiz_pol_selected(character(0))
+    output$pwiz_pol_editor_ui <- shiny::renderUI(.policy_editor_form(NULL, is_new = TRUE, ns = .pwiz_pol_ns))
+    shinyjs::show("pwiz_pol_editor_section")
+  })
+  # The same server side as Configuración's editor (R/settings/settings_policies.R),
+  # with the wizard's ids; a new policy comes back selected on this liability.
+  .politica_editor_logica(input, output, session, shared, ns = .pwiz_pol_ns,
+    pol_mode = pwiz_pol_mode, pol_editing = pwiz_pol_editing,
+    pol_cal_offset = pwiz_pol_offset, pol_cal_selected = pwiz_pol_selected,
+    al_guardar = function(res) {
+      ids <- unique(c(as.character(unlist(wiz$draft$policy_ids %||% character())), res$pid))
+      wiz$draft$policy_ids <- ids
+      .pwiz_pol_cerrar()
+      db <- res$db
+      shiny::updateSelectizeInput(session, "pwiz_politicas",
+        choices = if (is.data.frame(db) && nrow(db)) stats::setNames(db$id, db$name) else character(), selected = ids)
+    },
+    al_cancelar = .pwiz_pol_cerrar)
+
   shiny::observeEvent(input$pwiz_save, ignoreInit = TRUE, {
     if (!pasivos_autoriza("pasivos.edit_liability")) return()
     shinyjs::disable("pwiz_save")
@@ -1941,6 +2021,9 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
 
     .wiz_guardar_paso(leer_paso = FALSE)
     wiz$draft <- .wiz_collect_step(input, wiz$step_id, wiz)
+    # T120: the policies, checked on the server -- only the catalog's ids, and
+    # a change of them needs can_manage_pasivos.
+    if (!.wiz_politicas_autoriza(wiz, shared)) return()
     user <- tryCatch(shared$current_user(), error = function(e) "system")
     res <- tryCatch(
       .pasivos_wizard_save(wiz, shared, session, user),
