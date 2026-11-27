@@ -100,6 +100,25 @@ DEV <- "antiguedad-rds-dev"
       i <- tolower(trimws(r$username)) == quien
       if (any(i)) { r$tier[i] <- nivel; message("[ARRANQUE] nivel forzado a ", nivel, " para 1 cuenta de ", object) }
     }
+    # ARR_FORZAR_POLITICA_CLIENTE (T120): in THIS process only, that client's
+    # first active liability reads with the first policy of its catalog, so
+    # "a policy in use cannot be deleted" can be seen without writing to dev
+    # (no dev liability has a policy yet). Nothing is written.
+    cli_p <- Sys.getenv("ARR_FORZAR_POLITICA_CLIENTE")
+    if (identical(nombre, "s3readRDS") && nzchar(cli_p) &&
+        grepl(paste0("(^|/)", cli_p, "/pasivos_liabilities[.]rds$"), object) && is.data.frame(r) && nrow(r)) {
+      cat_obj <- sub("pasivos_liabilities[.]rds$", "policy_catalog.rds", object)
+      cat_r <- tryCatch(if (is.null(bucket)) real(object = cat_obj, ...) else real(object = cat_obj, bucket = bucket, ...),
+                        error = function(e) NULL)
+      i <- which(r$estado %in% "active")[1]
+      if (is.data.frame(cat_r) && nrow(cat_r) && !is.na(i)) {
+        if (!"policy_ids" %in% names(r)) r$policy_ids <- NA_character_
+        r$policy_ids[i] <- as.character(cat_r$id[1])
+        otro <- which(r$estado %in% "active")[2]
+        message("[ARRANQUE] política forzada en 1 pasivo de ", object, " · con=", r$id[i],
+                " · sin=", if (!is.na(otro)) r$id[otro] else "", " · politica=", cat_r$id[1])
+      }
+    }
     r
   }
 }
