@@ -72,7 +72,9 @@ ok("3.4 vence al final de ese día en México (06:00 UTC del día siguiente)",
    identical(format(a$vence, "%Y-%m-%d %H:%M", tz = "UTC"), "2027-11-03 05:59"))
 
 cat("== 4. Dos corridas ==\n")
+esc0 <- .mem_escrituras
 q(inhabiles_job("cli-mx", D("2027-11-01"), contar, leer_config = cfg(moneda_base = "MXN")))
+ok("4.0 la corrida repetida no escribe nada (T80: el salto del job no escribe)", .mem_escrituras == esc0)
 b <- avisos_de("cli-mx")
 ok("4.1 el lunes no lo duplica ni lo vuelve «nuevo» (contador 1, mismo id)",
    nrow(b) == 1L && identical(b$id, a$id) && identical(b$contador, 1L) && identical(b$actualizado, a$actualizado))

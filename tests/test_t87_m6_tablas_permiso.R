@@ -35,7 +35,13 @@ ok <- function(label, cond) {
 sesion <- function(tier, overrides = "{}", cfg = NULL, is_staff = FALSE)
   list(user = "x", tier = tier, is_staff = is_staff, permisos = permisos_resueltos(tier, overrides, cfg))
 
-PANTALLA <- names(Filter(function(t) isTRUE(t$archivo[1] %in% names(HD_ARCHIVOS_PERMISO)), hd_registro))
+# Usuarios' tables: gated by a client permission (can_view_tiers). A table
+# gated by an INTERNAL permission (T116 F2: mercado_inhabiles) is staff-only:
+# no client ever receives it -- section 7.
+puerta_de <- function(t) HD_ARCHIVOS_PERMISO[[t$archivo[1]]]
+CON_PUERTA <- Filter(function(t) isTRUE(t$archivo[1] %in% names(HD_ARCHIVOS_PERMISO)), hd_registro)
+INTERNAS  <- names(Filter(function(t) puerta_de(t) %in% permisos_internos(), CON_PUERTA))
+PANTALLA  <- setdiff(names(CON_PUERTA), INTERNAS)
 OTRAS    <- c("agenda_pagos", "libro_banco", "requisiciones", "empresas")
 ADMIN <- "admin"; DEV <- nivel_ti(); STAFF <- setdiff(niveles_staff(), nivel_tope())[1]
 
@@ -82,6 +88,16 @@ ok("6.2 cada permiso de la lista existe", all(unlist(HD_ARCHIVOS_PERMISO) %in% p
 app <- readLines("app.R", warn = FALSE, encoding = "UTF-8")
 ok("6.3 la puerta de app.R es esta función, sobre usuario_sesion()",
    any(grepl("hd_tabla_permitida <- function(tabla) nivel_tabla_permitida_usuario(usuario_sesion(), tabla)", app, fixed = TRUE)))
+
+cat("== 7. Tablas con puerta interna: solo staff ==\n")
+ok("7.0 mercado_inhabiles es una de ellas", "mercado_inhabiles" %in% INTERNAS)
+for (t in INTERNAS) {
+  k <- sprintf('{"%s": true}', puerta_de(hd_registro[[t]]))
+  ok(sprintf("7.1 %s: ningún nivel cliente la recibe, ni con el permiso forzado a mano", t),
+     !any(vapply(niveles_cliente(), function(n) nivel_tabla_permitida_usuario(sesion(n), t) ||
+                   nivel_tabla_permitida_usuario(sesion(n, k), t), logical(1))))
+  ok(sprintf("7.2 %s: staff en casa sí", t), nivel_tabla_permitida_usuario(sesion(STAFF, is_staff = TRUE), t))
+}
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

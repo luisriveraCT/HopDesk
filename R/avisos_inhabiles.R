@@ -100,8 +100,16 @@ inhabiles_job <- function(cid, hoy, contar, prueba = FALSE,
     cfg <- suppressWarnings(suppressMessages(leer_config()))
     paises <- mercado_paises_cliente(cfg)
     filas <- inhabiles_proximos(paises, hoy)
+    # Only the claves not there yet (live, retired or discarded): a repeated
+    # run writes nothing (T80) -- avisos_agregar() would rewrite the file
+    # even when repetir = FALSE leaves it as it was. Strict read: a failed
+    # one stop()s, and nothing is published.
+    if (nrow(filas)) {
+      ya <- suppressWarnings(suppressMessages(avisos_leer(cid)))$clave
+      nuevas <- !paste("inhabil", filas$pais, format(filas$fecha), sep = ":") %in% ya
+    } else nuevas <- logical()
     if (!isTRUE(prueba))
-      for (i in seq_len(nrow(filas)))
+      for (i in which(nuevas))
         suppressWarnings(suppressMessages(avisos_agregar(cid, inhabiles_aviso(filas[i, , drop = FALSE]), por = "sistema")))
     if (nrow(filas)) contar("avisos_inhabiles", nrow(filas))
     viejos <- suppressWarnings(suppressMessages(inhabiles_ya_no_aplican(cid, paises, hoy)))
