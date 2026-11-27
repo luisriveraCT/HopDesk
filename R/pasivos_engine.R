@@ -782,7 +782,7 @@ pasivos_politicas_de <- function(liability, catalog, overrides = NULL) {
 # (or today) to its end (or two years out), one more each side for rolls
 # across New Year. get_holidays() alone covers only the server's years.
 .pasivos_anios_politicas <- function(liability) {
-  hoy <- tryCatch(hoy_en(), error = function(e) Sys.Date())
+  hoy <- hoy_en()   # the client's day (CM27)
   ini <- tryCatch(as.Date(liability$fecha_inicio[1]), error = function(e) as.Date(NA))
   fin <- pasivos_fecha_fin(liability)
   if (is.na(ini) || ini > hoy) ini <- min(c(ini, hoy), na.rm = TRUE)
@@ -799,7 +799,7 @@ pasivos_politicas_de <- function(liability, catalog, overrides = NULL) {
   if (length(policies) && !is.na(f) && !is.na(fecha_calc) && fecha_calc >= hoy && f < hoy) {
     # From today, only what makes a day valid (business days, holidays),
     # forward: an offset or a month day applied again would go back again.
-    filtros <- Filter(function(p) isTRUE(p$type %in% c("weekdays", "skip_holidays")), policies)
+    filtros <- Filter(function(p) identical(p$type, "weekdays") || identical(p$type, "skip_holidays"), policies)
     filtros <- lapply(filtros, function(p) { p$roll_direction <- "forward"; p })
     f <- tryCatch(compose_policies(hoy, filtros, holidays_cache), error = function(e) hoy)
     if (is.na(f) || f < hoy) f <- hoy

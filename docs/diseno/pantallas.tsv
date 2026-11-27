@@ -151,6 +151,7 @@ config.interco.sin_guardar	Cambios sin guardar	modal	config.interco	R/settings/s
 config.mercado	Configuración › Calendario de mercado	seccion	config	R/settings/settings_mercado.R	fn:.mercado_panel_ui		can_capture_market_calendar	mercado_inhabiles	pendiente	T116 F2: solo staff; días inhábiles oficiales por país y año confirmado
 config.politicas	Configuración › Políticas	seccion	config	R/settings/settings_policies.R	fn:.policies_panel_ui			politicas_preview	pendiente	
 config.politicas.eliminar	Eliminar política	modal	config.politicas	R/settings/settings_policies.R	modal:.policy_delete_confirm_modal				pendiente	
+config.politicas.eliminar_bloqueado	No se puede eliminar (política en uso)	modal	config.politicas	R/settings/settings_policies.R	modal:.policy_delete_bloqueado_modal				pendiente	T120: la usan pasivos; los lista, sin botón de eliminar
 config.politicas.revertir	Revertir fechas de política	modal	config.politicas	R/settings/settings_policies.R	modal:.cmp_revert_modal				pendiente	
 config.sincro	Configuración › Sincronización	seccion	config	R/settings/settings_sincro.R	fn:.sincro_panel_ui			sincro_preview	pendiente	
 config.sincro.activar	Activar sincronización	modal	config.sincro	R/settings/settings_sincro.R	modal:.sincro_activar_modal				pendiente	
