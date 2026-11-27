@@ -139,7 +139,7 @@ ok(identical(as.Date(r5$tabla$fecha_efectiva[as.Date(r5$tabla$fecha_calculada) =
    "C.9 a holiday added later re-places it again")
 # strict: a failed read of the catalog stops, never "no policies"
 viejo_leer <- .s3_leer_para_escribir
-.s3_leer_para_escribir <- function(key, client_id) stop("[S3] could not read ", key)
+.s3_leer_para_escribir <- function(key, client_id) if (grepl("policy_catalog", key)) stop("[S3] could not read ", key) else NULL
 e <- tryCatch(.pasivos_politicas_contexto("c"), error = function(e) e)
 .s3_leer_para_escribir <- viejo_leer
 ok(inherits(e, "error"), "C.10 the refresh's catalog read is strict: a failure stops it")

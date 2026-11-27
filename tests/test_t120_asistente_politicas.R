@@ -137,6 +137,18 @@ testServer(function(input, output, session) settings_policies_observer(input, ou
 ok("C.4 a failed read of the liabilities refuses too (never deletes blind)",
    "p1" %in% get(k(S3_KEYS$policy_catalog), envir = .mem)$id && "error" %in% AVISOS)
 
+# Another session assigns it between the click and the confirm: the confirm
+# checks S3 again.
+sembrar(liabs[liabs$id == "l3", ]); MODAL <- NULL
+testServer(function(input, output, session) settings_policies_observer(input, output, session, sesion()), {
+  session$flushReact()
+  session$setInputs(pol_action = list(action = "delete", id = "p1", name = "Viernes", nonce = runif(1)))
+  assign(k(S3_KEYS$pasivos_liabilities), liabs, envir = .mem)        # meanwhile, in another session
+  session$setInputs(pol_delete_confirm = 1)
+})
+ok("C.5 assigned meanwhile by another session: the confirm refuses too (checked again on S3)",
+   "p1" %in% get(k(S3_KEYS$policy_catalog), envir = .mem)$id && grepl("Renta", MODAL %||% ""))
+
 cat("== D. the wizard ==\n")
 mk_wiz <- function(ids, mode = "create", target = NULL) {
   w <- reactiveValues(draft = list(policy_ids = ids), mode = mode, edit_target_id = target); w }
