@@ -55,7 +55,7 @@ html_todo <- as.character(i18n_head())
 primero <- sub("^.*?<script>(.*?)</script>.*$", "\\1", html_todo)
 ok("i18n_head(): a text with </script> is escaped too, and the dictionary still reads back",
    lengths(regmatches(html_todo, gregexpr("</script>", html_todo, fixed = TRUE))) == 2L &&
-     identical(jsonlite::fromJSON(sub("^window\\.HD_I18N=(.*);$", "\\1", primero),
+     identical(jsonlite::fromJSON(sub("^window\\.HD_I18N=Object\\.assign\\(window\\.HD_I18N\\|\\|\\{\\},(.*)\\);$", "\\1", primero),   # T118: merged
                                   simplifyVector = FALSE)$comun.prueba.cierre, "fin</script><b>x</b>"))
 
 app <- readLines("app.R", warn = FALSE, encoding = "UTF-8")

@@ -152,8 +152,11 @@ i18n_head <- function(idioma = hd_idioma()) {
   # "</" escaped, as in i18n_head_parcial(): a text holding "</script>" would
   # end the <script> early.
   json <- gsub("</", "<\\/", as.character(jsonlite::toJSON(dic, auto_unbox = TRUE)), fixed = TRUE)
+  # Merged, never replaced (T118): this <head> also arrives with the first
+  # hd_table() a renderUI draws, after other tables' data brought their own
+  # words (hdt-datos); replacing would drop them (seen in Chrome: 136 -> 130).
   htmltools::tagList(
-    htmltools::tags$script(htmltools::HTML(paste0("window.HD_I18N=", json, ";"))),
+    htmltools::tags$script(htmltools::HTML(paste0("window.HD_I18N=Object.assign(window.HD_I18N||{},", json, ");"))),
     htmltools::tags$script(src = "i18n.js?v=1")
   )
 }
