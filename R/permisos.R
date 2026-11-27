@@ -155,7 +155,9 @@ puede <- function(usuario, permiso) {
   }
   p <- usuario$permisos
   if (is.null(p)) return(FALSE)
-  isTRUE(p[[permiso]])
+  # T119: a key that is not there is FALSE (fail-closed). p[["k"]] on an
+  # atomic vector without that name stop()s ("subscript out of bounds").
+  permiso %in% names(p) && isTRUE(p[[permiso]])
 }
 
 # T87-M5: the refusal's text for `usuario`. The permission is named only to

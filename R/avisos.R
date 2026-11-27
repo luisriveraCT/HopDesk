@@ -95,6 +95,10 @@ PREFS_DEFECTO <- list(inicio = NULL, idioma = "es", audiencia = NULL, ultima_vis
               else .s3_leer_para_escribir(key, client_id)
     fresco <- .normalizar(leido, schema)
     nuevo  <- cambio(fresco)
+    # T119: nothing changed, nothing written (avisos_agregar with repetir =
+    # FALSE rewrote avisos.rds as it was). Only after a read that WORKED: a
+    # failed read stop()s above and never reaches here.
+    if (identical(nuevo, fresco)) return(invisible(nuevo))
     ok <- tryCatch({ .s3_write(nuevo, key, client_id = client_id); TRUE },
                    error = function(e) { message("[avisos] escritura falló (", key, "): ", e$message); FALSE })
     if (ok) return(invisible(nuevo))
