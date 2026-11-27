@@ -409,76 +409,73 @@ dedup_movimientos <- function(nuevos, existentes) {
 
 # =============================================================================
 # auto_match_agenda()
-# Attempt to automatically conciliate new TXT movements against confirmed
-# agenda payments stored in bancos_confirmados.
+# Conciliates new TXT movements against the live confirmed agenda payments of
+# bancos_confirmados: ONE candidate with the same amount (±0.01) and the same
+# date -> conciliado, doc_vinculado, agenda_id. The link only shows (the
+# Libro's «Conciliado» badge, the Papelera's «vinculado» rows).
 #
-# Match priority (first applicable wins):
-#   1. Exact  : importe matches + fecha within ±0 days
-#   2. Partial: importe within ±1% + fecha within ±2 days
-#   (RFC-based matching is a future enhancement — confirmados lacks RFC field)
-#
-# Returns movimientos_nuevos with columns added:
-#   conciliado, doc_vinculado, agenda_id
+# T84 F3m (2026-11-27). In prod (networks) the old matcher had made 21 links
+# in the wrong direction, 68 confirmations linked to 168 movements, 17 across
+# currencies and 89 by the approximate level (73 with a different amount).
+# Now three guards hold, and the approximate level is gone:
+#   - direction: a cargo only with a "pago", an abono only with a "cobro";
+#   - currency: the movement's account currency (`cuentas`: cuenta_id +
+#     moneda, the Bancos format of ctas_cuentas) equals the confirmation's,
+#     both via moneda_normalizar(). No cuentas, no account, no currency on
+#     either side: nothing matches (fail-closed -- a failed read of the
+#     accounts leaves rows unconciliated, never conciliated wrongly);
+#   - one use: a confirmation already linked to a saved live movement
+#     (`ligadas`: their agenda_id, see conciliacion_ligadas()) or earlier in
+#     this import is not a candidate;
+#   - no approximate level (±1 %, ±2 days): a difference is a commission, an
+#     FX rate or an error, and conciliating it silently hid it.
+# A true reconciliation (invoice <-> payment <-> movement) is a separate,
+# deferred project: reportes/T84_alcance_conciliacion.md.
 # =============================================================================
-auto_match_agenda <- function(movimientos_nuevos, confirmados) {
-  base_cols <- tibble::tibble(
-    conciliado    = logical(),
-    doc_vinculado = character(),
-    agenda_id     = character()
-  )
+.concil_mon <- function(x) {
+  f <- get0("moneda_normalizar", mode = "function", ifnotfound = function(v) toupper(trimws(as.character(v))))
+  f(x)
+}
 
-  if (!nrow(movimientos_nuevos)) {
-    return(dplyr::bind_cols(
-      movimientos_nuevos,
-      base_cols[integer(0), ]
-    ))
-  }
+# The agenda ids already linked to a live, conciliated movement of `movs`.
+conciliacion_ligadas <- function(movs) {
+  if (is.null(movs) || !nrow(movs)) return(character())
+  v <- movs[!(movs$eliminado %in% TRUE) & movs$conciliado %in% TRUE, , drop = FALSE]
+  unique(as.character(v$agenda_id[!is.na(v$agenda_id) & nzchar(v$agenda_id)]))
+}
 
-  result <- dplyr::mutate(movimientos_nuevos,
-    conciliado    = FALSE,
-    doc_vinculado = NA_character_,
-    agenda_id     = NA_character_
-  )
-
-  if (is.null(confirmados) || !nrow(confirmados)) return(result)
+auto_match_agenda <- function(movimientos_nuevos, confirmados, cuentas = NULL, ligadas = character()) {
+  result <- movimientos_nuevos
+  n <- nrow(result)
+  result$conciliado    <- rep(FALSE, n)
+  result$doc_vinculado <- rep(NA_character_, n)
+  result$agenda_id     <- rep(NA_character_, n)
+  if (!n || is.null(confirmados) || !nrow(confirmados)) return(result)
 
   # Live confirmations only. `!isTRUE(eliminado)` on the whole column filtered
   # nothing, so imports matched deleted confirmations and undo records
   # (since 2026-04-27; review CM10/C6).
-  conf <- confirmaciones_vigentes(confirmados) |>
-    dplyr::select(agenda_item_id, documento, importe, fecha, mov_id)
+  conf <- confirmaciones_vigentes(confirmados)
+  for (col in c("agenda_item_id", "documento", "moneda", "tipo"))
+    if (!col %in% names(conf)) conf[[col]] <- rep(NA_character_, nrow(conf))
+  conf_mon <- .concil_mon(conf$moneda)
+  mov_mon  <- if (is.null(cuentas) || !nrow(cuentas)) rep(NA_character_, n) else
+    .concil_mon(cuentas$moneda[match(result$cuenta_id, cuentas$cuenta_id)])
+  usadas <- as.character(ligadas)
 
-  for (i in seq_len(nrow(result))) {
-    if (isTRUE(result$conciliado[i])) next
-
-    mov_importe <- if (result$cargo[i] > 0) result$cargo[i] else result$abono[i]
-    if (mov_importe <= 0 || is.na(result$fecha[i])) next
-
-    # 1. Exact match: same amount + same date
-    exact <- conf |> dplyr::filter(
-      abs(importe - mov_importe) < 0.01,
-      !is.na(fecha),
-      fecha == result$fecha[i]
-    )
+  for (i in seq_len(n)) {
+    cargo <- isTRUE(result$cargo[i] > 0); abono <- !cargo && isTRUE(result$abono[i] > 0)
+    if (!cargo && !abono || is.na(result$fecha[i]) || is.na(mov_mon[i]) || !nzchar(mov_mon[i])) next
+    mov_importe <- if (cargo) result$cargo[i] else result$abono[i]
+    exact <- conf[conf$tipo %in% (if (cargo) "pago" else "cobro") & conf_mon %in% mov_mon[i] &
+                    !(conf$agenda_item_id %in% usadas) & !is.na(conf$fecha) &
+                    abs(conf$importe - mov_importe) < 0.01 & conf$fecha == result$fecha[i], , drop = FALSE]
     if (nrow(exact) == 1L) {
       result$conciliado[i]    <- TRUE
       result$doc_vinculado[i] <- exact$documento[1L]
       result$agenda_id[i]     <- exact$agenda_item_id[1L]
-      next
-    }
-
-    # 2. Partial match: importe ±1%, fecha ±2 days
-    partial <- conf |> dplyr::filter(
-      abs(importe - mov_importe) / pmax(mov_importe, 1) <= 0.01,
-      !is.na(fecha),
-      abs(as.numeric(fecha - result$fecha[i])) <= 2L
-    )
-    if (nrow(partial) == 1L) {
-      result$conciliado[i]    <- TRUE
-      result$doc_vinculado[i] <- partial$documento[1L]
-      result$agenda_id[i]     <- partial$agenda_item_id[1L]
+      usadas <- c(usadas, exact$agenda_item_id[1L])
     }
   }
-
   result
 }

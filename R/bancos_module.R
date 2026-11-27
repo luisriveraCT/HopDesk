@@ -1976,9 +1976,10 @@ bancosServer <- function(id, shared) {
         showNotification(tr("tablas.bancos.aviso.sin_nuevos"), type = "warning"); return()
       }
 
-      # Auto-match against confirmados
+      # Auto-match against confirmados (T84 F3m: with the accounts' currency
+      # and the confirmations already linked; see auto_match_agenda()).
       conf       <- confirmados()
-      nuevos     <- auto_match_agenda(nuevos, conf)
+      nuevos     <- auto_match_agenda(nuevos, conf, cuentas = cuentas(), ligadas = conciliacion_ligadas(existentes))
 
       # Assign server-side columns
       nuevos$id           <- vapply(seq_len(nrow(nuevos)),

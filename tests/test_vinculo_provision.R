@@ -194,14 +194,18 @@ test_that("importar TXT no empata contra confirmaciones eliminadas ni deshechas 
                             eliminado = c(FALSE, TRUE)), .schema_bancos_confirmados)
   conf <- recover_confirmacion(dplyr::mutate(conf, eliminado = FALSE)[1, ], "v") |>
     dplyr::bind_rows(conf[2, ])                       # v undone, x deleted: nothing live
-  movs <- tibble(id = c("m1", "m2"), cargo = c(300, 777), abono = 0,
+  # T84 F3a: the matcher needs the accounts' currency (fail-closed without
+  # them), so both sides carry one here.
+  conf$moneda <- "MXN"
+  ctas <- data.frame(cuenta_id = "cta", moneda = "MXN")
+  movs <- tibble(id = c("m1", "m2"), cuenta_id = "cta", cargo = c(300, 777), abono = 0,
                  fecha = as.Date("2026-10-30"))
-  out <- auto_match_agenda(movs, conf)
+  out <- auto_match_agenda(movs, conf, cuentas = ctas)
   expect_false(any(out$conciliado))
   vivo <- .normalize(tibble(confirmacion_id = "w", agenda_item_id = "ag-w", documento = "F3",
-                            importe = 300, fecha = as.Date("2026-10-30"), tipo = "pago",
+                            importe = 300, moneda = "MXN", fecha = as.Date("2026-10-30"), tipo = "pago",
                             eliminado = FALSE), .schema_bancos_confirmados)
-  expect_true(auto_match_agenda(movs[1, ], vivo)$conciliado)
+  expect_true(auto_match_agenda(movs[1, ], vivo, cuentas = ctas)$conciliado)
 })
 
 test_that("confirmar en Agenda ya no guarda la copia en memoria", {
