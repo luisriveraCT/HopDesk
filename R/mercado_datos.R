@@ -193,7 +193,9 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
     tasas   = callado(.mercado_agregar(MERCADO_TASAS_LLAVE, .schema_mercado_tasas, r$tasas, "metric_id",
                                        "Tasas de referencia de mercado")))
   .MERCADO_DATOS$memo <- NULL            # the next read sees what was just added
-  fallas <- c(as.character(r$fallas %||% character()), paste0("guardar:", names(guardado)[!guardado]))
+  # paste0("guardar:", character(0)) is "guardar:", not empty: only when one failed.
+  fallas <- c(as.character(r$fallas %||% character()),
+              if (any(!guardado)) paste0("guardar:", names(guardado)[!guardado]))
   .mercado_log_falla(fallas)
   if (!length(fallas)) "ok" else "falla"
 }

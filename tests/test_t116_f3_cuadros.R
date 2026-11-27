@@ -212,6 +212,13 @@ q0 <- con_log(mercado_datos_refrescar(HOY, forzar = TRUE, en_fondo = FALSE))
 ok("6.7 sin token de Banxico: no se pide a Banxico y lo dice («banxico:sin_token»)",
    !any(grepl("SieAPIRest", srv$log()$ruta)) && any(grepl("banxico:sin_token", lineas_log)))
 Sys.setenv(BANXICO_TOKEN = TOKEN)
+# 6.8 everything fetched and saved: "ok" and NO log line (paste0 with an empty
+# vector used to log «refresco falló (guardar:)» on every good refresh).
+s3_memoria_reset(); lineas_log <- character()
+bien <- list(fix = NULL, divisas = NULL, bce = transform(CACHE$bce, obtenido_en = "x"), tasas = NULL, fallas = character())
+r8 <- con_log(.mercado_guardar(bien))
+ok("6.8 todo bajado y guardado: «ok» y ninguna línea de falla en el log", identical(r8, "ok") && !length(lineas_log),
+   paste(r8, paste(lineas_log, collapse = " | ")))
 
 cat("== 7. En segundo plano (como en la app) ==\n")
 esperar_hijo <- function(seg = 90) {
