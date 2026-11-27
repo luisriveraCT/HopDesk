@@ -661,12 +661,21 @@ bancosServer <- function(id, shared) {
     # ── Convenience accessors ────────────────────────────────────────────────
     # cuentas: derived from Settings ctas_cuentas — single source of truth.
     # cuenta_id in movimientos maps to ctas_cuentas$id.
+    # T121: the session's catalog when it holds one; otherwise (Phase 1 could
+    # not read it, or still loading) a strict read of S3. NULL = the accounts
+    # could not be read: cuentas() then stays an empty table (never an error,
+    # its observers must not stop the session) and cuentas_no_leidas() makes
+    # the Libro, Cuentas and the import say so instead of "no accounts".
+    ctas_leidas <- reactive({
+      v <- tryCatch(if (is.function(shared$ctas_cuentas)) shared$ctas_cuentas(), error = function(e) NULL)
+      if (is.data.frame(v)) return(v)
+      tryCatch(load_ctas_cuentas(client_id = shared$effective_client_id()), error = function(e) {
+        message("[BANCOS] accounts not read: ", conditionMessage(e)); NULL })
+    })
+    cuentas_no_leidas <- reactive(is.null(ctas_leidas()))
+    aviso_no_leidas <- reactive(if (cuentas_no_leidas()) tr("comun.cuentas_no_leidas"))
     cuentas <- reactive({
-      raw_cts <- tryCatch(
-        if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas()
-        else load_ctas_cuentas(client_id = shared$effective_client_id()),
-        error = function(e) NULL
-      )
+      raw_cts <- ctas_leidas()
       df      <- .ctas_to_bancos_cuentas(raw_cts, ctas_bancos_rv())
       allowed <- tryCatch(shared$visible_initials(), error = function(e) NULL)
       if (!is.null(allowed) && "empresa" %in% names(df) && nrow(df) > 0)
@@ -1010,7 +1019,7 @@ bancosServer <- function(id, shared) {
                                acciones_fila = "editar",
                                acciones_barra = list(list(accion = "eliminar", texto = "tablas.bancos.eliminar",
                                                           peligro = TRUE)),
-                               vacio = "tablas.bancos.vacio_libro", visibles = TRUE)
+                               vacio = "tablas.bancos.vacio_libro", visibles = TRUE, aviso = aviso_no_leidas)
 
     # Both Libro Excels are logged as a generated file ("bancos_libro_excel"),
     # with the bar's filters and which one (formato: "tabla" / "banbajio").
@@ -1749,7 +1758,8 @@ bancosServer <- function(id, shared) {
         return(div(
           style = "background:var(--hd-aviso-suave); border:1.5px solid var(--hd-leg-aviso-texto-664d03); border-radius:8px; padding:14px 18px; margin-bottom:14px;",
           icon("triangle-exclamation", style = "color:var(--hd-leg-aviso-texto-997404);"),
-          " No hay cuentas BanBaj\u00edo activas configuradas."
+          if (cuentas_no_leidas()) paste0(" ", tr("comun.cuentas_no_leidas"))   # T121
+          else " No hay cuentas BanBaj\u00edo activas configuradas."
         ))
 
       # Rank by account number + subcuenta + currency + the CLIENT's raz\u00f3n
@@ -2655,6 +2665,6 @@ bancosServer <- function(id, shared) {
                       col_texto("Alias", "tablas.bancos.alias"),
                       col_texto("Cuenta", "tablas.bancos.cuenta", recorte = FALSE),
                       col_texto("CLABE", "tablas.bancos.clabe", recorte = FALSE)),
-      vacio = "tablas.bancos.vacio_cuentas")
+      vacio = "tablas.bancos.vacio_cuentas", aviso = aviso_no_leidas)
   }) # end moduleServer
 }

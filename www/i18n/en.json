@@ -319,6 +319,7 @@
   "tablas.bancos.detectar.aviso_totales": "The file's totals do not match the movements read (debits {cargos_archivo} vs {cargos_leidos}, credits {abonos_archivo} vs {abonos_leidos}). The file may be incomplete.",
   "comun.fecha_corta": "{mes} {dia}, {anio}",
   "comun.reintentar": "We couldn't finish this. Please try again in a moment.",
+  "comun.cuentas_no_leidas": "The bank accounts could not be read. Reload the page in a moment.",
   "comun.mes.1": "Jan",
   "comun.mes.2": "Feb",
   "comun.mes.3": "Mar",

@@ -319,6 +319,7 @@
   "tablas.bancos.detectar.aviso_totales": "Los totales del archivo no cuadran con los movimientos leídos (cargos {cargos_archivo} vs {cargos_leidos}, abonos {abonos_archivo} vs {abonos_leidos}). El archivo podría estar incompleto.",
   "comun.fecha_corta": "{dia} {mes} {anio}",
   "comun.reintentar": "No pudimos completar esto. Intenta de nuevo en un momento.",
+  "comun.cuentas_no_leidas": "No se pudieron leer las cuentas bancarias. Recarga la página en un momento.",
   "comun.mes.1": "ene",
   "comun.mes.2": "feb",
   "comun.mes.3": "mar",

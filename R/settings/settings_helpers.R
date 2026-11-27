@@ -164,9 +164,24 @@ load_ctas_bancos <- function(client_id = NULL) {
   obj
 }
 
+# T121 (A2's rule): a failed read is never "no accounts". .s3_read_with()
+# gives NULL both for a missing file and for a read that failed; only S3
+# confirming the file is not there (a 404, cached or answered now) is the
+# empty catalog, anything else stop()s. It used to return the empty schema,
+# and a session whose sync reload failed lost every account until the next
+# change. .s3_read_with (not .s3_leer_para_escribir) on purpose: this is the
+# display read and keeps Phase 1's preload cache; the writes have their own
+# strict read (modificar_ctas_cuentas()).
 load_ctas_cuentas <- function(client_id = NULL) {
-  obj <- tryCatch(.s3_read_with(S3_KEYS$ctas_cuentas, client_id = client_id), error = function(e) NULL)
-  if (is.null(obj) || !is.data.frame(obj)) return(.schema_ctas_cuentas())
+  key <- S3_KEYS$ctas_cuentas
+  obj <- .s3_read_with(key, client_id = client_id)
+  if (is.null(obj)) {
+    sin_archivo <- .s3_missing_cache_hit(.s3_key(key, client_id = client_id)) ||
+      identical(.s3_existe(key, client_id), FALSE)
+    if (!sin_archivo) stop("[S3] could not read ", key, " (client ", client_id %||% "", ")", call. = FALSE)
+    return(.schema_ctas_cuentas())
+  }
+  if (!is.data.frame(obj)) stop("[S3] ", key, " is not a table", call. = FALSE)
   schema <- .schema_ctas_cuentas()
   for (col in names(schema))
     if (!col %in% names(obj)) obj[[col]] <- schema[[col]][NA_integer_]

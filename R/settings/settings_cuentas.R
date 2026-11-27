@@ -111,9 +111,15 @@ settings_cuentas_observer <- function(input, output, session, shared) {
                refrescar(refrescar() + 1L), ignoreInit = TRUE, priority = -10)
   .leer_bancos <- function()
     tryCatch(load_ctas_bancos(client_id = shared$effective_client_id()), error = function(e) .schema_ctas_bancos())
-  .leer_cuentas <- function() tryCatch({
-    if (!is.null(shared$ctas_cuentas)) shared$ctas_cuentas() else load_ctas_cuentas(client_id = shared$effective_client_id())
-  }, error = function(e) .schema_ctas_cuentas())
+  # T121: the session's catalog when it holds one, otherwise a strict read;
+  # NULL = could not be read (never shown as "no accounts": the table says
+  # so above it, and opening an account tells the user to retry).
+  .leer_cuentas <- function() {
+    v <- tryCatch(if (is.function(shared$ctas_cuentas)) shared$ctas_cuentas(), error = function(e) NULL)
+    if (is.data.frame(v)) return(v)
+    tryCatch(load_ctas_cuentas(client_id = shared$effective_client_id()), error = function(e) {
+      message("[AJUSTES] accounts not read: ", conditionMessage(e)); NULL })
+  }
   # The client's base currency (monedas fase 3, T37): a new account's, and
   # what a row without one is. Read once per form, never as a dependency.
   .moneda_base <- function()
@@ -136,12 +142,13 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     acciones_fila = "editar",
     vacio = "tablas.ajustes.bancos.vacio"
   )
+  cuentas_tabla <- reactive({ refrescar(); .leer_cuentas() })   # one read for the rows and the notice
   t_cuentas <- hd_table_server(
     "cuentas_t", tabla = "cuentas_empresa",
     datos = reactive({
-      refrescar()
-      .cuentas_empresa_filas(.leer_cuentas(), .leer_bancos(), input$cta_empresa_filter %||% "")
+      .cuentas_empresa_filas(cuentas_tabla(), .leer_bancos(), input$cta_empresa_filter %||% "")
     }),
+    aviso = reactive(if (!is.data.frame(cuentas_tabla())) tr("comun.cuentas_no_leidas")),   # T121
     columnas = list(
       col_insignia("ppl", "tablas.ajustes.cuentas.ppl", mapa = list(
         ppl = list(texto = "tablas.ajustes.cuentas.ppl", tono = "info"))),
@@ -268,6 +275,7 @@ settings_cuentas_observer <- function(input, output, session, shared) {
     a <- t_cuentas$accion()
     if (!a$accion %in% c("editar", "detalle")) return()
     ctas <- .leer_cuentas()
+    if (!is.data.frame(ctas)) { showNotification(tr("comun.cuentas_no_leidas"), type = "error", duration = 8); return() }
     row  <- ctas[!is.na(ctas$id) & ctas$id == a$ids[1], , drop = FALSE]
     if (!nrow(row)) return()
     row <- row[1, ]
