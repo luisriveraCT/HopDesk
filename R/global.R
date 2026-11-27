@@ -878,7 +878,10 @@ calendar_html <- function(
   # text's own colour (currentColor), never a hex of its own.
   cur_col  <- tryCatch(.currency_color(cur), error = function(e) "currentColor")
   cur_tint <- sprintf("color-mix(in srgb, %s 13%%, transparent)", cur_col)
-  today <- Sys.Date()
+  # T6-12: the user's day (CM27, R/zona.R, sourced above), never the
+  # server's Sys.Date(). A fixture that loads this file by pieces sources
+  # R/zona.R too.
+  today <- hoy_usuario()
   # T55: the amounts in whole units as monto_moneda() writes them, the
   # currency's code from `currency` (the selector above names it, so a row
   # shows the number alone; the day's total carries it).
@@ -1026,7 +1029,7 @@ calendar_html <- function(
     )
 
     # Day number header row
-    day_num_html <- paste0('<span class="cal-daynum">', day(fecha), '</span>')
+    day_num_html <- paste0('<span class="cal-daynum"', if (is_today) paste0(' title="', htmltools::htmlEscape(tr("comun.calendario.hoy"), attribute = TRUE), '" aria-current="date"') else "", '>', day(fecha), '</span>')
 
     # Tag badge pills in the header
     tag_badge_html <- if (nzchar(day_tag)) {

@@ -771,9 +771,8 @@ app_styles <- function() {
     .cal-theme-ar .cal-tile--weekend { background: var(--hd-superficie-2); border-color: var(--hd-leg-borde-dde7f7); }
     .cal-theme-ar .cal-tile--has-data { border-color: var(--hd-leg-primario-p42-9db8e8); }
     .cal-theme-ar .cal-tile--has-data:hover { box-shadow: 0 3px 14px color-mix(in srgb, var(--hd-primario) 15%, transparent); border-color: var(--hd-primario); }
-    .cal-theme-ar .cal-tile--today { border-color: var(--hd-primario) !important; background: var(--hd-hover); }
+    .cal-theme-ar .cal-tile--today { --cal-hoy: var(--hd-primario); --cal-hoy-texto: var(--hd-primario-texto); border-color: var(--cal-hoy) !important; background: var(--hd-hover); }
     .cal-theme-ar .cal-daynum { color: var(--hd-primario); }
-    .cal-theme-ar .cal-tile--today .cal-daynum { color: var(--hd-primario); }
     .cal-theme-ar .cal-tile--weekend .cal-daynum { color: var(--hd-leg-texto-tenue-9ba8b5); }
 
     /* ── Pagos (AP) — brown theme ───────────────────────────────── */
@@ -787,9 +786,8 @@ app_styles <- function() {
     .cal-theme-ap .cal-tile--weekend { background: var(--hd-leg-modo-pago-p4-fdf8f5); border-color: var(--hd-leg-modo-pago-p20-f0e0d5); }
     .cal-theme-ap .cal-tile--has-data { border-color: var(--hd-modo-pago-dato); }
     .cal-theme-ap .cal-tile--has-data:hover { box-shadow: 0 3px 14px color-mix(in srgb, var(--hd-modo-pago) 15%, transparent); border-color: var(--hd-modo-pago); }
-    .cal-theme-ap .cal-tile--today { border-color: var(--hd-modo-pago) !important; background: var(--hd-leg-modo-pago-p7-fdf5ee); }
+    .cal-theme-ap .cal-tile--today { --cal-hoy: var(--hd-modo-pago); --cal-hoy-texto: var(--hd-texto-inverso); border-color: var(--cal-hoy) !important; background: var(--hd-leg-modo-pago-p7-fdf5ee); }
     .cal-theme-ap .cal-daynum { color: var(--hd-modo-pago); }
-    .cal-theme-ap .cal-tile--today .cal-daynum { color: var(--hd-modo-pago); }
     .cal-theme-ap .cal-tile--weekend .cal-daynum { color: var(--hd-leg-texto-tenue-9ba8b5); }
 
     /* Day-of-week header */
@@ -827,7 +825,11 @@ app_styles <- function() {
       box-shadow: 0 3px 14px color-mix(in srgb, var(--hd-primario) 15%, transparent);
       border-color: var(--hd-primario); z-index: 2;
     }
-    .cal-tile--today  { border: 2.5px solid var(--hd-primario) !important; background: var(--hd-hover); }
+    /* T6-12: today stands out -- a ring in the calendar's colour (Cobros
+       primario, Pagos modo-pago; set on the tile as --cal-hoy) that stays
+       when the day is urgent or hovered, and its number in a filled pill. */
+    .cal-tile--today  { --cal-hoy: var(--hd-primario); --cal-hoy-texto: var(--hd-primario-texto);
+                        border: 2.5px solid var(--cal-hoy) !important; background: var(--hd-hover); }
     .cal-tile--urgent    { background: var(--hd-leg-etq-a-fila-fff5f5) !important; border-color: var(--hd-leg-etq-a-texto-p68-e57373) !important; }
     .cal-tile--important { background: var(--hd-leg-etq-c-fila-fffbf0) !important; border-color: var(--hd-leg-etq-c-texto-p78-f0c040) !important; }
     .cal-tile--both      { background: var(--hd-leg-etq-b-fila-fff3ec) !important; border-color: var(--hd-leg-etq-b-texto-p79-e8874a) !important; }
@@ -858,8 +860,13 @@ app_styles <- function() {
       justify-content: space-between; margin-bottom: 4px; gap: 4px;
     }
     .cal-daynum { font-size: 1rem; font-weight: 700; color: var(--hd-modo-pago); line-height: 1; flex-shrink: 0; }
-    .cal-tile--today .cal-daynum { color: var(--hd-primario); }
     .cal-tile--weekend .cal-daynum { color: var(--hd-leg-texto-tenue-9ba8b5); }
+    /* After every themed and weekend rule (same or lower specificity). */
+    .cal-tile.cal-tile--today, .cal-tile.cal-tile--today:hover { box-shadow: 0 0 0 2px var(--cal-hoy); z-index: 1; }
+    .cal-tile.cal-tile--today .cal-daynum {
+      background: var(--cal-hoy); color: var(--cal-hoy-texto);
+      font-weight: 800; border-radius: 999px; padding: 2px 7px; margin: -2px 0 0 -3px;
+    }
 
     /* Tag badges */
     .cal-badge {

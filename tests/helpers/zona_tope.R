@@ -24,7 +24,7 @@ list(
     "R/forecasting_module.R" = 5L,
     "R/forecasting_resolve.R" = 1L,
     "R/forecasting_sources.R" = 4L,
-    "R/global.R" = 1L,
+    "R/global.R" = 0L,   # T6-12: calendar_html() takes hoy_usuario()
     "R/hd_table.R" = 2L,
     "R/interco_module.R" = 1L,
     "R/ledger_module.R" = 1L,

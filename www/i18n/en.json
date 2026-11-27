@@ -344,6 +344,7 @@
   "comun.sap.al": "SAP data as of {fecha}",
   "comun.sap.sin_datos": "SAP data not loaded yet",
   "comun.calendario.total": "Total",
+  "comun.calendario.hoy": "Today",
   "comun.calendario.notas": "Month notes",
   "comun.calendario.mas": "+ {n} more",
   "comun.bitacora.saldo_no_disponible": "not available per currency (earlier record)",

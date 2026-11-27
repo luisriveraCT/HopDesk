@@ -344,6 +344,7 @@
   "comun.sap.al": "Datos de SAP al {fecha}",
   "comun.sap.sin_datos": "Datos de SAP todavía sin cargar",
   "comun.calendario.total": "Total",
+  "comun.calendario.hoy": "Hoy",
   "comun.calendario.notas": "Notas del mes",
   "comun.calendario.mas": "+ {n} más",
   "comun.bitacora.saldo_no_disponible": "no disponible por moneda (registro anterior)",

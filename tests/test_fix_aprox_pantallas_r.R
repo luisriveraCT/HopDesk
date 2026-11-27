@@ -25,7 +25,8 @@ ok <- function(label, expr) {
 suppressPackageStartupMessages({ library(shiny); library(dplyr); library(tibble); library(tidyr) })
 `%||%` <- function(x, y) if (is.null(x) || length(x) == 0L || (length(x) == 1L && is.na(x))) y else x
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/vencidos_module.R", "R/dia_module.R", "R/fx_banxico.R", "R/pasivos_schemas.R")) suppressMessages(source(f))
+            "R/vencidos_module.R", "R/dia_module.R", "R/fx_banxico.R", "R/pasivos_schemas.R",
+            "R/zona.R")) suppressMessages(source(f))   # zona.R: calendar_html()'s today (T6-12)
 SAP_B1_ERP_TYPE <- "sap_b1_service_layer"
 tomar <- function(f, nombres) for (e in parse(f, keep.source = FALSE, encoding = "UTF-8"))
   if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) && as.character(e[[2]]) %in% nombres) eval(e, globalenv())
@@ -135,7 +136,17 @@ t55 <- function(h, cur = "MXN") {
   h <- gsub(PASTILLA_ANTES, PASTILLA_DESPUES, h, fixed = TRUE)
   h <- gsub('(<span class="cal-amount"[^>]*>(≈ )?)\\$ ', "\\1", h)
   h <- gsub('(<div class="cal-total"><span>Total</span><span[^>]*>(≈ )?)\\$ ([0-9,]+)</span>', paste0("\\1\\3 ", cur, "</span>"), h)
-  sub('(<button class="cf-preview-toggle-btn"[^>]*>&#8250;</button>)', paste0("\\1", BOTON_NOTAS), h)
+  h <- sub('(<button class="cf-preview-toggle-btn"[^>]*>&#8250;</button>)', paste0("\\1", BOTON_NOTAS), h)
+  # T6-12 (one more change, applied the same way): today's number carries
+  # title="Hoy" and aria-current="date" -- only when today falls in the
+  # month drawn here (November 2026). Today is the user's (no session here:
+  # ZONA_OMISION's); master took the machine's Sys.Date(), the same day on a
+  # machine in Mexico.
+  hoy <- hoy_usuario()
+  if (format(hoy, "%Y-%m") == "2026-11")
+    h <- sub(sprintf('<span class="cal-daynum">%d</span>', as.integer(format(hoy, "%d"))),
+             sprintf('<span class="cal-daynum" title="Hoy" aria-current="date">%d</span>', as.integer(format(hoy, "%d"))), h, fixed = TRUE)
+  h
 }
 burbuja_en <- function(fn, dd, cur) suppressMessages(fn(dd, as.Date("2026-11-01"), cur, title_prefix = "Pagos", ledger = "AP"))
 h_ma <- burbuja(maestro$calendar_html, dd)

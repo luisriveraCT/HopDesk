@@ -772,5 +772,37 @@ banda_ok <- vapply(names(tema$HD_TEMAS), function(t) {
 ok(sprintf("tiers header_badge readable on the band in every theme (text 4.5, icon 3, button 4.5): %s",
            paste(names(banda_ok), ifelse(banda_ok, "ok", "NO"), collapse = ", ")), all(banda_ok))
 
+# ── T6-12: TODAY in Flujo › Calendario ──────────────────────────────────────
+# R/ui_components.R: the today tile sets --cal-hoy / --cal-hoy-texto from
+# theme roles (Cobros primario / primario-texto, Pagos modo-pago /
+# texto-inverso); a ring in --cal-hoy (kept on hover and on urgent days) and
+# the number in a filled pill, weight 800. No fixed colour in the piece, and
+# readable in every theme. (The day itself, the user's: test_t612_calendario_hoy.)
+uic <- leer("R/ui_components.R")
+hoy_css <- paste(uic[grepl("cal-tile--today", uic, fixed = TRUE) |
+                       grepl("--cal-hoy", uic, fixed = TRUE)], collapse = "\n")
+ini_pill <- grep(".cal-tile.cal-tile--today .cal-daynum {", uic, fixed = TRUE)
+pill_css <- if (length(ini_pill) == 1L) paste(uic[ini_pill:(ini_pill + 3L)], collapse = "\n") else ""
+ok("calendar today: no fixed colour; --cal-hoy and --cal-hoy-texto only from theme roles",
+   nzchar(hoy_css) && cuenta(paste(hoy_css, pill_css), RE_HEX) + cuenta(paste(hoy_css, pill_css), RE_FUN) == 0L &&
+     all(grepl("^var\\(--hd-[a-z0-9-]+\\)$", trimws(unlist(regmatches(hoy_css,
+       gregexpr("(?<=--cal-hoy:|--cal-hoy-texto:)[^;]+", hoy_css, perl = TRUE)))))))
+ok("calendar today: a ring in --cal-hoy (also on hover) and the number in a filled pill, bold 800",
+   grepl(".cal-tile.cal-tile--today, .cal-tile.cal-tile--today:hover { box-shadow: 0 0 0 2px var(--cal-hoy);", hoy_css, fixed = TRUE) &&
+     grepl("background: var(--cal-hoy); color: var(--cal-hoy-texto);", pill_css, fixed = TRUE) &&
+     grepl("font-weight: 800", pill_css, fixed = TRUE) &&
+     # after every weekend / themed number rule, so it is the one that paints
+     ini_pill > max(grep("cal-tile--weekend .cal-daynum", uic, fixed = TRUE)))
+hoy_ok <- vapply(names(tema$HD_TEMAS), function(t) {
+  tk <- c(tema$.HD_COMUNES, tema$HD_TEMAS[[t]]$tokens)
+  pares <- list(c(tk[["primario"]], tk[["primario-texto"]]), c(tk[["modo-pago"]], tk[["texto-inverso"]]))
+  fondos <- c(tk[["superficie"]], tk[["hover"]], tk[["superficie-2"]])
+  all(vapply(pares, function(p) tema$tema_contraste(p[2], p[1]) >= 4.5 &&
+               all(vapply(c(fondos, if (identical(p[1], tk[["modo-pago"]])) tk[["modo-pago-suave"]]),
+                          function(f) tema$tema_contraste(p[1], f) >= 3, logical(1))), logical(1)))
+}, logical(1))
+ok(sprintf("calendar today readable in every theme (pill text 4.5, ring 3 on the tile's grounds): %s",
+           paste(names(hoy_ok), ifelse(hoy_ok, "ok", "NO"), collapse = ", ")), all(hoy_ok))
+
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
