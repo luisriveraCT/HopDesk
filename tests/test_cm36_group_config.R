@@ -113,7 +113,7 @@ ok("2f save_group_config() is gone: no blind whole-copy write left",
 # ── 3. The real Guardar of Empresas ──────────────────────────────────────────
 suppressPackageStartupMessages(library(shiny))
 for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/empresas_module.R"))
+            "R/mercado.R", "R/empresas_module.R"))
   suppressMessages(source(f, encoding = "UTF-8"))
 .i18n_dir <- file.path(getwd(), "www", "i18n")
 puede <- function(usuario, permiso, ...) TRUE

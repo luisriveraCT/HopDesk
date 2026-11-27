@@ -44,7 +44,7 @@ for (e in parse("R/ui_components.R", keep.source = FALSE, encoding = "UTF-8"))  
     eval(e, globalenv())
 for (f in c("R/i18n.R", "R/monedas.R", "R/ppl_generator.R", "R/pagos_layouts.R", "R/tier_registry.R", "R/permisos.R",
             "R/hd_registro.R", "R/hd_piezas.R", "R/hd_columnas.R", "R/hd_table.R",
-            "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/settings/settings_hub.R"))
+            "R/settings/settings_cuentas.R", "R/settings/settings_bp.R", "R/mercado.R", "R/settings/settings_mercado.R", "R/settings/settings_hub.R"))
   suppressMessages(source(f))
 
 # Recorders and stand-ins (after the sources, so they win). puede() and

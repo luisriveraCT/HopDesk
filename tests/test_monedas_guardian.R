@@ -25,6 +25,7 @@ TOPE <- 0L     # 2026-11-17: 222 (fase 1) -> 194 (fase 2, Flujo + R/fx_banxico.R
 EXCEPCIONES <- c(
   "R/bancos_detect.R" = "BanBajío's statement header names its currencies",
   "R/fx_banxico.R"    = "Banxico: FIX USD→MXN and its series table",
+  "R/mercado.R"       = "the market calendars: the country that settles each currency (MXN→MX, USD→US, EUR→EU)",
   "R/ppl_generator.R" = "BanBajío's PPL layout: MXN by SPEI/BCO, USD by SPID; its accounts' \"Pesos\"/\"Dólares\""
 )
 

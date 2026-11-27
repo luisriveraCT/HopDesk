@@ -28,6 +28,7 @@ EXCEPCIONES <- c(
   "avisos_archivo.R"          = "only the weekly emails job (scripts/avisos_job.R); the app never calls it",
   "avisos_correos.R"          = "only the weekly emails job (scripts/avisos_job.R)",
   "avisos_datos.R"            = "only the weekly emails job (scripts/avisos_job.R)",
+  "avisos_inhabiles.R"        = "only the avisos job (scripts/avisos_job.R): the bank non-working day avisos (T116 F2)",
   "avisos_logros.R"           = "only the weekly emails job (scripts/avisos_job.R)",
   "avisos_umbrales.R"         = "only the weekly emails job (scripts/avisos_job.R); Panorama's vigia keeps its own copy of the week",
   "hopdesk_ops_placeholder.R" = "a design marker (Stage 5), no code",

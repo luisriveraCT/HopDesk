@@ -148,6 +148,7 @@ config.interco	Configuración › Intercompany	seccion	config	R/settings/setting
 config.interco.bp	Business Partners SAP	panel	config.interco	R/settings/settings_bp.R	fn:.bp_panel_ui			bp_sap	pendiente	
 config.interco.escaner	Escáner IC	modal	config.interco	R/settings/settings_hub.R	modal:settings_observers@input$scan_ic_btn			escaner_ic	pendiente	
 config.interco.sin_guardar	Cambios sin guardar	modal	config.interco	R/settings/settings_hub.R	modal:.ic_unsaved_modal				pendiente	
+config.mercado	Configuración › Calendario de mercado	seccion	config	R/settings/settings_mercado.R	fn:.mercado_panel_ui		can_capture_market_calendar	mercado_inhabiles	pendiente	T116 F2: solo staff; días inhábiles oficiales por país y año confirmado
 config.politicas	Configuración › Políticas	seccion	config	R/settings/settings_policies.R	fn:.policies_panel_ui			politicas_preview	pendiente	
 config.politicas.eliminar	Eliminar política	modal	config.politicas	R/settings/settings_policies.R	modal:.policy_delete_confirm_modal				pendiente	
 config.politicas.revertir	Revertir fechas de política	modal	config.politicas	R/settings/settings_policies.R	modal:.cmp_revert_modal				pendiente	

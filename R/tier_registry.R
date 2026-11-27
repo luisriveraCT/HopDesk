@@ -284,7 +284,8 @@ HD_PESTANA_ARCHIVOS <- list(
 # Listed so that every registered table is classified (test_t69_compras_pestanas).
 HD_ARCHIVOS_SIN_PESTANA <- c("tiers_module.R", "empresas_module.R", "proveedores_module.R",
                              "audit_log_viewer_module.R", "settings_cuentas.R", "settings_bp.R",
-                             "settings_hub.R", "settings_policies.R", "settings_sincro.R")
+                             "settings_hub.R", "settings_policies.R", "settings_sincro.R",
+                             "settings_mercado.R")
 
 # TRUE when `tabla`'s data may travel to a session of `tier`. Never throws:
 # a table it cannot classify, for a tier with a tab list, does not travel.

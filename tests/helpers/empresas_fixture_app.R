@@ -35,7 +35,7 @@ cargar("R/erp_connector_registry.R", c("SAP_B1_ERP_TYPE", "erp_connector_label")
 cargar("R/ui_components.R", "app_styles")
 local({
   owd <- setwd(raiz); on.exit(setwd(owd))
-  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R",
+  for (f in c("R/i18n.R", "R/hd_registro.R", "R/hd_piezas.R", "R/monedas.R", "R/hd_columnas.R", "R/hd_table.R", "R/mercado.R",
               "R/empresas_module.R"))
     if (file.exists(f)) sys.source(f, envir = globalenv())
 })

@@ -54,7 +54,7 @@ mercado_paises_cliente <- function(cfg) {
   if (length(p)) return(intersect(names(MERCADO_PAISES), p))
   mb <- cfg$moneda_base
   if (is.null(mb) || length(mb) != 1L || is.na(mb) || !nzchar(trimws(mb)))
-    mb <- if (exists("MONEDA_BASE_OMISION")) MONEDA_BASE_OMISION else "MXN"
+    mb <- if (exists("MONEDA_BASE_OMISION")) MONEDA_BASE_OMISION else NA_character_
   pais <- mercado_pais_de_moneda(mb)
   if (is.na(pais)) character() else pais
 }

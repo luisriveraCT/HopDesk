@@ -11,12 +11,16 @@
 # =============================================================================
 
 
+# Fail-closed: a user whose permisos cannot be read (an atomic vector without
+# this key makes puede() stop) cannot capture.
+.mercado_puede_usuario <- function(usuario)
+  isTRUE(tryCatch(puede(usuario, "can_capture_market_calendar"), error = function(e) FALSE))
 .mercado_puede <- function(shared)
-  puede(tryCatch(shared$usuario(), error = function(e) NULL), "can_capture_market_calendar")
+  .mercado_puede_usuario(tryCatch(shared$usuario(), error = function(e) NULL))
 
 # The hub's button (NULL without the permission: not in the DOM at all).
 mercado_boton_hub <- function(usuario) {
-  if (!puede(usuario, "can_capture_market_calendar")) return(NULL)
+  if (!.mercado_puede_usuario(usuario)) return(NULL)
   actionButton("stg_btn_mercado",
     tagList(icon("calendar-xmark"), " ", tr("tablas.ajustes.mercado.boton")),
     class = "btn btn-sm btn-outline-secondary text-start w-100")
