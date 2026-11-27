@@ -68,11 +68,12 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
 #   - BANXICO_TOKEN (and FRED_API_KEY) reach it through its environment,
 #     inherited, never through its arguments (visible in the process list).
 # Each piece returns list(filas, fallas): the rows (or NULL) and the names of
-# what failed ("bce:USD", "tasa:sofr", "banxico:SF46410", "banxico:sin_token").
+# what failed ("bce:USD", "tasa:sofr", "banxico:SF46410"); a source whose credential
+# is not configured is not a failure (sin_config).
 
 .mercado_bajar_banxico <- function(hoy, obtenido) {
-  if (!nzchar(Sys.getenv("BANXICO_TOKEN", "")))
-    return(list(fix = NULL, divisas = NULL, fallas = "banxico:sin_token"))
+  if (!.mercado_fuente_configurada("banxico"))
+    return(list(fix = NULL, divisas = NULL, fallas = character(), sin_config = "banxico"))
   fallas <- character()
   pedir <- function(id, serie) {
     r <- tryCatch(fcs_fetch_banxico(list(metric_id = id, fetch_params = list(list(serie = serie))),
@@ -109,12 +110,15 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
 # then its fallbacks) that answers.
 .mercado_bajar_tasas <- function(hoy, obtenido) {
   semilla <- .seed_forecasting_metrics()
-  fallas <- character()
+  fallas <- character(); sin_config <- character()
   partes <- lapply(.mercado_tasas_todas(), function(id) {
     m <- semilla[semilla$metric_id == id, , drop = FALSE]
     if (!nrow(m)) { fallas <<- c(fallas, paste0("tasa:", id)); return(NULL) }
     metrica <- as.list(m[1, ])
-    for (fuente in c(metrica$primary_source_id, unlist(metrica$fallback_source_ids[[1]]))) {
+    fuentes <- c(metrica$primary_source_id, unlist(metrica$fallback_source_ids[[1]]))
+    configuradas <- fuentes[vapply(fuentes, .mercado_fuente_configurada, logical(1))]
+    if (!length(configuradas)) { sin_config <<- c(sin_config, fuentes); return(NULL) }
+    for (fuente in configuradas) {
       f <- paste0("fcs_fetch_", fuente)
       if (!exists(f, mode = "function")) next
       r <- tryCatch(get(f, mode = "function")(metrica, hoy - MERCADO_DIAS_ATRAS, hoy), error = function(e) NULL)
@@ -126,15 +130,31 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
     NULL
   })
   out <- do.call(rbind, partes)
-  list(filas = if (is.null(out) || !nrow(out)) NULL else out, fallas = fallas)
+  list(filas = if (is.null(out) || !nrow(out)) NULL else out, fallas = fallas, sin_config = unique(sin_config))
 }
 
-# Everything: list(fix, divisas, bce, tasas, fallas).
+# A source whose credential is not configured (its api_key_env_var empty in
+# this process) is NOT a failure: it is "no configurada" -- said once per
+# process, never every hour, so a permanent gap never hides a real failure.
+# TRUE when `fuente` needs no credential or has it.
+.mercado_fuente_configurada <- function(fuente) {
+  s <- .seed_forecasting_sources()
+  var <- s$api_key_env_var[s$source_id %in% fuente][1]
+  is.na(var) || !nzchar(var %||% "") || nzchar(Sys.getenv(var, ""))
+}
+# The credential variable's NAME (never its value) of an unconfigured source.
+.mercado_credencial_de <- function(fuente) {
+  s <- .seed_forecasting_sources()
+  s$api_key_env_var[s$source_id %in% fuente][1]
+}
+
+# Everything: list(fix, divisas, bce, tasas, fallas, sin_config).
 .mercado_bajar_todo <- function(hoy, obtenido) {
   b <- .mercado_bajar_banxico(hoy, obtenido)
   e <- .mercado_bajar_bce(hoy, obtenido)
   t <- .mercado_bajar_tasas(hoy, obtenido)
-  list(fix = b$fix, divisas = b$divisas, bce = e$filas, tasas = t$filas, fallas = c(b$fallas, e$fallas, t$fallas))
+  list(fix = b$fix, divisas = b$divisas, bce = e$filas, tasas = t$filas, fallas = c(b$fallas, e$fallas, t$fallas),
+       sin_config = unique(c(b$sin_config, t$sin_config)))
 }
 
 # What the child loads: absolute paths under the app's root (its own
@@ -151,6 +171,17 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
   assign("%||%", function(a, b) if (is.null(a)) b else a, envir = globalenv())
   for (f in archivos) sys.source(f, envir = globalenv())
   suppressWarnings(suppressMessages(.mercado_bajar_todo(as.Date(hoy), obtenido)))
+}
+
+# Once per process: the sources whose credential is not configured, by the
+# variable's name. Never every hour, never a failure.
+.mercado_log_sin_config <- function(fuentes) {
+  nuevas <- setdiff(unique(fuentes[nzchar(fuentes)]), .MERCADO_DATOS$sin_config_dicho %||% character())
+  if (!length(nuevas)) return(invisible(0L))
+  .MERCADO_DATOS$sin_config_dicho <- c(.MERCADO_DATOS$sin_config_dicho, nuevas)
+  message("mercado: fuente no configurada (", paste(sprintf("%s: falta %s", nuevas,
+          vapply(nuevas, .mercado_credencial_de, "")), collapse = ", "), ")")
+  invisible(length(nuevas))
 }
 
 # One line in the app's log per refresh that failed somewhere.
@@ -197,6 +228,7 @@ MERCADO_DIAS_ATRAS    <- 14L    # each request asks for the last 14 days
   fallas <- c(as.character(r$fallas %||% character()),
               if (any(!guardado)) paste0("guardar:", names(guardado)[!guardado]))
   .mercado_log_falla(fallas)
+  .mercado_log_sin_config(as.character(r$sin_config %||% character()))
   if (!length(fallas)) "ok" else "falla"
 }
 
@@ -364,6 +396,13 @@ mercado_tipos_cliente <- function(cfg, cache, ahora = Sys.time()) {
   do.call(rbind, filas)
 }
 
+# TRUE when at least one of a rate's sources (primary or fallback) is configured.
+.mercado_tasa_configurada <- function(id) {
+  m <- .seed_forecasting_metrics(); m <- m[m$metric_id == id, , drop = FALSE]
+  if (!nrow(m)) return(FALSE)
+  any(vapply(c(m$primary_source_id, unlist(m$fallback_source_ids[[1]])), .mercado_fuente_configurada, logical(1)))
+}
+
 # «Tasas»: the reference rates of the client's markets. Empty without markets.
 mercado_tasas_cliente <- function(cfg, cache, ahora = Sys.time()) {
   paises <- mercado_paises_cliente(cfg)
@@ -372,12 +411,16 @@ mercado_tasas_cliente <- function(cfg, cache, ahora = Sys.time()) {
   t <- cache$tasas
   filas <- unlist(lapply(paises, function(p) lapply(MERCADO_PAISES[[p]]$tasas, function(id) {
     s <- if (is.null(t)) NULL else t[t$metric_id %in% id, , drop = FALSE]
+    # No data and none of its sources configured here: not shown (never a
+    # permanent «Sin dato» for a source that cannot be asked).
+    if ((is.null(s) || !nrow(s)) && !.mercado_tasa_configurada(id)) return(NULL)
     fuente <- if (!is.null(s) && nrow(s)) s$fuente[which.max(s$fecha)] else ""
     max_dias <- if (id %in% names(MERCADO_MAX_DIAS_TASA)) MERCADO_MAX_DIAS_TASA[[id]] else MERCADO_MAX_DIAS
     .mercado_cuadro_fila(id, tr(paste0("comun.mercado.tasa.", id)), "tasa",
                   if (is.null(s)) NULL else s[, c("fecha", "valor"), drop = FALSE], fuente,
                   MERCADO_PAISES[[p]]$calendario, max_dias, hoy)
   })), recursive = FALSE)
+  filas <- Filter(Negate(is.null), filas)
   if (!length(filas)) .mercado_filas_vacias() else do.call(rbind, filas)
 }
 

@@ -187,9 +187,9 @@ ok("6.1 llena el FIX, las divisas de Banxico, el BCE (6 × 3) y las tasas que re
    nrow(c6$fix) == 3L && nrow(c6$divisas) == 18L && nrow(c6$bce) == 18L &&
      setequal(unique(c6$tasas$metric_id), c("tiie28", "cetes28", "sofr", "fed_funds", "estr")) &&
      all(c6$tasas$fuente[c6$tasas$metric_id == "sofr"] == "nyfed"), paste(r, nrow(c6$bce)))
-ok("6.2 Prime (FRED sin llave) no llegó: «falla» y una línea en el log que la nombra, sin URL ni token",
-   identical(r, "falla") && length(lineas_log) == 1L && grepl("^mercado: refresco falló \\(.*tasa:prime", lineas_log) &&
-     !grepl("http|127\\.0\\.0\\.1|tok-de", lineas_log), paste(lineas_log, collapse = " | "))
+ok("6.2 Prime sin llave de FRED NO es una falla: «ok», y una sola línea «fuente no configurada (fred: falta FRED_API_KEY)», sin valores",
+   identical(r, "ok") && length(lineas_log) == 1L &&
+     identical(lineas_log, "mercado: fuente no configurada (fred: falta FRED_API_KEY)"), paste(r, paste(lineas_log, collapse = " | ")))
 ok("6.3 otra vez dentro de la hora: «espera», sin pedir nada", { srv$log_borrar(); identical(mercado_datos_refrescar(HOY + 60, en_fondo = FALSE), "espera") && !nrow(srv$log()) })
 n <- .mem_escrituras
 q(mercado_datos_refrescar(HOY + 120, forzar = TRUE, en_fondo = FALSE))
@@ -209,8 +209,18 @@ ok("6.6 todo caído: «falla», nada escrito, una sola línea que nombra lo que 
 Sys.setenv(BANXICO_TOKEN = ""); lineas_log <- character()
 srv$config(CONF); srv$log_borrar()
 q0 <- con_log(mercado_datos_refrescar(HOY, forzar = TRUE, en_fondo = FALSE))
-ok("6.7 sin token de Banxico: no se pide a Banxico y lo dice («banxico:sin_token»)",
-   !any(grepl("SieAPIRest", srv$log()$ruta)) && any(grepl("banxico:sin_token", lineas_log)))
+ok("6.7 sin token de Banxico: no se le pide, no es una falla, y se dice una vez («banxico: falta BANXICO_TOKEN»)",
+   !any(grepl("SieAPIRest", srv$log()$ruta)) && identical(q0, "ok") &&
+     identical(lineas_log, "mercado: fuente no configurada (banxico: falta BANXICO_TOKEN)"), paste(q0, paste(lineas_log, collapse = " | ")))
+lineas_log <- character()
+q9 <- con_log(mercado_datos_refrescar(HOY, forzar = TRUE, en_fondo = FALSE))
+ok("6.9 la siguiente hora: ni falla ni otra vez «no configurada» (una línea por proceso, no cada hora)",
+   identical(q9, "ok") && !length(lineas_log), paste(lineas_log, collapse = " | "))
+sin_prime <- CACHE; sin_prime$tasas <- sin_prime$tasas[sin_prime$tasas$metric_id != "prime", ]
+ok("6.10 una tasa sin fuente configurada y sin datos no se muestra (nunca un «Sin dato» permanente); con datos, sí",
+   !"prime" %in% mercado_tasas_cliente(cfg("USD", "US"), sin_prime, HOY)$clave &&
+     "prime" %in% mercado_tasas_cliente(cfg("USD", "US"), CACHE, HOY)$clave &&
+     "sofr" %in% mercado_tasas_cliente(cfg("USD", "US"), sin_prime, HOY)$clave)
 Sys.setenv(BANXICO_TOKEN = TOKEN)
 # 6.8 everything fetched and saved: "ok" and NO log line (paste0 with an empty
 # vector used to log «refresco falló (guardar:)» on every good refresh).
@@ -241,7 +251,8 @@ lg <- srv$log()
 ok("7.4 al terminar, el proceso principal escribió las cachés (FIX, BCE y tasas)",
    is.null(.MERCADO_DATOS$job) && nrow(c8$fix) == 3L && nrow(c8$bce) == 18L && "sofr" %in% c8$tasas$metric_id)
 ok("7.5 el token llegó al hijo por su entorno: Banxico lo recibió en el encabezado", any(lg$consulta == "token=ok") && !any(lg$consulta == "token=no"))
-ok("7.6 lo que falló en el hijo (Prime) quedó en el log de la app", any(grepl("^mercado: refresco falló .*tasa:prime", lineas_log)))
+ok("7.6 el hijo lo trajo todo: ninguna línea de falla en el log de la app", !any(grepl("^mercado: refresco falló", lineas_log)),
+   paste(lineas_log, collapse = " | "))
 
 cat("== 9. Las lecciones de la T74 ==\n")
 # 9.1 the child's errors are not hidden: a file it cannot load.
