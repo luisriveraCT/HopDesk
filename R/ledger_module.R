@@ -1568,7 +1568,7 @@ ledgerModuleServer <- function(id, config, shared) {
         if (is.na(d)) as.Date(row[["FechaVenc_Original"]]) else d
       }, error = function(e)
         tryCatch(as.Date(row[["FechaVenc_Original"]]),
-                 error = function(e2) Sys.Date()))
+                 error = function(e2) hoy_usuario()))   # T6-13: the user's day (CM27), never the server's
 
       prefill_moneda <- {
         v <- if (!is.null(existing_ov) && nrow(existing_ov))

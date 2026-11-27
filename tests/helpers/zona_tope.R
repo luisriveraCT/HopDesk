@@ -27,7 +27,7 @@ list(
     "R/global.R" = 0L,   # T6-12: calendar_html() takes hoy_usuario()
     "R/hd_table.R" = 2L,
     "R/interco_module.R" = 1L,
-    "R/ledger_module.R" = 1L,
+    "R/ledger_module.R" = 0L,   # T6-13: the date prefill takes hoy_usuario()
     "R/manual_entry_handlers.R" = 0L,
     "R/notes_handlers.R" = 0L,
     "R/pagar_hoy_module.R" = 1L,
