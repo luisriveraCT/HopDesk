@@ -136,6 +136,12 @@ viaja <- function(u, clics = function(session) NULL) {
     rs <- session$rootScope()
     unlockBinding("sendCustomMessage", rs)
     rs$sendCustomMessage <- function(type, message) mensajes[[length(mensajes) + 1L]] <<- list(type = type, msg = message)
+    # shiny::showNotification() (namespaced, as puede_o_avisa calls it) goes
+    # around the global stub above: catch it where every notification leaves.
+    for (s in unique(list(session, rs))) {
+      unlockBinding("sendNotification", s)
+      s$sendNotification <- function(type, message) avisos[[length(avisos) + 1L]] <<- paste(type, utils::capture.output(utils::str(message)), collapse = "")
+    }
     session$userData$hd_tabla_permitida <- function(tabla) nivel_tabla_permitida_usuario(u, tabla)
     settings_mercado_observer(input, output, session, shared)
   }, { session$setInputs(mer_pais = "MX", mer_anio = 2027); session$flushReact(); clics(session) }))
