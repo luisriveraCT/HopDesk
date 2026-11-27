@@ -2006,7 +2006,12 @@ setup_pasivos_wizard <- function(input, output, session, shared) {
   })
   shiny::observeEvent(input$pwiz_politicas, ignoreNULL = FALSE, ignoreInit = TRUE, {
     if (!identical(wiz$step_id, "revision")) return()
-    wiz$draft$policy_ids <- as.character(input$pwiz_politicas %||% character())
+    # The selector can only show what the session's catalog has: a policy the
+    # catalog does not have (yet) -- just created, the sync bus behind --
+    # stays in the draft instead of being dropped by the redrawn selector.
+    cat_ids <- tryCatch(as.character(shiny::isolate(shared$policy_catalog_db())$id), error = function(e) character())
+    previas <- as.character(unlist(shiny::isolate(wiz$draft$policy_ids) %||% character()))
+    wiz$draft$policy_ids <- unique(c(as.character(input$pwiz_politicas %||% character()), setdiff(previas, cat_ids)))
   })
   pwiz_pol_mode     <- shiny::reactiveVal("list")
   pwiz_pol_editing  <- shiny::reactiveVal(NULL)

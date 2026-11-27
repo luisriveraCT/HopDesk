@@ -162,5 +162,47 @@ g0 <- v3$pasivos_generate_provisions(M, window_start = HOY, window_end = as.Date
 ok(identical(as.Date(g0$fecha_efectiva[as.Date(g0$fecha_calculada) == as.Date("2026-11-28")]), as.Date("2026-11-23")),
    "5.4 contraprueba: 331e6146 put it on 23 Nov, in the past")
 
+cat("== 6. «+ Nueva política» in the wizard, end to end (what Chrome could not see: writes were void there) ==\n")
+# The in-memory store DOES write: the catalog saved is the one read back.
+log_action <- function(...) invisible(NULL)
+s3_memoria_reset()
+assign(paste0(CID, "/", S3_KEYS$policy_catalog), catalogo, envir = .mem)
+punto6 <- function() {
+  r <- list()
+  sh <- sesion(); sh$home_client_id <- function() CID
+  sh$current_user_info <- reactive(list(username = "luis", tier = "admin"))
+  testServer(function(input, output, session) setup_pasivos_wizard(input, output, session, sh), {
+    session$flushReact()
+    session$setInputs(pasivos_edit_liability = A$id)                      # A has p1
+    html(output$pwiz_politicas_ui)
+    session$setInputs(pwiz_pol_nueva = 1)                                 # the embedded editor
+    r$editor <<- grepl('id="pwiz_pol_name"', html(output$pwiz_pol_editor_ui), fixed = TRUE)
+    session$setInputs(pwiz_pol_name = "Nueva de prueba", pwiz_pol_type = "weekdays", pwiz_pol_param_days = c("1", "2", "3"))
+    session$setInputs(pwiz_pol_btn_save = 1)
+    cat_s3 <- get(paste0(CID, "/", S3_KEYS$policy_catalog), envir = .mem)
+    r$nueva <<- cat_s3$id[cat_s3$name == "Nueva de prueba"]
+    r$sel <<- seleccion(html(output$pwiz_politicas_ui))
+    r$draft <<- sort(isolate(as.character(unlist(sh$policy_catalog_db()$id))))
+    # the sync bus reads the catalog again from S3 (another session, or this one's own bump)
+    sh$policy_catalog_db(load_policy_catalog(client_id = CID)); session$flushReact()
+    r$sel_bus <<- seleccion(html(output$pwiz_politicas_ui))
+    # a bus read that does NOT have it yet (S3 behind): the draft keeps it; the
+    # selector shows what the catalog has until it arrives
+    sh$policy_catalog_db(catalogo); session$flushReact()
+    r$sel_atras <<- seleccion(html(output$pwiz_politicas_ui))
+    session$setInputs(pwiz_politicas = r$sel_atras)   # the browser sends what the redrawn selector holds
+    sh$policy_catalog_db(load_policy_catalog(client_id = CID)); session$flushReact()
+    r$sel_vuelve <<- seleccion(html(output$pwiz_politicas_ui))
+  })
+  r
+}
+r6 <- punto6()
+ok(isTRUE(r6$editor), "6.1 «+ Nueva política» draws Configuración's editor inside the wizard (pwiz_pol_*)")
+ok(length(r6$nueva) == 1L, "6.2 the new policy is written to the catalog (S3)")
+ok(identical(r6$sel, sort(c("p1", r6$nueva))), "6.3 it comes back SELECTED on the liability, next to the one it had")
+ok(identical(r6$sel_bus, sort(c("p1", r6$nueva))), "6.4 the bus reading the catalog again after the creation does not lose it")
+ok(identical(r6$sel_vuelve, sort(c("p1", r6$nueva))),
+   "6.5 even a bus read from behind (catalog without it) does not erase it from the draft: it shows again once the catalog has it")
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
