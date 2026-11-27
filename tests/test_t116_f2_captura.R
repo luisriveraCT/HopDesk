@@ -65,6 +65,15 @@ hs <- modal_html(usuario_de("hopdesk"))
 ok("2.2 staff (hopdesk): sí está, bajo Admin", grepl("stg_btn_mercado", hs, fixed = TRUE) && grepl(txt_boton, hs, fixed = TRUE))
 ok("2.3 mercado_boton_hub() de un cliente es NULL (no se esconde: no existe)",
    is.null(mercado_boton_hub(usuario_de("admin", todos = TRUE))))
+# The safety net, not the fix: the app's permisos (permisos_resueltos()) hold
+# every key, but an incomplete atomic vector (as some fixtures build it) makes
+# puede() stop on the missing key. Read as "cannot", never as an error.
+parcial <- list(permisos = c(can_manage_interco = TRUE))
+ok("2.4 permisos incompletos (vector sin la llave): puede() truena, la captura lo lee como «no puede»",
+   inherits(tryCatch(puede(parcial, K), error = function(e) e), "error") &&
+   isFALSE(.mercado_puede_usuario(parcial)) && is.null(mercado_boton_hub(parcial)) &&
+   isFALSE(.mercado_puede(list(usuario = function() parcial))) &&
+   isFALSE(.mercado_puede(list(usuario = function() stop("sin sesión")))))
 
 cat("== 3. Los observers reales ==\n")
 assign("showNotification", function(...) invisible("id"), envir = globalenv())
