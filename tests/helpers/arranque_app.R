@@ -99,8 +99,21 @@ DEV <- "antiguedad-rds-dev"
     # policy catalog of that client reads as one test policy (dev's has none).
     cli_pc <- Sys.getenv("ARR_FORZAR_POLITICA_CLIENTE")
     if (nombre %in% c("object_exists", "head_object") && nzchar(cli_pc) &&
-        grepl(paste0("(^|/)", cli_pc, "/policy_catalog[.]rds$"), object))
-      return(TRUE)   # the forced catalog exists (it reads as the test policy)
+        grepl(paste0("(^|/)", cli_pc, "/(policy_catalog|pasivos_liabilities)[.]rds$"), object))
+      return(TRUE)   # the forced catalog / liabilities exist (they read as the test ones)
+    # ...and with no liability at all, the liabilities read as one test
+    # liability that uses the test policy (dev's networks has none).
+    if (identical(nombre, "s3readRDS") && nzchar(cli_pc) &&
+        grepl(paste0("(^|/)", cli_pc, "/pasivos_liabilities[.]rds$"), object)) {
+      rl <- tryCatch(if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...),
+                     error = function(e) NULL)
+      if (!is.data.frame(rl) || !nrow(rl) || !any(!(rl$estado %in% "deleted"))) {
+        message("[ARRANQUE] pasivo de prueba forzado (sin pasivos en ", object, ") · con=t120-pasivo-prueba · sin= · politica=t120-prueba-habiles")
+        return(data.frame(id = "t120-pasivo-prueba", nombre = "Pasivo de prueba T120", categoria = "regular",
+                          empresa = NA_character_, estado = "active", policy_ids = "t120-prueba-habiles",
+                          stringsAsFactors = FALSE))
+      }
+    }
     if (identical(nombre, "s3readRDS") && nzchar(cli_pc) &&
         grepl(paste0("(^|/)", cli_pc, "/policy_catalog[.]rds$"), object)) {
       r <- tryCatch(if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...),
