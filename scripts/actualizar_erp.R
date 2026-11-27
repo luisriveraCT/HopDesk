@@ -13,7 +13,7 @@
 #
 # Options:
 #   --cliente <id>     the client (its S3 folder). Required.
-#   --usuario <user>   who runs it, as in the app (hd-admin/username_index):
+#   --usuario <user>   who runs it, as the app's login knows it (usuarios.rds):
 #                      the log signs "Name · HD Staff" for staff (T87).
 #                      Required except with --prueba.
 #   --produccion       write to production. Also needs HOPDESK_PRODUCTION=1
@@ -130,12 +130,35 @@ erp_empresas <- function(cid) {
   cmap
 }
 
-# The user's home folder (hd-admin for staff), from the username index.
-erp_casa_usuario <- function(usuario) {
-  idx <- .read_username_index()                                      # strict
-  i <- which(tolower(idx$username) == usuario & idx$active %in% TRUE)
-  if (!length(i)) stop("el usuario no existe o no está activo", call. = FALSE)
-  tolower(idx$home_folder[i[1]])
+# The user's home folder (hd-admin for staff), from the SAME source and rule
+# as the app's login (T103c): .load_or_init_credentials() on the shared
+# hd-admin deployment reads hd-admin/usuarios.rds and each client's
+# usuarios.rds without staff tiers, matches tolower(trimws(username)) and
+# drops deleted rows; the home is the row's client_id, or its folder when
+# empty (.normalize_credentials(), and home_client_id() at sign-in). Also
+# refused: activo = FALSE, and a name on the emergency lock list (as
+# auth_check_credentials()). hd-admin/username_index.rds is NOT read: accounts
+# older than Stage 2 (e.g. "dev") sign in but are missing there.
+# Every read is strict: a failed read stops, never "no such user".
+erp_casa_usuario <- function(usuario, cid) {
+  usuario <- tolower(trimws(usuario))
+  fila <- NULL
+  for (carpeta in unique(c(.HD_ADMIN_CID, tolower(cid)))) {
+    u <- .usuarios_leer_estricto(paste0(carpeta, "/usuarios.rds"))   # NULL = no file
+    if (!is.data.frame(u) || !nrow(u) || !"username" %in% names(u)) next
+    vivo <- !(if ("deleted" %in% names(u)) u$deleted %in% TRUE else rep(FALSE, nrow(u)))
+    if (carpeta != .HD_ADMIN_CID) vivo <- vivo & !(u$tier %in% niveles_staff())
+    i <- which(vivo & tolower(trimws(as.character(u$username))) %in% usuario)
+    if (length(i)) { fila <- u[i[1], , drop = FALSE]; fila$.carpeta <- carpeta; break }
+  }
+  if (is.null(fila)) stop("el usuario no existe", call. = FALSE)
+  if ("activo" %in% names(fila) && fila$activo %in% FALSE) stop("el usuario está desactivado", call. = FALSE)
+  lock <- read_emergency_lock()                                      # strict on a first read
+  if (is.data.frame(lock) && nrow(lock) && usuario %in% tolower(trimws(as.character(lock$username))))
+    stop("el usuario está bloqueado", call. = FALSE)
+  casa <- if ("client_id" %in% names(fila)) as.character(fila$client_id) else NA_character_
+  if (is.na(casa) || !nzchar(trimws(casa))) casa <- fila$.carpeta
+  tolower(trimws(casa))
 }
 
 # ── Lock (S3, outside the tables: written directly, not through .s3_write,
@@ -282,7 +305,7 @@ erp_main <- function(args = commandArgs(trailingOnly = TRUE)) {
     t0 <- proc.time()
     casa <- NULL
     if (!a$prueba) {
-      casa <- tryCatch(erp_casa_usuario(a$usuario), error = function(e) e)
+      casa <- tryCatch(erp_casa_usuario(a$usuario, a$cliente), error = function(e) e)
       if (inherits(casa, "error")) return(salir(1L, "Usuario: %s", conditionMessage(casa)))
     }
     cmap <- tryCatch(erp_empresas(a$cliente), error = function(e) e)

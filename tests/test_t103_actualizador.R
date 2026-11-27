@@ -206,6 +206,11 @@ Sys.setenv(HOPDESK_PRODUCTION = "1", AWS_ACCESS_KEY_ID = "ficticia", AWS_SECRET_
 options(hopdesk.erp_logs_dir = file.path(tempdir(), "t103_logs"))
 .mem[["hd-admin/username_index.rds"]] <- data.frame(username = "operador.ficticio", home_folder = "hd-admin",
   account_code = "S9999", created_at = "2026-11-25", active = TRUE, stringsAsFactors = FALSE)
+# T103c: the updater knows users as the login does, from usuarios.rds.
+usuarios_df <- function(username, tier, client_id, deleted = FALSE, activo = TRUE)
+  data.frame(username = username, display_name = paste("Persona", seq_along(username)), tier = tier,
+             client_id = client_id, deleted = deleted, activo = activo, stringsAsFactors = FALSE)
+.mem[["hd-admin/usuarios.rds"]] <- usuarios_df("operador.ficticio", niveles_staff()[1], "hd-admin")
 emp <- .schema_empresas()[0, ]
 emp <- dplyr::bind_rows(emp, tibble::tibble(id = c("e1", "e2"), account_code = c("E0001", "E0002"), initials = c("NG", "NT"),
                                             razon_social = c("EMPRESA FICTICIA NORTE SA", "EMPRESA FICTICIA CENTRO SA"),
@@ -259,6 +264,71 @@ x <- correr("--cliente", CID, "--usuario", "operador.ficticio", "--produccion")
 ok("11.12 una empresa que falla: código 4 y las fotos intactas", identical(as.integer(x$codigo), 4L) &&
      identical(list(snap("AR"), snap("AP")), antes))
 ok("11.13 y el candado se soltó igual", isTRUE(.mem[[paste0(CID, "/erp_actualizacion_lock.rds")]]$liberado))
+
+cat("== 13. T103c: el usuario se valida como en el login (usuarios.rds), no con el índice ==\n")
+# The case from prod: "dev" signs in to the app but is not in
+# hd-admin/username_index.rds (older than Stage 2). The index below only
+# knows operador.ficticio. Every rejection: exit 1, "Usuario: ...", nothing
+# written (no lock, no snapshot, no log).
+configurar(NG = list(AR = 700, AP = 30, modo = "ok"), NT = list(AR = 40, AP = 0, modo = "ok"))
+sin_bloqueos <- function() { rm(list = ls(.emergency_lock_cache), envir = .emergency_lock_cache)
+  .mem[["hd-admin/emergency_lock.rds"]] <- .schema_emergency_lock() }
+staff <- niveles_staff()[1]; cliente_t <- niveles_cliente()[1]
+con_usuarios <- function(hd = NULL, cli = NULL) {
+  sin_bloqueos()
+  .mem[["hd-admin/usuarios.rds"]] <- hd %||% usuarios_df("operador.ficticio", staff, "hd-admin")
+  if (is.null(cli)) suppressWarnings(rm(list = paste0(CID, "/usuarios.rds"), envir = .mem))
+  else .mem[[paste0(CID, "/usuarios.rds")]] <- cli
+}
+rechazo <- function(usuario, patron) {
+  n0 <- .mem_escrituras; ar0 <- snap("AR")
+  x <- correr("--cliente", CID, "--usuario", usuario, "--produccion")
+  isTRUE(identical(as.integer(x$codigo), 1L) && .mem_escrituras == n0 && identical(snap("AR"), ar0) &&
+           any(grepl(paste0("^Usuario: .*", patron), x$salida)))
+}
+erp_filas <- function() { a <- .mem[[.audit_current_key(CID)]]
+  if (is.data.frame(a)) a[a$action == "erp_actualizado", , drop = FALSE] else data.frame() }
+
+con_usuarios(hd = usuarios_df(c("operador.ficticio", "dev"), staff, c("hd-admin", "")))
+n_antes <- nrow(erp_filas())
+x <- correr("--cliente", CID, "--usuario", " DEV ", "--produccion")
+nuevas <- utils::tail(erp_filas(), nrow(erp_filas()) - n_antes)
+ok("13.1 'dev' en hd-admin/usuarios.rds y NO en el índice: corre (0), casa hd-admin (firma hd-staff)",
+   identical(as.integer(x$codigo), 0L) && nrow(nuevas) == 2L && all(startsWith(nuevas$user, "hd-staff")),
+   paste(x$salida, collapse = " | "))
+
+con_usuarios(cli = usuarios_df("contadora.ficticia", cliente_t, CID))
+n_antes <- nrow(erp_filas())
+x <- correr("--cliente", CID, "--usuario", "contadora.ficticia", "--produccion")
+nuevas <- utils::tail(erp_filas(), nrow(erp_filas()) - n_antes)
+ok("13.2 usuario del cliente en <cliente>/usuarios.rds y NO en el índice: corre (0), firma con su nombre de usuario",
+   identical(as.integer(x$codigo), 0L) && nrow(nuevas) == 2L && all(nuevas$user == "contadora.ficticia"),
+   paste(x$salida, collapse = " | "))
+
+con_usuarios(hd = usuarios_df(c("operador.ficticio", "dev"), staff, "hd-admin", deleted = c(FALSE, TRUE)))
+ok("13.3 usuario borrado: rechazado (1), nada escrito", rechazo("dev", "no existe"))
+con_usuarios(hd = usuarios_df(c("operador.ficticio", "dev"), staff, "hd-admin", activo = c(TRUE, FALSE)))
+ok("13.4 usuario desactivado: rechazado (1), nada escrito", rechazo("dev", "desactivado"))
+con_usuarios(hd = usuarios_df("otro.ficticio", staff, "hd-admin"))
+ok("13.5 en el índice (activo) pero no en usuarios.rds: rechazado -- el índice ya no es fuente",
+   rechazo("operador.ficticio", "no existe"))
+con_usuarios(cli = usuarios_df("intruso.ficticio", staff, CID))
+ok("13.6 nivel de staff en la carpeta del cliente: rechazado, como en el login", rechazo("intruso.ficticio", "no existe"))
+con_usuarios(hd = usuarios_df(c("operador.ficticio", "dev"), staff, "hd-admin"))
+.mem[["hd-admin/emergency_lock.rds"]] <- data.frame(username = "Dev", locked_at = Sys.time(), locked_by = "x",
+                                                     reason = "prueba", stringsAsFactors = FALSE)
+ok("13.7 usuario en el bloqueo de emergencia: rechazado (1), nada escrito", rechazo("dev", "bloqueado"))
+con_usuarios(hd = usuarios_df(c("operador.ficticio", "dev"), staff, "hd-admin"))
+.mem_falla <- c(.mem_falla, "hd-admin/usuarios.rds")
+ok("13.8 lectura fallida de usuarios.rds: se detiene (1) sin escribir, nunca 'no existe'",
+   rechazo("dev", "could not read hd-admin/usuarios.rds"))
+.mem_falla <- setdiff(.mem_falla, "hd-admin/usuarios.rds")
+con_usuarios(hd = usuarios_df(c("operador.ficticio", "dev"), staff, "hd-admin"))
+rm(list = ls(.emergency_lock_cache), envir = .emergency_lock_cache)
+.mem_falla <- c(.mem_falla, "hd-admin/emergency_lock.rds")
+ok("13.9 lista de bloqueos ilegible (primera lectura): se detiene (1) sin escribir", rechazo("dev", "lock list unreadable"))
+.mem_falla <- setdiff(.mem_falla, "hd-admin/emergency_lock.rds")
+sin_bloqueos()
 Sys.unsetenv("HOPDESK_PRODUCTION")
 
 cat("== 12. Carga limpia ==\n")
@@ -266,7 +336,7 @@ limpio <- callr::r(function(wd) {
   setwd(wd); options(hopdesk.sin_s3 = TRUE)
   sys.source("scripts/actualizar_erp.R", envir = globalenv())
   suppressMessages(erp_cargar())
-  all(vapply(c("fetch_all_companies", "save_sap_snapshot", "log_action", "t87_staff_firma", ".read_username_index",
+  all(vapply(c("fetch_all_companies", "save_sap_snapshot", "log_action", "t87_staff_firma", ".usuarios_leer_estricto", "read_emergency_lock", "niveles_staff",
                ".company_map_from_empresas", ".queue_stage_entry", "decrypt_secret", "parse_sap_date", "tr"),
              exists, logical(1)))
 }, args = list(wd = getwd()))
