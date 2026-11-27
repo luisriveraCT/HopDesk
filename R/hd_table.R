@@ -59,7 +59,7 @@ hd_table_deps <- function() {
     htmltools::tags$link(rel = "stylesheet", href = paste0("hd_temas.css?v=", v_tema)),
     htmltools::tags$link(rel = "stylesheet", href = paste0("hd_clasico_legado.css?v=", v_tema)),
     htmltools::tags$link(rel = "stylesheet", href = "hdtable.css?v=33"),
-    htmltools::tags$script(src = "hdtable.js?v=47")
+    htmltools::tags$script(src = "hdtable.js?v=48")
   ))
 }
 
@@ -979,6 +979,15 @@ hd_table_server <- function(id, tabla, datos, columnas, piezas = NULL, id_col = 
         .hd_falla_datos(tabla, e, session, ns("hdt"))
         NULL
       })
+      # T118: the words this table hands the engine by key (its counter, its
+      # band, its confirmations, its pinned label) travel with its data: the
+      # page carries only what every page's JavaScript asks for, so a staff
+      # table's words only reach a session that is sent that table.
+      if (!is.null(carga))
+        carga$i18n <- i18n_textos_navegador(c(
+          carga$textos$contador, carga$textos$banda,
+          lapply(carga$acciones_barra, function(a) if (is.list(a)) a[["confirmar_texto"]]),
+          carga$periodo$fijar_titulo))
       if (!is.null(carga)) session$sendCustomMessage("hdt-datos", carga)
     })
 

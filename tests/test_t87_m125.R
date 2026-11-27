@@ -37,8 +37,11 @@ ok("1.1 las claves internas salen de los registros (permisos internos y niveles 
      all(paste0("niveles.nombre.", niveles_staff()) %in% internas) && length(internas) > 0L)
 cab <- as.character(i18n_head())
 ok("1.2 i18n_head() no las manda", !any(vapply(paste0('"', internas, '"'), grepl, logical(1), x = cab, fixed = TRUE)))
-ok("1.3 ...y manda lo demás (los permisos de cliente, los niveles de cliente)",
-   grepl('"permisos.can_manage_bancos"', cab, fixed = TRUE) && grepl(paste0('"niveles.nombre.', nivel_ti(), '"'), cab, fixed = TRUE))
+# T118: the page carries only what its JavaScript asks for; the names of the
+# permissions and tiers (client ones too) reach the browser drawn by tr().
+ok("1.3 ...y manda lo que el JS de la página pide (T118: solo eso; los nombres de permisos y niveles los dibuja R)",
+   grepl('"tablas.buscar"', cab, fixed = TRUE) && !grepl('"permisos.can_manage_bancos"', cab, fixed = TRUE) &&
+     nzchar(tr("permisos.can_manage_bancos")) && tr("permisos.can_manage_bancos") != "permisos.can_manage_bancos")
 ok("1.4 R las sigue teniendo (tr en el servidor)", nzchar(tr(internas[1])) && tr(internas[1]) != internas[1])
 js <- unlist(lapply(list.files("www", "[.]js$", recursive = TRUE, full.names = TRUE), readLines, warn = FALSE, encoding = "UTF-8"))
 pedidas <- unique(sub("^hdT\\(['\"]", "", sub("['\"]$", "", regmatches(js, gregexpr("hdT\\(['\"][^'\"]+['\"]", js))[[1]])))

@@ -45,8 +45,13 @@ ok("a text with </script> is escaped (<\\/): the script tag ends only once",
 
 # The same for the whole dictionary (i18n_head(), every page inside the app).
 .i18n_cache[["es"]] <- c(real, list(comun.prueba.cierre = "fin</script><b>x</b>"))
+# T118: the page carries only the keys its JavaScript asks for; the test key
+# counts as one of them for this check.
+nav_real <- i18n_claves_navegador()
+.i18n_cache$.navegador <- c(nav_real, "comun.prueba.cierre")
 html_todo <- as.character(i18n_head())
 .i18n_cache[["es"]] <- real
+.i18n_cache$.navegador <- nav_real
 primero <- sub("^.*?<script>(.*?)</script>.*$", "\\1", html_todo)
 ok("i18n_head(): a text with </script> is escaped too, and the dictionary still reads back",
    lengths(regmatches(html_todo, gregexpr("</script>", html_todo, fixed = TRUE))) == 2L &&

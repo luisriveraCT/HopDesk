@@ -94,9 +94,61 @@ i18n_claves_internas <- function() {
     if (exists("niveles_staff", mode = "function")) paste0("niveles.nombre.", niveles_staff()))
 }
 
+# T118: the page carries only the keys its JavaScript asks for. tr() runs on
+# the server, so everything R draws (every staff screen included) arrives
+# already translated, and only to whoever it is drawn for; the browser needs
+# the dictionary only for hdT()/hdTn(). Taken from the code, never a list:
+#   - every quoted literal of www/*.js that is a key (or a plural base: its
+#     .uno/.otros), ternaries and defaults included;
+#   - in R/ and app.R, the keys of the JavaScript they carry: hdT('…'),
+#     hdTn('…'), t('…'), tn('…') with a single-quoted key;
+#   - the families a script builds at run time ('comun.mes.' + k,
+#     'cuentas.carga.mensaje.' + n): a quoted literal ending in "." and
+#     followed by "+" brings every key under that prefix.
+# A key a table passes to the engine (its counter, its confirmation, its
+# pinned label) is not here: it travels with that table's data
+# (i18n_textos_navegador(), R/hd_table.R), so a staff table's words only
+# reach staff. tests/test_t118_diccionario_audiencia.R guards the call sites.
+.i18n_literales <- function(x, patron) {
+  m <- regmatches(x, gregexpr(patron, x, perl = TRUE))[[1]]
+  if (!length(m)) character() else sub(patron, "\\1", m, perl = TRUE)
+}
+
+i18n_claves_navegador <- function(raiz = ".") {
+  if (!is.null(.i18n_cache$.navegador)) return(.i18n_cache$.navegador)
+  k <- names(i18n_dict("es"))
+  leer <- function(f) paste(readLines(f, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  js <- list.files(file.path(raiz, "www"), pattern = "[.]js$", full.names = TRUE)
+  js <- js[basename(js) != "i18n.js"]
+  rs <- c(list.files(file.path(raiz, "R"), pattern = "[.]R$", full.names = TRUE), file.path(raiz, "app.R"))
+  lits <- c(
+    unlist(lapply(js, function(f) .i18n_literales(leer(f), "['\"]([a-z][A-Za-z0-9_]*(?:[.][A-Za-z0-9_]+)+)['\"]"))),
+    unlist(lapply(rs[file.exists(rs)], function(f)
+      .i18n_literales(leer(f), "(?:\\bhdTn?|(?<![A-Za-z0-9_.$])tn?)\\(\\s*'([a-z][A-Za-z0-9_]*(?:[.][A-Za-z0-9_]+)+)'"))))
+  lits <- unique(lits)
+  familias <- unique(unlist(lapply(js, function(f)
+    .i18n_literales(leer(f), "['\"]([a-z][A-Za-z0-9_]*(?:[.][A-Za-z0-9_]+)*[.])['\"]\\s*\\+"))))
+  fam <- k[Reduce(`|`, lapply(familias, function(p) startsWith(k, p)), rep(FALSE, length(k)))]
+  r <- sort(setdiff(intersect(unique(c(lits, paste0(lits, ".uno"), paste0(lits, ".otros"), fam)), k),
+                    i18n_claves_internas()))
+  .i18n_cache$.navegador <- r
+  r
+}
+
+# The words a table hands the engine by key (bases: plurals bring .uno and
+# .otros), in the session's language over Spanish, to travel with its data.
+i18n_textos_navegador <- function(bases, idioma = hd_idioma()) {
+  bases <- unique(as.character(unlist(bases)))
+  bases <- bases[!is.na(bases) & nzchar(bases)]
+  dic <- utils::modifyList(i18n_dict("es"), i18n_dict(idioma))
+  ks <- setdiff(intersect(unique(c(bases, paste0(bases, ".uno"), paste0(bases, ".otros"))), names(dic)),
+                i18n_claves_internas())
+  dic[ks]
+}
+
 i18n_head <- function(idioma = hd_idioma()) {
   dic <- utils::modifyList(i18n_dict("es"), i18n_dict(idioma))
-  dic <- dic[setdiff(names(dic), i18n_claves_internas())]
+  dic <- dic[intersect(names(dic), i18n_claves_navegador())]
   # "</" escaped, as in i18n_head_parcial(): a text holding "</script>" would
   # end the <script> early.
   json <- gsub("</", "<\\/", as.character(jsonlite::toJSON(dic, auto_unbox = TRUE)), fixed = TRUE)

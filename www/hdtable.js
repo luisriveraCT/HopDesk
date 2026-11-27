@@ -110,6 +110,10 @@
   // ── Incoming data ────────────────────────────────────────────────────────
   function recibir(msg) {
     recibidos++;
+    // T118: this table's own words (counter, confirmations, pinned label),
+    // which the page's dictionary does not carry, come with its data.
+    if (msg.i18n && typeof msg.i18n === 'object' && !Array.isArray(msg.i18n))
+      window.HD_I18N = Object.assign(window.HD_I18N || {}, msg.i18n);
     // The hidden actions come with the data too (T38): their own message
     // (hdt-ocultas) may have come before this script and been lost.
     if (msg.ocultas != null) OCULTAS[msg.id] = arr(msg.ocultas).map(String);
