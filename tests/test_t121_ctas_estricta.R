@@ -195,6 +195,50 @@ testServer(function(input, output, session) settings_cuentas_observer(input, out
 })
 hd_table_server <- .hts
 
+cat("== 6. Guardián: nadie llama a load_ctas_cuentas() sin envolver su stop() ==\n")
+# A stop() at a session's start or in a job kills it (the 14 % incident).
+# Every CALL in app.R, R/ and scripts/ must sit inside a tryCatch()/try();
+# a bare REFERENCE (the function passed as a value) only to register_synced()
+# (sync_bus's poll wraps the loader) or .ctx_load() (wraps it). One known
+# exception: the Activity viewer's .catalogo_cuentas(), which
+# .audit_con_cuentas() always calls inside tryCatch() (checked below).
+# wipe_scripts/ are manual one-offs: a stop() there is what we want.
+.llamadas_ctas <- function(archivo) {
+  out <- list()
+  paseo <- function(e, envuelto, padre) {
+    if (is.call(e)) {
+      f <- if (is.name(e[[1]])) as.character(e[[1]]) else ""
+      if (identical(f, "load_ctas_cuentas")) out[[length(out) + 1L]] <<- list(tipo = "llamada", envuelto = envuelto, padre = padre)
+      dentro <- envuelto || f %in% c("tryCatch", "try")
+      for (i in seq_along(e)[-1]) if (!identical(e[[i]], quote(expr = )) && !is.null(e[[i]])) paseo(e[[i]], dentro, f)
+      if (is.call(e[[1]])) paseo(e[[1]], dentro, f)
+    } else if (is.name(e) && identical(as.character(e), "load_ctas_cuentas") && !identical(padre, "<-")) {
+      out[[length(out) + 1L]] <<- list(tipo = "referencia", envuelto = envuelto, padre = padre)
+    } else if (is.expression(e)) for (k in seq_along(e)) paseo(e[[k]], envuelto, padre)
+  }
+  for (x in parse(archivo, keep.source = FALSE, encoding = "UTF-8")) paseo(x, FALSE, "")
+  out
+}
+archivos <- c("app.R", list.files("R", pattern = "\\.R$", recursive = TRUE, full.names = TRUE),
+              list.files("scripts", pattern = "\\.R$", full.names = TRUE))
+EXCEPCION <- "R/audit_log_viewer_module.R"
+sueltas <- character(); n_llamadas <- 0L; n_ref <- 0L
+for (a in archivos) {
+  for (u in .llamadas_ctas(a)) {
+    if (u$tipo == "llamada") { n_llamadas <- n_llamadas + 1L
+      if (!u$envuelto && a != EXCEPCION) sueltas <- c(sueltas, sprintf("%s (llamada sin tryCatch)", a)) }
+    else { n_ref <- n_ref + 1L
+      if (!u$padre %in% c("register_synced", ".ctx_load")) sueltas <- c(sueltas, sprintf("%s (pasada a %s)", a, u$padre)) }
+  }
+}
+ok(sprintf("6.1 las %d llamadas y %d referencias de app.R, R/ y scripts/ están envueltas", n_llamadas, n_ref),
+   n_llamadas >= 10L && n_ref == 2L && !length(sueltas))
+if (length(sueltas)) cat("       sueltas:", paste(sueltas, collapse = "; "), "\n")
+aud <- paste(readLines(EXCEPCION, encoding = "UTF-8", warn = FALSE), collapse = " ")
+ok("6.2 la excepción: .audit_con_cuentas() llama a su catálogo dentro de tryCatch()", grepl("tryCatch(catalogo(cid[i]), error", aud, fixed = TRUE))
+ok("6.3 el job de avisos no carga settings_helpers.R (no puede llamarla)",
+   !any(grepl("settings_helpers", readLines("scripts/avisos_job.R", warn = FALSE), fixed = TRUE)))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 s3_memoria_restaurar()
 if (.fail > 0L) quit(status = 1L)
