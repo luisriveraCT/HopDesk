@@ -55,6 +55,7 @@ forecastingUI <- function(id) {
               )
             )
           ),
+          shiny::uiOutput(ns("metrica_sin_fuente")),   # T116 F3
           shiny::plotOutput(ns("series_plot"), height = "320px"),
           shiny::hr(),
           shiny::uiOutput(ns("series_summary_card"))
@@ -160,6 +161,18 @@ forecastingServer <- function(id, shared) {
     })
 
     # ── Fetch status badge ────────────────────────────────────────────────────
+    # T116 F3: a metric left without an active source (one edited on Yahoo,
+    # which was retired) says so here -- never a silent empty series.
+    output$metrica_sin_fuente <- shiny::renderUI({
+      metric_id <- input$metric_sel %||% ""
+      if (!nzchar(metric_id)) return(NULL)
+      fuentes <- tryCatch(.fcs_sources_cache %||% load_forecasting_sources(), error = function(e) NULL)
+      sin <- tryCatch(forecasting_metricas_sin_fuente(.metrics(), fuentes), error = function(e) NULL)
+      if (is.null(sin) || !metric_id %in% sin$metric_id) return(NULL)
+      shiny::div(class = "alert alert-warning py-2 small mt-2", role = "status",
+        tr("tablas.pronosticos.sin_fuente", metrica = sin$label[sin$metric_id == metric_id][1] %||% metric_id))
+    })
+
     output$fetch_status_badge <- shiny::renderUI({
       metric_id <- input$metric_sel %||% ""
       if (!nzchar(metric_id)) return(NULL)

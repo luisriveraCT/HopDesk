@@ -95,6 +95,19 @@ save_forecasting_sources <- function(df, evento = NULL) {
   invisible(NULL)
 }
 
+# T116 F3: the deployment's sources table, changed safely -- a strict re-read
+# right before writing (a failed read stop()s, nothing written), and an
+# unchanged table neither written nor logged.
+modificar_forecasting_sources <- function(cambio, evento = NULL) {
+  raw <- .s3_leer_para_escribir(S3_KEYS$forecasting_sources, NULL)
+  fresco <- if (is.null(raw) || !nrow(raw)) .schema_forecasting_sources() else .normalize(raw, .schema_forecasting_sources)
+  nuevo <- cambio(fresco)
+  if (identical(nuevo, fresco)) return(invisible(fresco))
+  save_forecasting_sources(nuevo, evento = evento)
+  if (exists("fcs_flush_caches", mode = "function")) fcs_flush_caches()
+  invisible(nuevo)
+}
+
 # ── methods (static config — no sync) ────────────────────────────────────────
 
 load_forecasting_methods <- function() {

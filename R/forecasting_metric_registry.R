@@ -6,24 +6,30 @@
 
 .seed_forecasting_sources <- function() {
   tibble::tibble(
-    source_id          = c("banxico", "yahoo", "fred", "inegi", "manual"),
+    source_id          = c("banxico", "yahoo", "fred", "inegi", "manual", "ecb", "nyfed"),
     label              = c("Banxico SIE", "Yahoo Finance", "FRED (St. Louis Fed)",
-                           "INEGI", "Entrada manual"),
+                           "INEGI", "Entrada manual", "BCE (Banco Central Europeo)",
+                           "Fed de Nueva York"),
     adapter_fn         = c("fcs_fetch_banxico", "fcs_fetch_yahoo", "fcs_fetch_fred",
-                           "fcs_fetch_inegi",   "fcs_fetch_manual"),
-    is_official        = c(TRUE,  FALSE, TRUE,  TRUE,  FALSE),
+                           "fcs_fetch_inegi",   "fcs_fetch_manual", "fcs_fetch_ecb",
+                           "fcs_fetch_nyfed"),
+    is_official        = c(TRUE,  FALSE, TRUE,  TRUE,  FALSE, TRUE, TRUE),
     base_url           = c("https://www.banxico.org.mx/SieAPIRest/service/v1/",
                            "https://finance.yahoo.com",
                            "https://api.stlouisfed.org/fred/",
                            "https://www.inegi.org.mx/",
-                           NA_character_),
-    rate_limit_per_min = c(30L, 60L, 120L, 10L, 0L),
+                           NA_character_,
+                           "https://data-api.ecb.europa.eu",
+                           "https://markets.newyorkfed.org"),
+    rate_limit_per_min = c(30L, 60L, 120L, 10L, 0L, 60L, 60L),
     api_key_env_var    = c("BANXICO_TOKEN", NA_character_, "FRED_API_KEY",
-                           NA_character_, NA_character_),
-    active             = c(TRUE, TRUE, TRUE, FALSE, TRUE),
-    notes              = c(NA_character_, NA_character_, NA_character_,
+                           NA_character_, NA_character_, NA_character_, NA_character_),
+    # yahoo (T116 F3): retired, never called again -- an unofficial source
+    # without a licence. The row stays: old observations still name it.
+    active             = c(TRUE, FALSE, TRUE, FALSE, TRUE, TRUE, TRUE),
+    notes              = c(NA_character_, FCS_YAHOO_RETIRADA, NA_character_,
                            "INEGI adapter not implemented in 6.1",
-                           NA_character_)
+                           NA_character_, NA_character_, NA_character_)
   )
 }
 
@@ -43,73 +49,51 @@
   )
 }
 
+# One row per metric. fetch_params carries the keys of EVERY source the
+# metric may use (primary and fallbacks): each adapter reads its own
+# (banxico/fred: serie; ecb: flujo, llave, divide; nyfed: tipo, tasa).
+# T116 F3: the six that Yahoo gave now come from Banxico SIE (pesos per unit,
+# the same series as fx_divisas()) or the ECB (dollars per euro / pound);
+# fed_funds, estr and cetes28 are new. Confirmed by the Coordinador's
+# read-only script, 2026-11-27.
+.FCS_METRICAS_SEMILLA <- list(
+  #        id           label          category         unit                     legal  primary    fallbacks  fetch_params                                                    method
+  list("usd_mxn",   "USD/MXN FIX", "fx",            "currency_per_currency", TRUE,  "banxico", list(),    list(serie = "SF43718"),                                         "yesterday_spot"),
+  list("tiie28",    "TIIE 28d",    "interest_rate", "percent_annual",        TRUE,  "banxico", list(),    list(serie = "SF43783"),                                         "yesterday_spot"),
+  list("tiie91",    "TIIE 91d",    "interest_rate", "percent_annual",        TRUE,  "banxico", list(),    list(serie = "SF43878"),                                         "yesterday_spot"),
+  list("tiie182",   "TIIE 182d",   "interest_rate", "percent_annual",        TRUE,  "banxico", list(),    list(serie = "SF111916"),                                        "yesterday_spot"),
+  list("inpc",      "INPC",        "inflation",     "index",                 TRUE,  "banxico", list(),    list(serie = "SP1"),                                             "spot"),
+  list("udis",      "UDIS",        "inflation",     "currency_per_currency", TRUE,  "banxico", list(),    list(serie = "SP68257"),                                         "spot"),
+  list("sofr",      "SOFR",        "interest_rate", "percent_annual",        FALSE, "fred",    list("nyfed"), list(serie = "SOFR", tipo = "secured", tasa = "sofr"),       "yesterday_spot"),
+  list("prime",     "PRIME",       "interest_rate", "percent_annual",        FALSE, "fred",    list(),    list(serie = "DPRIME"),                                          "yesterday_spot"),
+  list("eur_usd",   "EUR/USD",     "fx",            "currency_per_currency", FALSE, "ecb",     list(),    list(flujo = "EXR", llave = "D.USD.EUR.SP00.A"),                 "yesterday_spot"),
+  list("eur_mxn",   "EUR/MXN",     "fx",            "currency_per_currency", FALSE, "banxico", list(),    list(serie = "SF46410"),                                         "yesterday_spot"),
+  list("gbp_usd",   "GBP/USD",     "fx",            "currency_per_currency", FALSE, "ecb",     list(),    list(flujo = "EXR", llave = "D.USD.EUR.SP00.A", divide = "D.GBP.EUR.SP00.A"), "yesterday_spot"),
+  list("gbp_mxn",   "GBP/MXN",     "fx",            "currency_per_currency", FALSE, "banxico", list(),    list(serie = "SF46407"),                                         "yesterday_spot"),
+  list("jpy_mxn",   "JPY/MXN",     "fx",            "currency_per_currency", FALSE, "banxico", list(),    list(serie = "SF46406"),                                         "yesterday_spot"),
+  list("cad_mxn",   "CAD/MXN",     "fx",            "currency_per_currency", FALSE, "banxico", list(),    list(serie = "SF60632"),                                         "yesterday_spot"),
+  list("fed_funds", "EFFR",        "interest_rate", "percent_annual",        FALSE, "nyfed",   list("fred"), list(serie = "EFFR", tipo = "unsecured", tasa = "effr"),      "yesterday_spot"),
+  list("estr",      "€STR",        "interest_rate", "percent_annual",        FALSE, "ecb",     list(),    list(flujo = "EST", llave = "B.EU000A2X2A25.WT"),                "yesterday_spot"),
+  list("cetes28",   "CETES 28d",   "interest_rate", "percent_annual",        FALSE, "banxico", list(),    list(serie = "SF43936"),                                         "spot")
+)
+
 .seed_forecasting_metrics <- function() {
   now <- Sys.time()
+  col <- function(k) lapply(.FCS_METRICAS_SEMILLA, `[[`, k)
+  n <- length(.FCS_METRICAS_SEMILLA)
   tibble::tibble(
-    metric_id = c(
-      "usd_mxn", "tiie28", "tiie91", "tiie182", "inpc", "udis",
-      "sofr", "prime",
-      "eur_usd", "eur_mxn", "gbp_usd", "gbp_mxn", "jpy_mxn", "cad_mxn"
-    ),
-    label = c(
-      "USD/MXN FIX", "TIIE 28d", "TIIE 91d", "TIIE 182d", "INPC", "UDIS",
-      "SOFR", "PRIME",
-      "EUR/USD", "EUR/MXN", "GBP/USD", "GBP/MXN", "JPY/MXN", "CAD/MXN"
-    ),
-    category = c(
-      "fx", "interest_rate", "interest_rate", "interest_rate",
-      "inflation", "inflation",
-      "interest_rate", "interest_rate",
-      "fx", "fx", "fx", "fx", "fx", "fx"
-    ),
-    unit = c(
-      "currency_per_currency", "percent_annual", "percent_annual", "percent_annual",
-      "index", "currency_per_currency",
-      "percent_annual", "percent_annual",
-      "currency_per_currency", "currency_per_currency", "currency_per_currency",
-      "currency_per_currency", "currency_per_currency", "currency_per_currency"
-    ),
-    is_legal_metric = c(
-      TRUE, TRUE, TRUE, TRUE, TRUE, TRUE,
-      FALSE, FALSE,
-      FALSE, FALSE, FALSE, FALSE, FALSE, FALSE
-    ),
-    primary_source_id = c(
-      "banxico", "banxico", "banxico", "banxico", "banxico", "banxico",
-      "fred", "fred",
-      "yahoo", "yahoo", "yahoo", "yahoo", "yahoo", "yahoo"
-    ),
-    fallback_source_ids = list(
-      list(), list(), list(), list(), list(), list(),
-      list(), list(),
-      list(), list(), list(), list(), list(), list()
-    ),
-    fetch_params = list(
-      list(serie = "SF43718"),   # usd_mxn
-      list(serie = "SF43783"),   # tiie28
-      list(serie = "SF43878"),   # tiie91
-      list(serie = "SF111916"),  # tiie182
-      list(serie = "SP1"),       # inpc
-      list(serie = "SP68257"),   # udis
-      list(serie = "SOFR"),      # sofr (FRED)
-      list(serie = "DPRIME"),    # prime (FRED, US Prime Rate; T63)
-      list(ticker = "EURUSD=X"),
-      list(ticker = "EURMXN=X"),
-      list(ticker = "GBPUSD=X"),
-      list(ticker = "GBPMXN=X"),
-      list(ticker = "JPYMXN=X"),
-      list(ticker = "CADMXN=X")
-    ),
-    default_method_id = c(
-      "yesterday_spot", "yesterday_spot", "yesterday_spot", "yesterday_spot",
-      "spot", "spot",
-      "yesterday_spot", "yesterday_spot",
-      "yesterday_spot", "yesterday_spot", "yesterday_spot",
-      "yesterday_spot", "yesterday_spot", "yesterday_spot"
-    ),
-    active     = rep(TRUE, 14L),
-    created_at = rep(now, 14L),
-    notes      = rep(NA_character_, 14L)
+    metric_id           = unlist(col(1)),
+    label               = unlist(col(2)),
+    category            = unlist(col(3)),
+    unit                = unlist(col(4)),
+    is_legal_metric     = unlist(col(5)),
+    primary_source_id   = unlist(col(6)),
+    fallback_source_ids = col(7),
+    fetch_params        = col(8),
+    default_method_id   = unlist(col(9)),
+    active              = rep(TRUE, n),
+    created_at          = rep(now, n),
+    notes               = rep(NA_character_, n)
   )
 }
 
@@ -158,6 +142,98 @@ forecasting_completar_catalogo <- function(client_id) {
     dplyr::bind_rows(subs, .seed_forecasting_global_subscriptions(falta))
   })
   nuevas$metric_id
+}
+
+# ── T116 F3: Yahoo retired ───────────────────────────────────────────────────
+# Yahoo Finance was an unofficial source without a licence; nothing shown to a
+# client may come from it. Three layers:
+#   1. forecasting_completar_fuentes(): the deployment's sources table gets the
+#      new sources (ecb, nyfed) and yahoo becomes inactive -- .try_fetch()
+#      never calls an inactive source, even for a metric that still names it.
+#      The row stays: old observations name it.
+#   2. forecasting_migrar_yahoo(client_id): each metric still exactly as the
+#      old seed left it (yahoo + its ticker) moves to its new source. One the
+#      user edited is not touched: it stays without an active source, and
+#      Forecasting says so (forecasting_metricas_sin_fuente()).
+#   3. R/forecasting_source_yahoo.R is gone.
+FCS_YAHOO_RETIRADA <- "Retirada (T116 F3): fuente no oficial y sin licencia; ya no se consulta"
+.FCS_YAHOO_SEMILLA <- c(eur_usd = "EURUSD=X", eur_mxn = "EURMXN=X", gbp_usd = "GBPUSD=X",
+                        gbp_mxn = "GBPMXN=X", jpy_mxn = "JPYMXN=X", cad_mxn = "CADMXN=X")
+
+# The deployment's sources table: adds the seed's missing sources and retires
+# yahoo. Strict read (a failed one stop()s, nothing written); an unchanged
+# table is neither written nor logged. Returns the source_ids it changed.
+forecasting_completar_fuentes <- function() {
+  semilla <- .seed_forecasting_sources()
+  cambiadas <- character()
+  ev <- if (exists("evento_sistema", mode = "function"))
+    evento_sistema("forecasting", "sembrar_catalogo", "Catálogo de fuentes: BCE y Fed de NY agregadas, Yahoo retirada")
+  modificar_forecasting_sources(evento = ev, function(f) {
+    if (!nrow(f)) return(f)              # an empty table is seeded whole elsewhere
+    falta <- semilla[!semilla$source_id %in% f$source_id, , drop = FALSE]
+    y <- which(f$source_id %in% "yahoo" & !(f$active %in% FALSE))
+    if (!nrow(falta) && !length(y)) return(f)
+    if (length(y)) { f$active[y] <- FALSE; f$notes[y] <- FCS_YAHOO_RETIRADA }
+    cambiadas <<- c(falta$source_id, if (length(y)) "yahoo")
+    dplyr::bind_rows(f, falta)
+  })
+  cambiadas
+}
+
+# TRUE for each metric row still exactly as the old seed left it on Yahoo.
+.fcs_es_yahoo_de_semilla <- function(m) {
+  tk <- vapply(seq_len(nrow(m)), function(i) {
+    fp <- m$fetch_params[[i]]
+    if (is.list(fp) && length(fp) && is.list(fp[[1]])) fp <- fp[[1]]
+    as.character((if (is.list(fp)) fp$ticker else NULL) %||% NA_character_)[1]
+  }, character(1))
+  m$primary_source_id %in% "yahoo" & m$metric_id %in% names(.FCS_YAHOO_SEMILLA) &
+    !is.na(tk) & tk == unname(.FCS_YAHOO_SEMILLA[m$metric_id])
+}
+
+# The client's catalog: each metric still as the old seed left it on Yahoo
+# takes the new seed's source, fallbacks and fetch_params. Strict read; an
+# unchanged catalog is neither written nor logged. Idempotent. Returns the
+# metric_ids it moved.
+forecasting_migrar_yahoo <- function(client_id) {
+  semilla <- .seed_forecasting_metrics()
+  movidas <- character()
+  ev <- if (exists("evento_sistema", mode = "function"))
+    evento_sistema("forecasting", "sembrar_catalogo", "Catálogo de pronósticos: métricas de Yahoo pasan a Banxico o al BCE")
+  modificar_forecasting_metrics(client_id, evento = ev, function(m) {
+    if (!nrow(m)) return(m)
+    i <- which(.fcs_es_yahoo_de_semilla(m))
+    if (!length(i)) return(m)
+    for (k in i) {
+      s <- semilla[semilla$metric_id == m$metric_id[k], , drop = FALSE]
+      m$primary_source_id[k]   <- s$primary_source_id
+      m$fallback_source_ids[k] <- s$fallback_source_ids
+      m$fetch_params[k]        <- s$fetch_params
+      m$notes[k]               <- "T116 F3: antes Yahoo"
+    }
+    movidas <<- m$metric_id[i]
+    m
+  })
+  movidas
+}
+
+# The client's active metrics whose primary source and every fallback are
+# inactive or unknown (a metric the user edited on Yahoo, after its
+# retirement): Forecasting says so, never silently. data.frame(metric_id,
+# label, primary_source_id).
+forecasting_metricas_sin_fuente <- function(metrics, sources) {
+  vacio <- data.frame(metric_id = character(), label = character(), primary_source_id = character(),
+                      stringsAsFactors = FALSE)
+  if (!is.data.frame(metrics) || !nrow(metrics)) return(vacio)
+  activas <- if (is.data.frame(sources)) sources$source_id[sources$active %in% TRUE] else character()
+  sin <- vapply(seq_len(nrow(metrics)), function(i) {
+    if (!isTRUE(metrics$active[i])) return(FALSE)
+    fb <- metrics$fallback_source_ids[[i]]
+    if (is.list(fb) && length(fb) && is.list(fb[[1]])) fb <- fb[[1]]
+    !any(c(metrics$primary_source_id[i], unlist(fb)) %in% activas)
+  }, logical(1))
+  out <- metrics[sin, c("metric_id", "label", "primary_source_id"), drop = FALSE]
+  as.data.frame(out, stringsAsFactors = FALSE)
 }
 
 # Called during app startup if stores are empty; idempotent.
@@ -209,6 +285,14 @@ forecasting_seed_if_empty <- function(client_id = NULL) {
   # write; a failed read writes nothing. Idempotent.
   tryCatch(forecasting_completar_catalogo(client_id), error = function(e) {
     message("[forecasting] no se pudo completar el catálogo"); character()
+  })
+  # T116 F3: Yahoo retired -- the sources table, then this client's metrics.
+  # Same rules: strict reads, written only when something changes.
+  tryCatch(forecasting_completar_fuentes(), error = function(e) {
+    message("[forecasting] no se pudo completar el catálogo de fuentes"); character()
+  })
+  tryCatch(forecasting_migrar_yahoo(client_id), error = function(e) {
+    message("[forecasting] no se pudo migrar las métricas de Yahoo"); character()
   })
 
   invisible(NULL)

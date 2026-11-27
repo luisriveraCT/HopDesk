@@ -28,7 +28,6 @@ source("R/forecasting_schemas.R")
 source("R/forecasting_persistence.R")
 source("R/forecasting_metric_registry.R")
 source("R/forecasting_source_banxico.R")
-source("R/forecasting_source_yahoo.R")
 source("R/forecasting_source_fred.R")
 source("R/forecasting_sources.R")
 
@@ -102,13 +101,6 @@ with_mock_httr <- function(mock_response, expr) {
   primary_source_id = "fred",
   fallback_source_ids = list(),
   fetch_params = list(list(serie = "SOFR")),
-  default_method_id = "yesterday_spot", active = TRUE
-)
-.m_yahoo <- list(
-  metric_id = "eur_usd", is_legal_metric = FALSE,
-  primary_source_id = "yahoo",
-  fallback_source_ids = list(),
-  fetch_params = list(list(ticker = "EURUSD=X")),
   default_method_id = "yesterday_spot", active = TRUE
 )
 
@@ -260,8 +252,8 @@ with_mock_dispatch <- function(metric_list, sources_list, adapter_results, expr)
                           adapter_fn = "fcs_fetch_banxico_mock",
                           is_official = TRUE, base_url = "", rate_limit_per_min = 30L,
                           api_key_env_var = "BANXICO_TOKEN", active = TRUE, notes = "")
-.src_yahoo_row   <- list(source_id = "yahoo",   label = "Yahoo",
-                          adapter_fn = "fcs_fetch_yahoo_mock",
+.src_respaldo_row   <- list(source_id = "respaldo", label = "Respaldo",
+                          adapter_fn = "fcs_fetch_respaldo_mock",
                           is_official = FALSE, base_url = "", rate_limit_per_min = 60L,
                           api_key_env_var = NA_character_, active = TRUE, notes = "")
 
@@ -279,10 +271,10 @@ with_mock_dispatch <- function(metric_list, sources_list, adapter_results, expr)
   })
   with_mock_dispatch(
     list(.m_banxico),
-    list(.src_banxico_row, .src_yahoo_row),
+    list(.src_banxico_row, .src_respaldo_row),
     list(
       fcs_fetch_banxico_mock = list(status = "ok", rows = .ok_rows),
-      fcs_fetch_yahoo_mock   = fallback_fn
+      fcs_fetch_respaldo_mock   = fallback_fn
     ),
     {
       rows <- fcs_fetch_metric("usd_mxn")
@@ -299,14 +291,14 @@ with_mock_dispatch <- function(metric_list, sources_list, adapter_results, expr)
   })
   .m_banxico_legal <- .m_banxico
   .m_banxico_legal$is_legal_metric <- TRUE
-  .m_banxico_legal$fallback_source_ids <- list("yahoo")
+  .m_banxico_legal$fallback_source_ids <- list("respaldo")
   with_mock_dispatch(
     list(.m_banxico_legal),
-    list(.src_banxico_row, .src_yahoo_row),
+    list(.src_banxico_row, .src_respaldo_row),
     list(
       fcs_fetch_banxico_mock = list(status = "http_error", rows = NULL,
                                      error_msg = "HTTP 500"),
-      fcs_fetch_yahoo_mock   = fallback_fn
+      fcs_fetch_respaldo_mock   = fallback_fn
     ),
     {
       rows <- fcs_fetch_metric("usd_mxn")
@@ -318,13 +310,13 @@ with_mock_dispatch <- function(metric_list, sources_list, adapter_results, expr)
 .test("dispatcher: non-legal, primary fails, fallback succeeds → fallback rows", {
   .m_nonlegal <- .m_banxico
   .m_nonlegal$is_legal_metric <- FALSE
-  .m_nonlegal$fallback_source_ids <- list("yahoo")
+  .m_nonlegal$fallback_source_ids <- list("respaldo")
   with_mock_dispatch(
     list(.m_nonlegal),
-    list(.src_banxico_row, .src_yahoo_row),
+    list(.src_banxico_row, .src_respaldo_row),
     list(
       fcs_fetch_banxico_mock = list(status = "http_error", rows = NULL, error_msg = "err"),
-      fcs_fetch_yahoo_mock   = list(status = "ok", rows = .ok_rows)
+      fcs_fetch_respaldo_mock   = list(status = "ok", rows = .ok_rows)
     ),
     {
       rows <- fcs_fetch_metric("usd_mxn")
@@ -336,13 +328,13 @@ with_mock_dispatch <- function(metric_list, sources_list, adapter_results, expr)
 .test("dispatcher: all sources fail → empty rows", {
   .m_nonlegal <- .m_banxico
   .m_nonlegal$is_legal_metric <- FALSE
-  .m_nonlegal$fallback_source_ids <- list("yahoo")
+  .m_nonlegal$fallback_source_ids <- list("respaldo")
   with_mock_dispatch(
     list(.m_nonlegal),
-    list(.src_banxico_row, .src_yahoo_row),
+    list(.src_banxico_row, .src_respaldo_row),
     list(
       fcs_fetch_banxico_mock = list(status = "http_error", rows = NULL, error_msg = "err"),
-      fcs_fetch_yahoo_mock   = list(status = "http_error", rows = NULL, error_msg = "err2")
+      fcs_fetch_respaldo_mock   = list(status = "http_error", rows = NULL, error_msg = "err2")
     ),
     {
       rows <- fcs_fetch_metric("usd_mxn")
