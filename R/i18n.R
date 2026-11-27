@@ -109,9 +109,12 @@ i18n_claves_internas <- function() {
 # pinned label) is not here: it travels with that table's data
 # (i18n_textos_navegador(), R/hd_table.R), so a staff table's words only
 # reach staff. tests/test_t118_diccionario_audiencia.R guards the call sites.
+# base:: on purpose: this runs while the app loads, and a fixture may define
+# a global with a base name (the Pronósticos one has sub() for its
+# subscriptions), which would shadow these.
 .i18n_literales <- function(x, patron) {
-  m <- regmatches(x, gregexpr(patron, x, perl = TRUE))[[1]]
-  if (!length(m)) character() else sub(patron, "\\1", m, perl = TRUE)
+  m <- base::regmatches(x, base::gregexpr(patron, x, perl = TRUE))[[1]]
+  if (!length(m)) character() else base::sub(patron, "\\1", m, perl = TRUE)
 }
 
 i18n_claves_navegador <- function(raiz = ".") {
