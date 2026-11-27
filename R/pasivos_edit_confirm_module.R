@@ -45,7 +45,7 @@ pasivos_edit_confirm_open <- function(session, conflicts, replacement,
 .pec_modal_ui <- function() {
   shiny::modalDialog(
     title     = tr("tablas.pasivos.conflictos.titulo"),
-    size      = "l",
+    size      = "xl",   # T108: at "l" (800 px) amounts in the millions overflow the table at 1293 px
     easyClose = FALSE,
     shiny::div(class = "mb-3 text-muted small", tr("tablas.pasivos.conflictos.ayuda")),
     hd_table_ui("pec_tabla", alto = "320px"),
