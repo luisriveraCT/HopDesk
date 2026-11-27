@@ -529,6 +529,7 @@
   "tablas.bancos.aviso.txt_no_leido": "No se pudo leer el archivo TXT.",
   "tablas.bancos.aviso.error_parsear": "Error al parsear: {error}",
   "tablas.bancos.aviso.sin_nuevos": "No hay movimientos nuevos.",
+  "tablas.bancos.aviso.importar_sin_cuentas": "No se pudieron leer las cuentas; reintenta antes de importar.",
   "tablas.bancos.aviso.restaurado": "Movimiento restaurado.",
   "tablas.bancos.aviso.abono_deshecho": "Abono deshecho — el saldo del comprobante se restauró.",
   "tablas.bancos.aviso.confirmacion_papelera": "Confirmación movida a papelera.",

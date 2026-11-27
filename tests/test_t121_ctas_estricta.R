@@ -12,8 +12,8 @@
 #      not "sin_cuenta"
 #   4  Bancos (real bancosServer, testServer): the accounts not read -> the
 #      Libro / Cuentas notice, the import's banner says so, cuentas() is an
-#      empty table (no error); do_import with them unread neither reconciles
-#      nor stops the session; S3 back -> no notice
+#      empty table (no error); do_import with them unread writes nothing and
+#      says to retry (never stops the session); S3 back -> no notice, imports
 #   5  Ajustes > Cuentas (real settings_cuentas_observer): the notice above the
 #      table, and opening an account says to retry instead of failing
 # In-memory S3 (tests/helpers/s3_memoria.R): no real bucket.
@@ -153,18 +153,21 @@ testServer(bancosServer, args = list(shared = shared), {
   ok("4.1 cuentas sin leer (Fase 1 falló y S3 sigue fallando): marcadas como no leídas", isTRUE(cuentas_no_leidas()))
   ok("4.2 …el Libro y Cuentas llevan el aviso", identical(aviso_no_leidas(), AVISO))
   ok("4.3 …y cuentas() es una tabla vacía, no un error", is.data.frame(cuentas()) && !nrow(cuentas()))
+  n0 <- .mem_escrituras; AVISOS <<- character()
   vivo <- tryCatch({ q(importar(session, parsed_preview)); TRUE }, error = function(e) { message("  do_import: ", conditionMessage(e)); FALSE })
-  nuevos <- MOVS()[MOVS()$cargo == 4321, , drop = FALSE]
   ok("4.4 do_import con las cuentas sin leer: no truena", vivo)
-  ok("4.5 …y no concilia nada (T84 F3m sin moneda de la cuenta)",
-     nrow(nuevos) == 1L && !any(nuevos$conciliado %in% TRUE) && all(is.na(nuevos$agenda_id) | !nzchar(nuevos$agenda_id)))
+  # T121 (Coordinador): a cuenta_id nobody could validate is never saved.
+  ok("4.5 …no importa nada: 0 escrituras, la sesión y S3 igual que antes",
+     .mem_escrituras == n0 && identical(MOVS(), movs0) && identical(get(MK, envir = .mem), movs0))
+  ok("4.5b …y dice que reintente antes de importar",
+     any(grepl(tr("tablas.bancos.aviso.importar_sin_cuentas"), AVISOS, fixed = TRUE)))
   .mem_falla <<- character(); limpiar_caches()
   CTAS_RV(CTAS); session$flushReact()
   ok("4.6 con las cuentas leídas: sin aviso", !isTRUE(cuentas_no_leidas()) && is.null(aviso_no_leidas()) &&
        identical(sort(cuentas()$cuenta_id), c("c1", "c2")))
   q(importar(session, parsed_preview, recibo = "999002"))
   otro <- MOVS()[MOVS()$recibo %in% "999002", , drop = FALSE]
-  ok("4.7 control: con las cuentas leídas, el mismo movimiento sí concilia (la prueba 4.5 mide algo)",
+  ok("4.7 control: con las cuentas leídas, el mismo movimiento sí concilia (la guarda de 4.5 es la que detuvo la otra)",
      nrow(otro) == 1L && isTRUE(otro$conciliado) && identical(otro$agenda_id, "A1"))
 })
 
