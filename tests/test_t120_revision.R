@@ -167,8 +167,9 @@ cat("== 6. «+ Nueva política» in the wizard, end to end (what Chrome could no
 log_action <- function(...) invisible(NULL)
 s3_memoria_reset()
 assign(paste0(CID, "/", S3_KEYS$policy_catalog), catalogo, envir = .mem)
-punto6 <- function() {
-  r <- list()
+punto6 <- function(quitar_de_s3 = FALSE) {
+  r <- list(quitar_de_s3 = quitar_de_s3)
+  assign(paste0(CID, "/", S3_KEYS$pasivos_liabilities), dplyr::bind_rows(A, B), envir = .mem)
   sh <- sesion(); sh$home_client_id <- function() CID
   sh$current_user_info <- reactive(list(username = "luis", tier = "admin"))
   testServer(function(input, output, session) setup_pasivos_wizard(input, output, session, sh), {
@@ -193,6 +194,18 @@ punto6 <- function() {
     session$setInputs(pwiz_politicas = r$sel_atras)   # the browser sends what the redrawn selector holds
     sh$policy_catalog_db(load_policy_catalog(client_id = CID)); session$flushReact()
     r$sel_vuelve <<- seleccion(html(output$pwiz_politicas_ui))
+    # 6.6: Guardar while the session's catalog is behind (it lacks the new one)
+    sh$policy_catalog_db(catalogo); session$flushReact()
+    session$setInputs(pwiz_politicas = seleccion(html(output$pwiz_politicas_ui)))
+    if (isTRUE(r$quitar_de_s3)) {     # ...and S3 no longer has it either (deleted by another session)
+      cs <- get(paste0(CID, "/", S3_KEYS$policy_catalog), envir = .mem)
+      assign(paste0(CID, "/", S3_KEYS$policy_catalog), cs[cs$id != r$nueva, ], envir = .mem)
+    }
+    n0 <- .mem_escrituras
+    session$setInputs(pwiz_save = 1)
+    l <- tryCatch(get(paste0(CID, "/", S3_KEYS$pasivos_liabilities), envir = .mem), error = function(e) NULL)
+    r$guardado_ids <<- if (is.data.frame(l)) pasivos_ids_politicas(l[l$id == A$id, , drop = FALSE]) else character()
+    r$escribio <<- .mem_escrituras > n0
   })
   r
 }
@@ -203,6 +216,13 @@ ok(identical(r6$sel, sort(c("p1", r6$nueva))), "6.3 it comes back SELECTED on th
 ok(identical(r6$sel_bus, sort(c("p1", r6$nueva))), "6.4 the bus reading the catalog again after the creation does not lose it")
 ok(identical(r6$sel_vuelve, sort(c("p1", r6$nueva))),
    "6.5 even a bus read from behind (catalog without it) does not erase it from the draft: it shows again once the catalog has it")
+ok(identical(sort(r6$guardado_ids), sort(c("p1", r6$nueva))),
+   "6.6 Guardar with the session's catalog behind: S3's catalog is read again and the liability is saved WITH the new policy")
+s3_memoria_reset()
+assign(paste0(CID, "/", S3_KEYS$policy_catalog), catalogo, envir = .mem)
+r6b <- punto6(quitar_de_s3 = TRUE)
+ok(!isTRUE(r6b$escribio) && identical(r6b$guardado_ids, "p1"),
+   "6.7 ...and if S3 does not have it either (deleted meanwhile): nothing is saved, never dropped in silence")
 
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

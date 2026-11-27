@@ -810,14 +810,19 @@ pasivos_politicas_de <- function(liability, catalog, overrides = NULL) {
 # The catalog and the overrides read strictly, for a write (the daily
 # refresh): a failed read stop()s -- never "no policies", which would send
 # every moved provision back to its calculated date. A missing file is empty.
-.pasivos_politicas_contexto <- function(client_id) {
+# The client's policy catalog read strictly (a failed read stop()s; a
+# missing file is empty), normalized as load_policy_catalog() does.
+.pasivos_catalogo_estricto <- function(client_id) {
   cat_raw <- .s3_leer_para_escribir(S3_KEYS$policy_catalog, client_id)
-  catalogo <- if (is.null(cat_raw) || !is.data.frame(cat_raw) || !nrow(cat_raw)) .schema_policy_catalog() else {
-    s <- .schema_policy_catalog()
-    for (col in setdiff(names(s), "params")) if (!col %in% names(cat_raw)) cat_raw[[col]] <- s[[col]][NA_integer_]
-    if (!"params" %in% names(cat_raw)) cat_raw[["params"]] <- vector("list", nrow(cat_raw))
-    cat_raw
-  }
+  if (is.null(cat_raw) || !is.data.frame(cat_raw) || !nrow(cat_raw)) return(.schema_policy_catalog())
+  s <- .schema_policy_catalog()
+  for (col in setdiff(names(s), "params")) if (!col %in% names(cat_raw)) cat_raw[[col]] <- s[[col]][NA_integer_]
+  if (!"params" %in% names(cat_raw)) cat_raw[["params"]] <- vector("list", nrow(cat_raw))
+  cat_raw
+}
+
+.pasivos_politicas_contexto <- function(client_id) {
+  catalogo <- .pasivos_catalogo_estricto(client_id)
   # T120 review: a provision paid ahead may still be "provisional": what has
   # a live payment (bancos_confirmados, confirmaciones_vigentes()) never moves.
   conf <- leer_tabla_para_escribir(S3_KEYS$bancos_confirmados, client_id, .schema_bancos_confirmados)

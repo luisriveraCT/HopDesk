@@ -1413,6 +1413,7 @@
   "tablas.pasivos.amort.monto": "Amount",
   "tablas.pasivos.amort.vacio": "No schedule with the data entered so far.",
   "tablas.pasivos.amort.reamortizada": "⚠ Re-amortization: the stated balance differs from the expected one. Payments were recalculated.",
+  "tablas.pasivos.politicas.no_en_catalogo": "One of the chosen policies is not in the catalog (another session may have deleted it). Nothing was saved: check this liability's policies and try again.",
   "tablas.pasivos.politicas.sin_catalogo": "The payment-policy catalog could not be read. Nothing was saved, so this liability's dates do not move; its policies stay as they were. Try again in a moment.",
   "tablas.pasivos.politicas.titulo": "Payment policies",
   "tablas.pasivos.politicas.ayuda": "They move each provision's payment date so it never falls on a non-business day or holiday. Interest still counts to the contract's date. Only future provisions not yet confirmed or edited by hand move.",

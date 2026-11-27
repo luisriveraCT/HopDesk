@@ -1087,6 +1087,22 @@ pasivos_vista_amortizacion <- function(draft, completa = FALSE, provs = NULL, li
              error = function(e) NULL)
     return(FALSE)
   }
+  # An id the session's catalog does not have (just created, the sync bus
+  # behind): S3's catalog, read strictly, decides -- never dropped in silence.
+  # Found: saved (and the session's copy caught up). Still missing (deleted by
+  # another session) or a failed read: nothing is saved, and it says so.
+  faltan <- setdiff(ids, cat_db$id)
+  if (length(faltan)) {
+    fresco <- tryCatch(.pasivos_catalogo_estricto(shared$effective_client_id()), error = function(e) NULL)
+    if (is.data.frame(fresco) && all(faltan %in% fresco$id)) {
+      cat_db <- fresco
+      tryCatch(shared$policy_catalog_db(fresco), error = function(e) NULL)
+    } else {
+      tryCatch(shiny::showNotification(tr("tablas.pasivos.politicas.no_en_catalogo"), type = "error", duration = 10),
+               error = function(e) NULL)
+      return(FALSE)
+    }
+  }
   if (length(ids)) ids <- intersect(ids, cat_db$id)
   wiz$draft$policy_ids <- ids
   if (identical(ids, antes)) return(TRUE)
