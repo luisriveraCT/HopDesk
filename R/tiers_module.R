@@ -1096,16 +1096,20 @@ tiersServer <- function(id, shared) {
 
       tags$div(
         class = "ms-auto d-flex align-items-center gap-2",
+        # TEMA 6-11: on the dark .tiers-header band. The text inherits the
+        # band's own colour (oscuro-texto) dimmed like its subtitle; the icon
+        # and the button are made for a dark ground. No fixed colours here.
         tags$span(
-          style = "font-size:.75rem; color:var(--hd-leg-texto-2-555555); white-space:nowrap;",
-          icon("circle-nodes", style = "color:var(--hd-leg-acento-c2185b); margin-right:3px;"),
-          "Cliente: ",
+          class = "opacity-75",
+          style = "font-size:.75rem; white-space:nowrap;",
+          icon("circle-nodes", style = "color:var(--hd-oscuro-texto-2); margin-right:3px;"),
+          tr("niveles.ctx.cliente"), " ",
           tags$strong(ctx_label)
         ),
         actionButton(
           ns("btn_switch_ctx"),
-          tagList(icon("arrow-right-arrow-left"), " Cambiar"),
-          class = "btn btn-sm btn-outline-secondary",
+          tagList(icon("arrow-right-arrow-left"), " ", tr("niveles.ctx.cambiar")),
+          class = "btn btn-sm btn-outline-light",
           style = "font-size:.73rem; padding:3px 9px;"
         ),
         badge

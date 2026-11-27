@@ -151,6 +151,8 @@
   "niveles.nombre.compras": "Compras",
   "niveles.ver_como": "Ver como",
   "niveles.ctx.casa": "HopDesk · casa",
+  "niveles.ctx.cliente": "Cliente:",
+  "niveles.ctx.cambiar": "Cambiar",
   "niveles.ctx.volviendo": "Volviendo a casa…",
   "niveles.ver_como_ayuda": "Cambia los permisos y pestañas de esta sesión. Tu identidad no cambia.",
   "niveles.viendo_como": "Viendo como {nivel}",

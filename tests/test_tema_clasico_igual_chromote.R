@@ -90,6 +90,15 @@ no_cubierta <- function(etiqueta, quien, vista, por_que) {
   cat("      | NOT COVERED", linea, "\n")
   NO_CUBIERTAS <<- c(NO_CUBIERTAS, linea)
 }
+# TEMA_SOLO (T6-11, as in the Marca measurement): a short re-check of some
+# views only, by prefix ("TIERS" = Usuarios and its panels). The access
+# pages and the ☰ menu are always measured; every view left out is listed
+# at the end, never skipped in silence. Unset = every view.
+SOLO <- toupper(trimws(strsplit(Sys.getenv("TEMA_SOLO", ""), ",")[[1]]))
+SOLO <- SOLO[nzchar(SOLO)]
+OMITIDAS <- character()
+toca <- function(v) !length(SOLO) || any(startsWith(v, SOLO))
+omitida <- function(v) { OMITIDAS <<- union(OMITIDAS, v); FALSE }
 
 .pass <- 0L; .fail <- 0L
 ok <- function(label, expr) {
@@ -348,6 +357,7 @@ recorrer <- function(raiz, etiqueta, quien) {
   poll_until(hay_pestana, timeout_s = LIMITE, interval_s = 2)
   Sys.sleep(4)
   for (v in names(PESTANAS)) {
+    if (!toca(v)) { omitida(v); next }   # TEMA_SOLO: listed at the end
     menu(TRUE); Sys.sleep(1)   # the collapse animates; offsetParent is null until it opens
     visible <- isTRUE(tryCatch(ev(sprintf("(function(){ var a = document.querySelector(\".nav-link[data-value='%s']\");
       return !!a && a.offsetParent !== null; })()", v)), error = function(x) FALSE))
@@ -632,9 +642,9 @@ recorrer <- function(raiz, etiqueta, quien) {
   grupo <- isTRUE(tryCatch(ev("(function(){ return !!document.querySelector(\".nav-link[data-value='GRUPO'], .dropdown-toggle[data-value='GRUPO']\"); })()"),
                            error = function(x) FALSE))
   if (!grupo) no_cubierta(etiqueta, quien, "Grupo · Empresas", "no Grupo menu for this user")
-  if (grupo) {
+  if (grupo && (toca("EMP") || omitida("EMP"))) {
     menu(TRUE); Sys.sleep(0.5)
-    abre <- isTRUE(tryCatch(ev("(function(){
+    abre <-isTRUE(tryCatch(ev("(function(){
         var t = document.querySelector(\".nav-link[data-value='GRUPO'], .dropdown-toggle[data-value='GRUPO']\");
         if (t && !(t.getAttribute('aria-expanded') === 'true')) t.click();
         return true; })()"), error = function(x) FALSE)) &&
@@ -657,9 +667,9 @@ recorrer <- function(raiz, etiqueta, quien) {
   # the first account (✎ scrolls to its card), and the panels this user sees
   # (Invitaciones; Notificaciones and Niveles for staff / Dev). A panel the
   # user does not have is NOT COVERED for that user.
-  if (grupo) {
+  if (grupo && (toca("TIERS") || omitida("TIERS*"))) {
     menu(TRUE); Sys.sleep(0.5)
-    usuarios <- isTRUE(tryCatch(ev("(function(){
+    usuarios <-isTRUE(tryCatch(ev("(function(){
         var t = document.querySelector(\".nav-link[data-value='GRUPO'], .dropdown-toggle[data-value='GRUPO']\");
         if (t && !(t.getAttribute('aria-expanded') === 'true')) t.click();
         return true; })()"), error = function(x) FALSE)) &&
@@ -782,6 +792,17 @@ for (quien in quienes) {
       cat(sprintf("      | [%s] %s: cambio permitido en el panel ☰ (.hd-marca): %d differences\n", quien, nombre, sum(en_menu)))
       difs <- difs[!en_menu]; difs_k <- difs_k[!en_menu]
     }
+    # T6-11: contraste de la banda de Tiers, cambio intencional. The context
+    # switcher in Usuarios' header (uiOutput header_badge on .tiers-header)
+    # left #555 / acento / btn-outline-secondary for the band's own tokens.
+    # Only that piece, only in the Usuarios views; its contrast is checked in
+    # tests/test_temas_guardian.R.
+    en_badge <- startsWith(v, "TIERS") & grepl("-header_badge", difs_k, fixed = TRUE)
+    if (any(en_badge)) {
+      cat(sprintf("      | [%s] %s: cambio permitido (T6-11: contraste de la banda de Tiers, cambio intencional): %d differences\n",
+                  quien, nombre, sum(en_badge)))
+      difs <- difs[!en_badge]; difs_k <- difs_k[!en_badge]
+    }
     if (!ok(sprintf("[%s] %s: %d elements compared, same computed style within ΔE %g (only in master %d, only in branch %d)",
                     quien, nombre, length(comunes), DE_MAX, length(setdiff(names(eb), comunes)), length(setdiff(names(er), comunes))),
             length(difs) == 0L && length(comunes) > min_elementos))
@@ -817,5 +838,8 @@ if (length(TIEMPOS)) {
 cat(sprintf("\nVistas NO CUBIERTAS: %d%s\n", length(NO_CUBIERTAS),
             if (length(NO_CUBIERTAS)) " (nothing measured there: say so in the report)" else ""))
 for (x in NO_CUBIERTAS) cat("  NOT COVERED", x, "\n")
+if (length(SOLO))
+  cat(sprintf("\nTEMA_SOLO=%s: vistas OMITIDAS (no medidas en esta corrida, no es la prueba completa): %s\n",
+              paste(SOLO, collapse = ","), if (length(OMITIDAS)) paste(OMITIDAS, collapse = ",") else "ninguna"))
 cat("\n=== results:", .pass, "passed,", .fail, "failed ===\n")
 quit(status = if (.fail) 1L else 0L)

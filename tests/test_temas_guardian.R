@@ -723,5 +723,54 @@ ov <- unique(unlist(regmatches(leer("www/overlay_init.js"), gregexpr("var\\(--hd
 ok(sprintf("www/overlay_init.js paints only acceso-* tokens (%d)", length(ov)),
    length(ov) >= 8L && all(grepl("^var\\(--hd-acceso-", ov)))
 
+# ── TEMA 6-11: «Cliente: …» on the .tiers-header band ──────────────────────
+# The context switcher (Usuarios' header_badge) sits on the dark band
+# (ui_components.R .tiers-header: oscuro-fondo -> oscuro-borde, text
+# oscuro-texto). It inherits the band's text dimmed (opacity-75), its icon is
+# oscuro-texto-2 and its button btn-outline-light: no fixed colour, and every
+# piece readable in every theme.
+src_tiers <- paste(leer("R/tiers_module.R"), collapse = "\n")
+ini_badge <- regexpr("output$header_badge <- renderUI(", src_tiers, fixed = TRUE)
+badge_src <- if (ini_badge > 0L) {
+  resto <- substring(src_tiers, ini_badge + 1L)
+  fin   <- regexpr("\n    output\\$", resto, perl = TRUE)
+  substring(src_tiers, ini_badge, ini_badge + if (fin > 0L) fin else nchar(resto))
+} else ""
+ok("tiers header_badge: no fixed colour and no legacy texto/acento token in the context switcher",
+   nzchar(badge_src) && cuenta(badge_src, RE_HEX) + cuenta(badge_src, RE_FUN) == 0L &&
+     !grepl("--hd-leg-(texto|acento)", badge_src) && !grepl("btn-outline-secondary", badge_src, fixed = TRUE))
+ok("tiers header_badge: the text inherits the band (opacity-75), icon oscuro-texto-2, button for a dark ground",
+   grepl("class = \"opacity-75\"", badge_src, fixed = TRUE) &&
+     grepl("var(--hd-oscuro-texto-2)", badge_src, fixed = TRUE) &&
+     grepl("btn-outline-light", badge_src, fixed = TRUE))
+es_json <- jsonlite::fromJSON("www/i18n/es.json"); en_json <- jsonlite::fromJSON("www/i18n/en.json")
+ok("tiers header_badge: «Cliente:» and «Cambiar» come from the dictionary, in es and en",
+   !grepl("\"Cliente: \"|\" Cambiar\"", badge_src) &&
+     all(vapply(c("niveles.ctx.cliente", "niveles.ctx.cambiar"), function(k)
+       grepl(sprintf("tr(\"%s\")", k), badge_src, fixed = TRUE) &&
+         nzchar(es_json[[k]] %||% "") && nzchar(en_json[[k]] %||% ""), logical(1))))
+# The band's colours per theme: Clásico paints its legacy hex, every other
+# theme the role (hd_clasico_legado.css).
+.mezcla_hex <- function(a, b, p) {
+  ca <- strtoi(substring(a, c(2, 4, 6), c(3, 5, 7)), 16L); cb <- strtoi(substring(b, c(2, 4, 6), c(3, 5, 7)), 16L)
+  paste0("#", paste(sprintf("%02X", round(ca * p + cb * (1 - p))), collapse = ""))
+}
+.banda <- function(t, leg_nombre) {
+  p <- tema$tema_legado_partes(leg_nombre)
+  if (identical(t, "clasico")) p$hex else c(tema$.HD_COMUNES, tema$HD_TEMAS[[t]]$tokens)[[p$rol]]
+}
+banda_ok <- vapply(names(tema$HD_TEMAS), function(t) {
+  tk     <- c(tema$.HD_COMUNES, tema$HD_TEMAS[[t]]$tokens)
+  fondos <- c(.banda(t, "oscuro-fondo-0d1b3e"), .banda(t, "oscuro-borde-1b3d7a"))
+  texto  <- .banda(t, "oscuro-texto-ffffff")
+  boton  <- if (isTRUE(tema$HD_TEMAS[[t]]$puente)) tk[["barra-texto"]] else "#F8F9FA"   # Bootstrap's light
+  all(vapply(fondos, function(f)
+    tema$tema_contraste(.mezcla_hex(texto, f, 0.75), f) >= 4.5 &&
+      tema$tema_contraste(tk[["oscuro-texto-2"]], f) >= 3 &&
+      tema$tema_contraste(boton, f) >= 4.5, logical(1)))
+}, logical(1))
+ok(sprintf("tiers header_badge readable on the band in every theme (text 4.5, icon 3, button 4.5): %s",
+           paste(names(banda_ok), ifelse(banda_ok, "ok", "NO"), collapse = ", ")), all(banda_ok))
+
 cat(sprintf("\n=== %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
