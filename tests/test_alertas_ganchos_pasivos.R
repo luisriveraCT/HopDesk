@@ -65,8 +65,11 @@ ok("S wizard: each one after its own liability.created audit (0 provisions, prov
 
 # ── B: when they fire ──────────────────────────────────────────────────────
 G <- new.env()
-avisos_actividad <- function(client_id, accion, usuario, params = list()) {
-  G$hooks[[length(G$hooks) + 1L]] <- list(cid = client_id, accion = accion, usuario = usuario, params = params)
+# al_responder (T108): the wizard asks to publish after answering; the stub
+# records the hook right away and whether it was asked to wait.
+avisos_actividad <- function(client_id, accion, usuario, params = list(), al_responder = NULL) {
+  G$hooks[[length(G$hooks) + 1L]] <- list(cid = client_id, accion = accion, usuario = usuario, params = params,
+                                          diferido = !is.null(al_responder))
   invisible(TRUE)
 }
 has_capability <- function(user, capability, empresa = NULL) TRUE
@@ -155,6 +158,7 @@ asistente()
 ok("B6 the wizard creates a liability: one crear_pasivo, named after it",
    isTRUE(G$res$ok) && identical(acciones(), "crear_pasivo") && identical(G$hooks[[1]]$params$cuerpo, "Renta oficina") &&
      identical(G$hooks[[1]]$usuario, "beto"))
+ok("B6b T108: the wizard's crear_pasivo waits for the answer (al_responder = session)", isTRUE(G$hooks[[1]]$diferido))
 asistente(mode = "edit")
 ok("B7 the wizard edits a liability: no aviso", isTRUE(G$res$ok) && !length(G$hooks))
 asistente(falla_provs = TRUE)

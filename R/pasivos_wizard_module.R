@@ -445,7 +445,7 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
              paste0("no provisions generated: ", err_detail))
     # A liability created with 0 provisions is still a liability created:
     # the team hears it like any other (the Coordinador, T72). Never throws.
-    if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa))
+    if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa), al_responder = session)
     shiny::showNotification(
       tr("tablas.pasivos.error_generar", detalle = err_detail),
       type = "error", duration = 15
@@ -515,7 +515,7 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
       client_id   = shared$effective_client_id()
     ), error = function(e) NULL)
     # C (P5): the liability itself is saved, so it is announced; never throws.
-    if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa))
+    if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa), al_responder = session)
     shiny::removeModal()
     shiny::showNotification(tr("tablas.pasivos.provisiones_no_guardadas"), type = "error", duration = 15)
     return(list(ok = TRUE))
@@ -545,7 +545,7 @@ pasivos_reconciliar_o_conservar <- function(existing_for_this, generated, ...) {
     client_id   = shared$effective_client_id()
   ), error = function(e) NULL)
   # C (Alertas del equipo): only on create, after the full save; never throws.
-  if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa))
+  if (wiz$mode == "create") avisos_actividad(shared$effective_client_id(), "crear_pasivo", user, list(cuerpo = liab_row$nombre %||% liab_row$empresa), al_responder = session)
 
   shiny::removeModal()
 

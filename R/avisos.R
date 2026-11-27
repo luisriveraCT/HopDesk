@@ -403,7 +403,30 @@ avisos_personales <- function(client_id, usuarios, aviso) {
 # make the user's action fail. It publishes only when the Alertas del equipo
 # matrix marks this user for this action (alertas_preparar(), which also
 # sets the aviso's permiso, clave and 10-minute window).
-avisos_actividad <- function(client_id, accion, usuario, params = list()) {
+#
+# al_responder = session (T108): publish AFTER the user has the answer --
+# on the session's next flush, once the outputs went out -- instead of
+# inside the save. Its S3 round trips (~1.2 s measured on a wizard save)
+# leave the path the user waits on. The arguments are taken now, as the
+# call made them; nothing is lost: it runs once, on that flush, and a
+# failure is logged with "[avisos]" as always, never silently. With no
+# session (scripts, persistence code), it publishes right away as before.
+avisos_actividad <- function(client_id, accion, usuario, params = list(), al_responder = NULL) {
+  if (!is.null(al_responder) && is.function(al_responder$onFlushed)) {
+    cid <- tryCatch(client_id, error = function(e) e)
+    pr  <- tryCatch(params,    error = function(e) e)
+    us  <- tryCatch(usuario,   error = function(e) e)
+    if (inherits(cid, "error") || inherits(pr, "error") || inherits(us, "error")) {
+      message("[avisos] avisos_actividad(", accion, ") falló: ",
+              conditionMessage(Filter(function(x) inherits(x, "error"), list(cid, pr, us))[[1]]))
+      return(invisible(NULL))
+    }
+    al_responder$onFlushed(function() {
+      tryCatch(avisos_actividad(cid, accion, us, pr),
+               error = function(e) message("[avisos] avisos_actividad(", accion, ") diferido falló: ", conditionMessage(e)))
+    }, once = TRUE)
+    return(invisible(NULL))
+  }
   tryCatch({
     params <- alertas_preparar(client_id, accion, usuario, params); if (is.null(params)) return(invisible(NULL))
     clave_i18n <- paste0("avisos.actividad.", accion)
