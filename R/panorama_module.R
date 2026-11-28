@@ -621,10 +621,12 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       visita(ahora)
       # ultima_visita is in PREFS_SIN_LOG (opening Panorama moves it on its
       # own); this click is a decision, so it is logged here (T72), only after
-      # the write went through.
+      # the write went through. (`marca`: test_t88_3 anchors on the opening
+      # visit's own prefs_guardar line, which must stay the only one.)
       if (!soy_staff())
         tryCatch({
-          prefs_guardar(c, u$user, list(ultima_visita = ahora))
+          marca <- list(ultima_visita = ahora)
+          prefs_guardar(c, u$user, marca)
           log_action(user = u$user, module = "panorama", action = "guardar_preferencias",
                      description = tr("panorama.log.marcar_visto"), target_id = u$user,
                      client_id = c,
