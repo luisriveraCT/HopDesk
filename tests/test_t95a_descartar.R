@@ -123,6 +123,22 @@ ok("6c one failed write is retried (re-reading), the mark lands", {
 ok("6d an avisos.rds written before the column reads, discards and restores fine", {
   df <- avisos_leer(CID); r <- avisos_descartar(CID, com, "beto")
   "descartados" %in% names(df) && all(is.na(df$descartados)) && identical(r$descartados, com) })
+# Nothing to discard = nothing written, nothing logged (as T119, asked in T95b).
+pend <- avisos_personales(CID, "dani", list(tipo = "personal", clase = "solicitud", titulo = "Firma el contrato",
+                                           cuerpo = "", clave = "sol:t95a6", autor = "ana"))
+ok("6e every id refused (a solicitud pending for me, an unknown id): NO write, no log; refused ones returned", {
+  n0 <- length(EVENTOS)
+  r <- avisos_descartar(CID, c(pend, "no-existe"), "dani")
+  length(EVENTOS) == n0 && identical(r$rechazados, pend) && !length(r$descartados) })
+ok("6f every id already off my view: NO write, no log", {
+  avisos_descartar(CID, a1, "dani"); n0 <- length(EVENTOS)
+  r <- avisos_descartar(CID, a1, "dani")
+  length(EVENTOS) == n0 && !length(r$descartados) })
+ok("6g counter-test: one discardable among refused ones -> ONE write; the log counts only what was discarded", {
+  n0 <- length(EVENTOS)
+  r <- avisos_descartar(CID, c(pend, a2, "no-existe"), "dani", accion = "limpiar_avisos")
+  length(EVENTOS) == n0 + 1L && identical(r$descartados, a2) && identical(r$rechazados, pend) &&
+    identical(ultimo_evento()$descripcion, tr("avisos.log.descartar", n = 1L)) })
 
 # ── 7. What leaves the default view by itself ────────────────────────────────
 ahora <- as.POSIXct("2026-11-24 12:00:00", tz = "UTC")

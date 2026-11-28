@@ -425,8 +425,19 @@ avisos_descartar <- function(client_id, ids, usuario, home = NULL,
   ids <- unique(as.character(ids %||% character()))
   res <- list(descartados = character(), rechazados = character())
   if (!nzchar(u) || !length(ids)) return(invisible(res))
+  # Nothing would change (every id refused, unknown or already off this
+  # user's view): no write and no log (as T119). Strict read: a failed read
+  # stops here, never passes for an empty table.
+  ahora <- .normalizar(.avisos_leer_para_escribir(cid), .schema_avisos)
+  i0 <- which(ahora$id %in% ids)
+  puede0 <- avisos_descartable(ahora[i0, , drop = FALSE], u)
+  ya <- vapply(ahora$descartados[i0], function(s) u %in% tolower(.de_json(s)), logical(1), USE.NAMES = FALSE)
+  if (!any(puede0 & !ya)) {
+    res$rechazados <- ahora$id[i0[!puede0]]
+    return(invisible(res))
+  }
   evento <- list(usuario = u, modulo = "panorama", accion = accion,
-                 descripcion = tr("avisos.log.descartar", n = length(ids)), home = home)
+                 descripcion = tr("avisos.log.descartar", n = sum(puede0 & !ya)), home = home)
   modificar_avisos_vista(cid, function(df) {
     i <- which(df$id %in% ids)
     puede <- avisos_descartable(df[i, , drop = FALSE], u)
