@@ -156,6 +156,14 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       if (!is.null(fl)) v <- avisos_de_filtrar_feed(v, fl$pref, fl$cod)
       panorama_feed(v, visita(), usuario = usr()$user, nivel = usr()$tier)   # T91b: the tier, for an edit that added it
     })
+    # T95b: "Lo que ha pasado" in three blocks. Staff inside a client never
+    # write the client's view: their discards live only in this session.
+    desc_sesion <- shiny::reactiveVal(character())
+    soy_staff <- function() isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE))
+    bloques <- shiny::reactive({
+      u <- usr()
+      panorama_bloques(feed(), u$user %||% "", visita(), Sys.time(), desc_sesion())
+    })
     mis_sol <- shiny::reactive({
       v <- visibles(); u <- usr()
       if (is.null(v) || is.null(u)) return(NULL)
@@ -267,7 +275,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
 
     # ── Clima de hoy ──────────────────────────────────────────────────────────
     output$clima <- shiny::renderUI({
-      f <- feed(); ms <- mis_sol(); p <- pagos()
+      b <- bloques(); f <- dplyr::bind_rows(b$pendiente, b$nuevo)   # T95b: what is seen does not count
+      ms <- mis_sol(); p <- pagos()
       # T91a: what the user published is shown, never counted as theirs to attend.
       if ("propia" %in% names(f)) f <- f[!(f$propia %in% TRUE), , drop = FALSE]
       cl <- panorama_clima(f, n_solicitudes = if (is.null(ms)) 0L else nrow(ms),
@@ -383,7 +392,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     # that is the recipient's). Each part only when it has something; the
     # card only when either has.
     output$solicitudes <- shiny::renderUI({
-      s <- mis_sol(); q <- pedidas()
+      s <- NULL; q <- pedidas()   # T95b: "Para mí" is the Pendiente block now (with its Hecho)
       hay_s <- !is.null(s) && nrow(s) > 0L; hay_q <- !is.null(q) && nrow(q) > 0L
       if (!hay_s && !hay_q) return(NULL)
       shiny::div(class = "pan-tarjeta pan-solicitudes pan-tono-lila",
@@ -447,10 +456,80 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
 
     # ── Lo que ha pasado ──────────────────────────────────────────────────────
     output$feed <- shiny::renderUI({
-      f <- feed()
+      b <- bloques()
       uv <- visita()
-      cuenta <- function(t) if (t == "todo") nrow(f) else sum(f$tipo_feed == t)
+      todos <- dplyr::bind_rows(b$pendiente, b$nuevo, b$antes)
+      cuenta <- function(t) if (t == "todo") nrow(todos) else sum(todos$tipo_feed == t)
       chips <- c("todo", PANORAMA_TIPOS_FEED)
+      item <- function(a, bloque, mas = FALSE) {
+        icono <- switch(a$tipo_feed, ale = "triangle-exclamation", act = "user-check",
+                        sol = "clipboard-check", req = "clipboard-list", "bullhorn")
+        # A published recordatorio or reconocimiento says so (its chip is
+        # still Comunicados).
+        etiqueta <- if (a$tipo_feed == "com" && isTRUE(a$clase_ok %in% c("recordatorio", "reconocimiento")))
+          paste0("panorama.clase.", a$clase_ok) else paste0("panorama.feed.tipo.", a$tipo_feed)
+        # T91a: what the user published says so ("Tuya"); their own
+        # solicitud, how it stands with its recipients.
+        propia <- isTRUE(a$propia %in% TRUE)
+        estado_sol <- if (propia && !is.na(a$sol_total %||% NA))
+          (if (isTRUE(a$sol_atendidas >= a$sol_total)) tr("panorama.solicitudes.atendida",
+               n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
+           else if (isTRUE(a$sol_atendidas > 0L)) tr("panorama.solicitudes.atendida",
+               n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
+           else tr("panorama.solicitudes.pendiente"))
+        vencida <- bloque == "pendiente" && !is.na(a$vence) && a$vence < Sys.time()
+        meta <- c(if (propia) tr("panorama.feed.tuya"), tr(etiqueta), estado_sol,
+                  if (vencida) tr("panorama.bloques.vencida"),
+                  if (isTRUE(a$editado)) .pan_marca_editado(a$editado_en, zona()),   # T91b
+                  if (nzchar(a$cuerpo %||% "")) a$cuerpo,
+                  if ((a$contador %||% 1L) > 1L) tr("panorama.feed.veces", n = as.character(a$contador)))
+        if (grepl("^nota\\|", a$clave %||% "")) icono <- "note-sticky"   # T81
+        enlace <- if (panorama_enlace_ok(a$enlace)) a$enlace else NULL
+        id_attr <- htmltools::htmlEscape(a$id, attribute = TRUE)
+        hecho_btn <- bloque == "pendiente" && avisos_clase(a) %in% "solicitud"
+        shiny::tags$li(class = paste("pan-item", if (isTRUE(a$nuevo) && bloque != "antes") "pan-item--nuevo",
+                                     if (vencida) "pan-item--vencida", if (mas) "pan-item--mas"),
+          hidden = if (mas) NA,
+          `data-tipo` = a$tipo_feed, `data-id` = id_attr,
+          `data-descartable` = if (isTRUE(a$descartable)) "1",
+          shiny::span(class = "pan-item-nuevo", `aria-hidden` = "true"),
+          shiny::span(class = paste0("pan-item-icono pan-icono-", a$tipo_feed), shiny::icon(icono)),
+          shiny::div(class = "pan-item-texto",
+            if (is.null(enlace)) shiny::div(class = "pan-item-titulo", a$titulo)
+            else shiny::tags$button(`data-hd-espera` = "no", type = "button", class = "pan-item-titulo pan-enlace",
+              onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("ir"), enlace),
+              a$titulo),
+            shiny::div(class = "pan-meta", paste(meta, collapse = " \u00b7 "))),
+          shiny::div(class = "pan-item-fin",   # T95b: the time, Hecho and the x in the grid's last column
+          shiny::span(class = "pan-item-hora", panorama_cuando(a$cuando, tz = zona())),
+          if (hecho_btn) shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-boton pan-item-hecho",
+              onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("hecho"), id_attr),
+              tr("panorama.solicitudes.hecho")),
+          if (isTRUE(a$descartable)) shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-item-x",
+              `aria-label` = tr("panorama.descartar.x", titulo = a$titulo),
+              onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("descartar"), id_attr),
+              "\u00d7")),
+          if (isTRUE(a$nuevo) && bloque != "antes") shiny::span(class = "visually-hidden", tr("panorama.feed.nuevo")))
+      }
+      bloque_ui <- function(clave, df, cabeza_extra = NULL, desde = NULL) {
+        if (!nrow(df)) return(NULL)
+        n <- nrow(df); tope <- if (clave == "antes") PANORAMA_ANTES_N else 30L
+        shiny::div(class = paste0("pan-bloque pan-bloque--", clave),
+          shiny::div(class = "pan-bloque-cabeza",
+            shiny::span(class = "pan-bloque-titulo",
+              if (is.null(desde)) tr(paste0("panorama.bloques.", clave)) else desde),
+            cabeza_extra),
+          shiny::tags$ul(class = "pan-lista",
+            lapply(seq_len(min(n, 60L)), function(k) item(df[k, ], clave, mas = k > tope))),
+          # Sets no input (it only unhides rows here): no data-hd-espera, so
+          # hd_botones.js never holds it (G7 covers buttons that set inputs).
+          if (n > tope) shiny::tags$button(type = "button", class = "pan-ver-mas",
+            onclick = "this.closest('.pan-bloque').querySelectorAll('.pan-item--mas').forEach(function(e){ e.hidden = false; }); this.remove();",
+            tr("panorama.bloques.ver_mas", n = as.character(min(n, 60L) - tope))))
+      }
+      desde <- if (!is.null(uv) && !is.na(suppressWarnings(as.POSIXct(uv, tz = "UTC"))))
+        tr("panorama.bloques.nuevo_desde", cuando = panorama_cuando(as.POSIXct(uv, tz = "UTC"), tz = zona()))
+      else tr("panorama.bloques.nuevo")
       shiny::div(class = "pan-tarjeta pan-feed",
         shiny::div(class = "pan-feed-cabeza",
           shiny::h2(class = "pan-titulo-seccion", tr("panorama.feed.titulo")),
@@ -470,45 +549,88 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
             title = if (t == "ale") tr("panorama.feed.chip.ale_explica"),
             tr(paste0("panorama.feed.chip.", t)),
             shiny::span(class = "pan-chip-n", cuenta(t))))),
-        if (!nrow(f)) shiny::p(class = "pan-vacio", tr("panorama.feed.vacio"))
-        else shiny::tags$ul(class = "pan-lista",
-          lapply(seq_len(min(nrow(f), 30L)), function(i) {
-            a <- f[i, ]
-            icono <- switch(a$tipo_feed, ale = "triangle-exclamation", act = "user-check",
-                            sol = "clipboard-check", req = "clipboard-list", "bullhorn")
-            # A published recordatorio or reconocimiento says so (its chip is
-            # still Comunicados).
-            etiqueta <- if (a$tipo_feed == "com" && isTRUE(a$clase_ok %in% c("recordatorio", "reconocimiento")))
-              paste0("panorama.clase.", a$clase_ok) else paste0("panorama.feed.tipo.", a$tipo_feed)
-            # T91a: what the user published says so ("Tuya"); their own
-            # solicitud, how it stands with its recipients.
-            propia <- isTRUE(a$propia %in% TRUE)
-            estado_sol <- if (propia && !is.na(a$sol_total %||% NA))
-              (if (isTRUE(a$sol_atendidas >= a$sol_total)) tr("panorama.solicitudes.atendida",
-                   n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
-               else if (isTRUE(a$sol_atendidas > 0L)) tr("panorama.solicitudes.atendida",
-                   n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
-               else tr("panorama.solicitudes.pendiente"))
-            meta <- c(if (propia) tr("panorama.feed.tuya"), tr(etiqueta), estado_sol,
-                      if (isTRUE(a$editado)) .pan_marca_editado(a$editado_en, zona()),   # T91b
-                      if (nzchar(a$cuerpo %||% "")) a$cuerpo,
-                      if ((a$contador %||% 1L) > 1L) tr("panorama.feed.veces", n = as.character(a$contador)))
-            if (grepl("^nota\\|", a$clave %||% "")) icono <- "note-sticky"   # T81
-            enlace <- if (panorama_enlace_ok(a$enlace)) a$enlace else NULL
-            shiny::tags$li(class = paste("pan-item", if (isTRUE(a$nuevo)) "pan-item--nuevo"),
-              `data-tipo` = a$tipo_feed,
-              shiny::span(class = "pan-item-nuevo", `aria-hidden` = "true"),
-              shiny::span(class = paste0("pan-item-icono pan-icono-", a$tipo_feed), shiny::icon(icono)),
-              shiny::div(class = "pan-item-texto",
-                if (is.null(enlace)) shiny::div(class = "pan-item-titulo", a$titulo)
-                else shiny::tags$button(`data-hd-espera` = "no", type = "button", class = "pan-item-titulo pan-enlace",
-                  onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})", ns("ir"), enlace),
-                  a$titulo),
-                shiny::div(class = "pan-meta", paste(meta, collapse = " · "))),
-              shiny::span(class = "pan-item-hora", panorama_cuando(a$cuando, tz = zona())),
-              if (isTRUE(a$nuevo)) shiny::span(class = "visually-hidden", tr("panorama.feed.nuevo")))
-          })))
+        if (!nrow(todos)) shiny::p(class = "pan-vacio", tr("panorama.feed.vacio"))
+        else shiny::tagList(
+          bloque_ui("pendiente", b$pendiente),
+          bloque_ui("nuevo", b$nuevo, desde = desde,
+            cabeza_extra = shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-accion",
+              onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("marcar_visto")),
+              tr("panorama.bloques.marcar_visto"))),
+          bloque_ui("antes", b$antes,
+            cabeza_extra = if (any(b$antes$descartable %in% TRUE)) shiny::tags$button(`data-hd-espera` = "auto",
+              type = "button", class = "pan-accion",
+              onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("limpiar")),
+              tr("panorama.bloques.limpiar")))))
     })
+
+    # ── T95b: descartar, Limpiar lo visto, Marcar todo como visto, Deshacer ──
+    # The ids come from the browser: only what the server drew as discardable
+    # for this user is taken (avisos_descartar() refuses the rest again).
+    # Staff inside a client: only in this session (never the client's data).
+    deshacer <- shiny::reactiveVal(NULL)   # list(ids, sesion) of the last discard
+    .descartar <- function(ids, accion) {
+      c <- cid(); u <- usr(); if (is.null(c) || is.null(u) || !length(ids)) return()
+      if (soy_staff()) {
+        desc_sesion(union(desc_sesion(), ids))
+      } else {
+        r <- tryCatch(avisos_descartar(c, ids, u$user, home = tryCatch(shared$home_client_id(), error = function(e) NULL),
+                                       accion = accion), error = function(e) e)
+        if (inherits(r, "error")) {
+          shiny::showNotification(tr("comun.error_guardar"), type = "error"); return()
+        }
+        ids <- r$descartados
+        if (!length(ids)) return()
+        version(version() + 1L)
+      }
+      deshacer(list(ids = ids, sesion = soy_staff()))
+      shiny::showNotification(
+        shiny::tagList(tr_n("panorama.descartar.hecho", length(ids)), " ",
+          shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-accion",
+            onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("deshacer")),
+            tr("panorama.descartar.deshacer"))),
+        type = "message", duration = 5)
+    }
+    shiny::observeEvent(input$descartar, {
+      b <- bloques(); disp <- dplyr::bind_rows(b$nuevo, b$antes)
+      id <- as.character(input$descartar)
+      if (!length(id) || !id %in% disp$id[disp$descartable %in% TRUE]) return()
+      .descartar(id, "descartar_aviso")
+    }, ignoreInit = TRUE)
+    shiny::observeEvent(input$limpiar, {
+      a <- bloques()$antes
+      ids <- a$id[a$descartable %in% TRUE]
+      if (!length(ids)) return()   # nothing to clear: nothing written
+      .descartar(ids, "limpiar_avisos")
+    }, ignoreInit = TRUE)
+    shiny::observeEvent(input$deshacer, {
+      d <- deshacer(); c <- cid(); u <- usr()
+      if (is.null(d) || is.null(c) || is.null(u)) return()
+      deshacer(NULL)
+      if (isTRUE(d$sesion)) { desc_sesion(setdiff(desc_sesion(), d$ids)); return() }
+      r <- tryCatch(avisos_restaurar(c, d$ids, u$user, home = tryCatch(shared$home_client_id(), error = function(e) NULL)),
+                    error = function(e) e)
+      if (inherits(r, "error")) shiny::showNotification(tr("comun.error_guardar"), type = "error")
+      else version(version() + 1L)
+    }, ignoreInit = TRUE)
+    # "Marcar todo como visto": what is new becomes seen. A preference
+    # (ultima_visita), as opening Panorama already writes it; staff inside a
+    # client only in this session.
+    shiny::observeEvent(input$marcar_visto, {
+      c <- cid(); u <- usr(); if (is.null(c) || is.null(u)) return()
+      ahora <- format(Sys.time(), tz = "UTC", usetz = TRUE)
+      visita(ahora)
+      # ultima_visita is in PREFS_SIN_LOG (opening Panorama moves it on its
+      # own); this click is a decision, so it is logged here (T72), only after
+      # the write went through.
+      if (!soy_staff())
+        tryCatch({
+          prefs_guardar(c, u$user, list(ultima_visita = ahora))
+          log_action(user = u$user, module = "panorama", action = "guardar_preferencias",
+                     description = tr("panorama.log.marcar_visto"), target_id = u$user,
+                     client_id = c,
+                     viewer_home_client_id = tryCatch(shared$home_client_id(), error = function(e) NULL) %||% c)
+        }, error = function(e) message("[panorama] marcar visto falló: ", conditionMessage(e)))
+    }, ignoreInit = TRUE)
 
     # ── De quién recibo avisos (T68) ──────────────────────────────────────────
     # One panel, on the side of who receives (it replaces T62's "Mis avisos"

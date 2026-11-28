@@ -223,7 +223,9 @@ test_that("el servidor solo manda los avisos del nivel del usuario, y Hecho solo
   bajo <- html_de(COMPRAS, "beto")
   expect_false(grepl("Solo para TI", bajo$feed))
   expect_true(grepl("Para todos", bajo$feed))
-  expect_true(grepl("Enviar soporte", bajo$sol))
+  # T95b: a solicitud for me lives in the feed's Pendiente block, not the card.
+  expect_true(grepl("Enviar soporte", bajo$feed))
+  expect_false(grepl("Enviar soporte", bajo$sol %||% ""))
   expect_false(grepl("De otro", paste(bajo$feed, bajo$sol)))
   expect_equal(nrow(bajo$mis), 1); expect_equal(nrow(bajo$mis_despues), 0)
   expect_false(grepl("panorama.", bajo$feed, fixed = TRUE))   # no raw keys on screen

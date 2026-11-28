@@ -471,6 +471,51 @@ panorama_feed <- function(vis, ultima_visita = NULL, usuario = NULL, nivel = NUL
   out[order(out$cuando, decreasing = TRUE, na.last = TRUE), , drop = FALSE]
 }
 
+# ── T95b: "Lo que ha pasado" in three blocks ─────────────────────────────────
+# How many seen avisos "Antes" shows before "ver N más".
+PANORAMA_ANTES_N <- 15L
+
+# A condition alert (the weekly-email watcher, T80b): computed on read, it
+# goes by itself when solved; never discarded, always on top.
+.pan_es_condicion <- function(f) grepl("^correo[|]", f$clave %||% rep(NA_character_, nrow(f)))
+
+# The feed (panorama_feed()) split for `usuario`:
+#   pendiente: what is theirs to do -- a solicitud for them not done (overdue
+#              first), and the live condition alerts. Never discarded.
+#   nuevo:     the rest that is new since their last visit, not discarded.
+#   antes:     the rest already seen, not discarded, still inside its window
+#              (avisos_fuera_de_vista(): what was never seen never leaves).
+# `descartados_sesion`: ids taken off the view only in this session (staff
+# inside a client: their view, never the client's data). Discarded ones and
+# those out of their window are not drawn; the history (T95c) keeps them.
+# Each block keeps the feed's columns plus `descartable` (the x).
+panorama_bloques <- function(feed, usuario, ultima_visita = NULL, ahora = Sys.time(),
+                             descartados_sesion = character()) {
+  vacio <- feed[0, , drop = FALSE]
+  if (is.null(feed) || !nrow(feed)) return(list(pendiente = vacio, nuevo = vacio, antes = vacio))
+  u <- tolower(trimws(usuario %||% ""))
+  if (!"descartados" %in% names(feed)) feed$descartados <- NA_character_
+  if (!"usuarios" %in% names(feed)) feed$usuarios <- NA_character_
+  if (!"hechos" %in% names(feed)) feed$hechos <- NA_character_
+  propia <- if ("propia" %in% names(feed)) feed$propia %in% TRUE else rep(FALSE, nrow(feed))
+  para_mi <- feed$tipo %in% "personal" & avisos_clase(feed) %in% "solicitud" & !propia &
+    vapply(feed$usuarios, function(s) u %in% .pan_hechos(s), logical(1), USE.NAMES = FALSE) &
+    !vapply(feed$hechos, function(s) u %in% .pan_hechos(s), logical(1), USE.NAMES = FALSE)
+  condicion <- .pan_es_condicion(feed)
+  pend <- para_mi | condicion
+  desc <- avisos_descartado(feed, u) | feed$id %in% descartados_sesion
+  feed$descartable <- !pend & avisos_descartable(feed, u)
+  fuera <- avisos_fuera_de_vista(feed$tipo_feed, feed$cuando, ultima_visita, vence = feed$vence, ahora = ahora)
+  p <- feed[pend, , drop = FALSE]
+  if (nrow(p)) {
+    vencida <- !is.na(p$vence) & p$vence < ahora
+    p <- p[order(!vencida, !.pan_es_condicion(p), p$vence, na.last = TRUE), , drop = FALSE]
+  }
+  list(pendiente = p,
+       nuevo = feed[!pend & feed$nuevo %in% TRUE & !desc, , drop = FALSE],
+       antes = feed[!pend & !(feed$nuevo %in% TRUE) & !desc & !fuera, , drop = FALSE])
+}
+
 # Mis solicitudes: solicitudes addressed to this user (personal) that they
 # have not marked done.
 panorama_mis_solicitudes <- function(vis, usuario) {

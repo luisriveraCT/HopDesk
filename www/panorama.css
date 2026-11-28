@@ -455,3 +455,24 @@ body:has(.tab-pane.active .hd-panorama .pan-cinta) .notes-bar-btn:not(.notes-ope
 .hd-panorama .pan-mercado-fuente { display: block; font-size: 12px; color: var(--hd-gris); }
 .hd-panorama .pan-mercado-viejo .pan-mercado-valor { font-weight: 400; color: var(--hd-gris); }
 .hd-panorama .pan-mercado-nota { margin-top: 10px; font-size: 11px; color: var(--hd-gris); }
+
+/* T95b: "Lo que ha pasado" in three blocks (Pendiente, Nuevo, Antes) */
+.hd-panorama .pan-bloque { margin-top: 14px; }
+.hd-panorama .pan-bloque-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--hd-borde); }
+.hd-panorama .pan-bloque-titulo { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--hd-gris); }
+.hd-panorama .pan-bloque[hidden] { display: none; }
+.hd-panorama .pan-accion { font-size: 12px; font-weight: 600; color: var(--hd-marino); background: none; border: 0; padding: 0;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.hd-panorama .pan-bloque--pendiente .pan-item { background: var(--hd-oro-claro); border-radius: var(--hd-radio-sm); padding: 10px 8px; margin-top: 6px; border-top: 0; }
+.hd-panorama .pan-item--vencida { background: var(--hd-peligro-suave) !important; }
+.hd-panorama .pan-item--vencida .pan-meta { color: var(--hd-peligro-texto); }
+.hd-panorama .pan-bloque--antes .pan-item { opacity: .8; padding: 8px 0; }
+.hd-panorama .pan-item-fin { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.hd-panorama .pan-item-x { border: 0; background: none; color: var(--hd-gris); font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px;
+  opacity: 0; transition: opacity .15s; }
+.hd-panorama .pan-item:hover .pan-item-x, .hd-panorama .pan-item-x:focus-visible { opacity: 1; }
+@media (hover: none) { .hd-panorama .pan-item-x { opacity: 1; } }
+.hd-panorama .pan-item[data-descartable] { touch-action: pan-y; transition: transform .15s; }
+.hd-panorama .pan-item.pan-item--deslizando { transition: none; }
+.hd-panorama .pan-ver-mas { margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--hd-marino); background: none; border: 0; cursor: pointer; }

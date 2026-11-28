@@ -146,8 +146,10 @@ ok("el feed la muestra marcada 'Tuya'", tiene(pl$feed, "Mándame el estado de cu
 ok("el Clima no la cuenta: ni urgente ni solicitud por atender (es suya, aunque sea urgente)",
    !tiene(pl$clima, "1 aviso urgente") && !tiene(pl$clima, "1 solicitud"))
 pt <- pintar(TESO)
-ok("tesoreria: 'Para mí' con su botón Hecho, sin 'Que pedí'",
-   tiene(pt$sol, "Para mí") && tiene(pt$sol, "Hecho") && !tiene(pt$sol, "Que pedí"))
+# T95b: "Para mí" moved to the feed's Pendiente block, with its Hecho button.
+ok("tesoreria: la ve en Pendiente del feed con su botón Hecho; la tarjeta sin 'Que pedí' ni 'Para mí'",
+   tiene(pt$feed, "Mándame el estado de cuenta") && tiene(pt$feed, "pan-item-hecho") &&
+     !tiene(paste(pt$sol, collapse = ""), "Que pedí") && !tiene(paste(pt$sol, collapse = ""), "Para mí"))   # an empty card renders nothing
 
 s3_memoria_restaurar()
 cat(sprintf("\nTOTAL: %d passed, %d failed\n", .pass, .fail))
