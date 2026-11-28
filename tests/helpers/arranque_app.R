@@ -67,6 +67,26 @@ DEV <- "antiguedad-rds-dev"
   if (!is.null(bucket) && !missing(bucket)) return(identical(as.character(bucket)[1], DEV))
   grepl(paste0("^s3://", DEV, "/"), as.character(object %||% "")[1])
 }
+# T91b: the 3 test publications (every client tier reads them).
+.arr_avisos_prueba <- function(real_df, autor) {
+  ahora <- as.POSIXct(Sys.time(), tz = "UTC")
+  todos <- get("niveles_cliente", envir = globalenv())()   # the app is loaded when avisos are read
+  niv <- as.character(jsonlite::toJSON(todos))
+  alta <- as.character(jsonlite::toJSON(stats::setNames(as.list(rep(format(ahora - 1800, "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC"), length(todos))), todos), auto_unbox = TRUE))
+  fila <- function(id, titulo, creado, editado_en = as.POSIXct(NA, tz = "UTC"), niveles_alta = NA_character_) data.frame(
+    id = id, tipo = "publicado", clase = "comunicado", titulo = titulo, cuerpo = "Prueba de T91b (solo lectura)",
+    severidad = "info", niveles = niv, usuarios = "[]", permiso = NA_character_, clave = NA_character_, contador = 1L,
+    enlace = NA_character_, creado_por = autor, creado = creado, actualizado = creado,
+    vence = ahora + 7 * 86400, retirado = FALSE, retirado_por = NA_character_, retirado_en = as.POSIXct(NA, tz = "UTC"),
+    hechos = "[]", descartados = NA_character_, editado_en = editado_en,
+    editado_por = if (is.na(editado_en)) NA_character_ else autor, niveles_alta = niveles_alta, stringsAsFactors = FALSE)
+  prueba <- rbind(
+    fila("t91b-editar", "Prueba T91b: para editar", ahora - 86400),
+    fila("t91b-editada", "Prueba T91b: ya editada", ahora - 86400, editado_en = ahora - 3600),
+    fila("t91b-ampliada", "Prueba T91b: nivel agregado", ahora - 86400, editado_en = ahora - 1800, niveles_alta = alta))
+  if (is.data.frame(real_df) && nrow(real_df)) dplyr::bind_rows(real_df, prueba) else prueba
+}
+
 # T120: the one test policy a forced catalog reads as (business days, forward).
 .arr_catalogo_prueba <- function() tibble::tibble(
   id = "t120-prueba-habiles", name = "Prueba T120: días hábiles", type = "weekdays",
@@ -94,6 +114,21 @@ DEV <- "antiguedad-rds-dev"
       r$tema <- tema_f
       message("[ARRANQUE] tema forzado a ", tema_f, " para ", object)
       return(r)
+    }
+    # ARR_FORZAR_AVISOS_CLIENTE + ARR_FORZAR_AVISOS_AUTOR (T91b): in THIS
+    # process only, that client's avisos read with 3 test publications by
+    # that user (writes are void here, so what the screen publishes is gone
+    # on the next read): one to edit, one already edited, one whose tiers an
+    # edit added (new for them, not "edited"). Nothing is written.
+    cli_av <- Sys.getenv("ARR_FORZAR_AVISOS_CLIENTE"); autor_av <- Sys.getenv("ARR_FORZAR_AVISOS_AUTOR")
+    if (nzchar(cli_av) && nzchar(autor_av) && grepl(paste0("(^|/)", cli_av, "/avisos/avisos[.]rds$"), object)) {
+      if (nombre %in% c("object_exists", "head_object")) return(TRUE)
+      if (identical(nombre, "s3readRDS")) {
+        ra <- tryCatch(if (is.null(bucket)) real(object = object, ...) else real(object = object, bucket = bucket, ...),
+                       error = function(e) NULL)
+        message("[ARRANQUE] avisos de prueba T91b forzados para ", object)
+        return(.arr_avisos_prueba(ra, tolower(autor_av)))
+      }
     }
     # ARR_FORZAR_POLITICA_CLIENTE (T120), the catalog: an empty or missing
     # policy catalog of that client reads as one test policy (dev's has none).
