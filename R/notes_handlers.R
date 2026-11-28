@@ -202,6 +202,12 @@ notes_handlers <- function(input, output, session, shared,
       nota <- df[df$id == (nid %||% df$id[nrow(df)]), , drop = FALSE]
       if (nrow(nota)) notas_aviso_publicar(shared$effective_client_id(), nota[1, ],
                                            por = tryCatch(current_user(), error = function(e) ""))
+    } else if (notas_es_publica(visibility) && !is.null(nid) && isTRUE(era_publica)) {
+      # T91b: an edited public note updates its aviso in place (it used to
+      # keep the old text, repetir = FALSE): "editado" for who already had it.
+      nota <- df[df$id == nid, , drop = FALSE]
+      if (nrow(nota)) notas_aviso_editar(shared$effective_client_id(), nota[1, ],
+                                         por = tryCatch(current_user(), error = function(e) ""))
     }
     removeModal()
     active_note_id(NULL)
@@ -357,6 +363,28 @@ notas_aviso_publicar <- function(client_id, nota, por = "") {
       por = if (nzchar(por %||% "")) por else "sistema")
   }, error = function(e) {
     message("[NOTES] T81: the note's aviso failed: ", conditionMessage(e))
+    invisible(NULL)
+  })
+}
+
+# T91b: the live aviso of an edited public note takes its new title and text,
+# in place (avisos_editar: the same id, marked editado, not news again). Only
+# the note's author edits it (avisos_editar checks it too). Never throws, as
+# notas_aviso_publicar(): the note is already saved.
+notas_aviso_editar <- function(client_id, nota, por = "") {
+  tryCatch({
+    a <- avisos_leer(client_id)
+    ids <- a$id[a$clave %in% paste0("nota|", nota$id) & !(a$retirado %in% TRUE)]
+    if (!length(ids)) return(invisible(0L))
+    cuerpo <- trimws(as.character(nota$body %||% ""))
+    if (is.na(cuerpo)) cuerpo <- ""
+    if (nchar(cuerpo) > .NOTAS_AVISO_CUERPO_MAX)
+      cuerpo <- paste0(substr(cuerpo, 1L, .NOTAS_AVISO_CUERPO_MAX - 1L), "…")
+    titulo <- tr("avisos.nota.titulo", autor = as.character(nota$author %||% ""), titulo = as.character(nota$title %||% ""))
+    for (id in ids) avisos_editar(client_id, id, list(titulo = titulo, cuerpo = cuerpo), por = por, modulo = "notas")
+    invisible(length(ids))
+  }, error = function(e) {
+    message("[NOTES] T91b: the note's aviso was not updated: ", conditionMessage(e))
     invisible(NULL)
   })
 }

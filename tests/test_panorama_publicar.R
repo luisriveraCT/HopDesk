@@ -15,6 +15,7 @@ for (f in c("R/i18n.R", "R/tier_registry.R", "R/permisos.R", "R/avisos.R", "R/hd
 .mem <- new.env()
 .s3_read_with <- function(key, client_id = NULL) .mem[[paste0(client_id, "/", key)]]
 .s3_leer_para_escribir <- function(key, client_id) .mem[[paste0(client_id, "/", key)]]
+.s3_existe <- function(key, client_id) !is.null(.mem[[paste0(client_id, "/", key)]])   # T91b: avisos_leer asks it (Mis publicaciones loads for everyone)
 .s3_write <- function(obj, key, client_id = NULL) assign(paste0(client_id, "/", key), obj, envir = .mem)
 leer_tabla_para_escribir <- function(key, client_id, schema) .mem[[paste0(client_id, "/", key)]] %||% schema()
 NIV <- niveles_cliente(); TI <- nivel_ti(); BAJO <- NIV[length(NIV)]
@@ -136,7 +137,7 @@ test_that("con permiso: publica para los niveles de la barra, guarda la elecció
     expect_equal(nrow(pub()), 1)
     tabla_ids <- pub()$id
     # Desactivar through the table's action
-    session$setInputs(`tabla-accion` = list(accion = "desactivar", ids = as.list(tabla_ids), nonce = 1))
+    session$setInputs(`tabla-accion` = list(accion = "eliminar", ids = as.list(tabla_ids), nonce = 1))   # T91b: Borrar (was desactivar)
     session$flushReact()
   })
   df <- avisos_leer(CID)

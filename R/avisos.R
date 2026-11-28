@@ -51,7 +51,14 @@ AVISOS_CLASES     <- c("comunicado", "recordatorio", "reconocimiento", "solicitu
   retirado_por = character(),
   retirado_en = as.POSIXct(character(), tz = "UTC"),
   hechos      = character(),   # JSON array of usernames who marked it done
-  descartados = character()    # T95: JSON array of usernames who took it off their own view (NA = nobody)
+  descartados = character(),   # T95: JSON array of usernames who took it off their own view (NA = nobody)
+  # T91b: an edit in place (avisos_editar). editado_en/por: the last edit
+  # (NA = never); niveles_alta: JSON object tier -> ISO time when an edit
+  # added that tier to the audience (NA = none), so for its readers the
+  # aviso is new from then and not "edited".
+  editado_en  = as.POSIXct(character(), tz = "UTC"),
+  editado_por = character(),
+  niveles_alta = character()
 )
 
 .schema_preferencias <- function() tibble::tibble(
@@ -252,6 +259,71 @@ avisos_agregar <- function(client_id, aviso, por = "sistema") {
     dplyr::bind_rows(df, fila)
   })
   id_final
+}
+
+# T91b: edits a publication in place -- the same id, so whoever already has
+# it sees the new text marked "editado". `id`: an aviso's id, or a
+# solicitud's group ("sol:<uuid>": every recipient's row, each keeping its
+# hechos and recipients). `cambios`: any of titulo, cuerpo, vence, niveles
+# (niveles only for a publicado). Only its author edits (`por`, checked here
+# too: a moderator deletes someone else's, never edits it); a retired one is
+# not edited. creado and actualizado never move: an edit is not news. A tier
+# the edit ADDS gets its time in niveles_alta (new for its readers); a tier it
+# drops leaves the audience (avisos_visibles stops showing it to them).
+# Nothing changed: nothing written (.s3_modificar, T119).
+# Returns list(cambiado, antes, despues, ids) for the log.
+# The edit logs itself (editar_publicacion, the text and audience before and
+# after; T72): viewer_home = the editor's home client (staff in a jump).
+avisos_editar <- function(client_id, id, cambios, por, ahora = .ahora(), viewer_home = NULL, modulo = "panorama") {
+  cid <- .avisos_cid(client_id)
+  quien <- tolower(trimws(por %||% ""))
+  if (!nzchar(quien)) stop("[avisos] quien edita es obligatorio", call. = FALSE)
+  res <- list(cambiado = FALSE, antes = NULL, despues = NULL, ids = character())
+  campo <- function(df, i) list(titulo = df$titulo[i], cuerpo = df$cuerpo[i], vence = df$vence[i],
+                                niveles = .de_json(df$niveles[i]))
+  .s3_modificar(.AVISOS_KEY, cid, .schema_avisos, function(df) {
+    i <- if (startsWith(id, "sol:")) which(df$tipo %in% "personal" & sub("[|].*$", "", df$clave %||% "") == id)
+         else which(df$id == id)
+    if (!length(i)) stop("[avisos] no existe: ", id, call. = FALSE)
+    if (any(tolower(trimws(df$creado_por[i])) != quien))
+      stop("[avisos] solo su autor edita una publicación", call. = FALSE)
+    if (any(df$retirado[i] %in% TRUE)) stop("[avisos] una publicación borrada no se edita", call. = FALSE)
+    nuevo <- df
+    if (!is.null(cambios$titulo)) nuevo$titulo[i] <- as.character(cambios$titulo)
+    if (!is.null(cambios$cuerpo)) nuevo$cuerpo[i] <- as.character(cambios$cuerpo)
+    if ("vence" %in% names(cambios)) nuevo$vence[i] <- as.POSIXct(cambios$vence %||% NA, tz = "UTC")
+    if (!is.null(cambios$niveles) && all(df$tipo[i] %in% "publicado")) {
+      nv <- intersect(as.character(cambios$niveles), niveles_todos())
+      for (j in i) {
+        viejos <- .de_json(df$niveles[j])
+        alta <- tryCatch(as.list(jsonlite::fromJSON(df$niveles_alta[j] %||% "{}")), error = function(e) list())
+        if (is.null(df$niveles_alta[j]) || is.na(df$niveles_alta[j])) alta <- list()
+        for (n in setdiff(nv, viejos)) alta[[n]] <- format(ahora, "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")   # ms: compared with editado_en
+        alta <- alta[intersect(names(alta), nv)]
+        nuevo$niveles[j] <- .json(nv)
+        nuevo$niveles_alta[j] <- if (length(alta)) as.character(jsonlite::toJSON(alta, auto_unbox = TRUE)) else NA_character_
+      }
+    }
+    igual <- identical(nuevo$titulo[i], df$titulo[i]) && identical(nuevo$cuerpo[i], df$cuerpo[i]) &&
+      identical(as.numeric(nuevo$vence[i]), as.numeric(df$vence[i])) && identical(nuevo$niveles[i], df$niveles[i])
+    res$antes <<- campo(df, i[1]); res$ids <<- df$id[i]
+    if (igual) { res$despues <<- res$antes; return(df) }
+    nuevo$editado_en[i]  <- ahora
+    nuevo$editado_por[i] <- quien
+    res$cambiado <<- TRUE; res$despues <<- campo(nuevo, i[1])
+    nuevo
+  })
+  # Logged every time (a Guardar with nothing to change is still the
+  # person's action; nothing was written then: cambiado = FALSE).
+  tryCatch(log_action(
+      user = quien, module = modulo, action = "editar_publicacion",
+      description = sprintf(if (isTRUE(res$cambiado)) "Editó: %s" else "Guardó sin cambios: %s", res$despues$titulo %||% ""),
+      target_id = id,
+      metadata = list(cambiado = isTRUE(res$cambiado), antes = res$antes, despues = res$despues, ids = res$ids),
+      client_id = cid,
+      viewer_home_client_id = viewer_home %||% cid
+    ), error = function(e) message("[avisos] log_action falló: ", conditionMessage(e)))
+  invisible(res)
 }
 
 avisos_retirar <- function(client_id, id, por) {

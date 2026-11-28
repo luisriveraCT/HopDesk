@@ -61,6 +61,7 @@ panoramaPublicarUI <- function(id) {
         shiny::div(class = "pan-col-b",
           shiny::uiOutput(ns("vista")),
           shiny::div(class = "pan-tarjeta pan-enviar",
+            shiny::uiOutput(ns("edicion")),   # T91b: "Editando …" and Cancelar
             shiny::uiOutput(ns("alcance")),
             shiny::tags$button(type = "button", id = ns("publicar"), class = "pan-boton pan-boton--grande action-button",
                                tr("panorama.publicar.publicar")))))),
@@ -81,18 +82,45 @@ publicadas_retirables <- function(filas, usuario) {
   list(filas = filas[!ajenas, , drop = FALSE], rechazadas = sum(ajenas))
 }
 
+# T91b: of the rows a user asked to edit, the ones they may -- their own,
+# and never a note (notes are edited in Notas del mes). Not even a moderator
+# edits someone else's. list(filas, rechazadas).
+publicadas_editables <- function(filas, usuario) {
+  if (is.null(filas) || !nrow(filas)) return(list(filas = filas, rechazadas = 0L))
+  ok <- tolower(trimws(filas$por)) %in% tolower(trimws(usuario$user %||% "")) & !(filas$tipo %in% "nota")
+  list(filas = filas[ok, , drop = FALSE], rechazadas = sum(!ok))
+}
+
 panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), al_volver = function() NULL,
                                    al_publicar = function() NULL, tz = shiny::reactive("America/Mexico_City")) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
     cid <- shiny::reactive(tryCatch(shared$effective_client_id(), error = function(e) NULL))
     usr <- shiny::reactive(tryCatch(shared$usuario(), error = function(e) NULL))
-    puede_pub <- shiny::reactive(isTRUE(tryCatch(puede(usr(), "can_publish_panorama"), error = function(e) FALSE)))
     es_staff <- shiny::reactive(isTRUE(tryCatch(shared$current_user_info()$is_staff, error = function(e) FALSE)))
     version <- shiny::reactiveVal(0L)
     todos <- niveles_cliente()
 
     shiny::observeEvent(input$volver, al_volver(), ignoreInit = TRUE)
+
+    # T91b: the publication being edited (NULL = a new one): list(id, tipo,
+    # titulo). Publicar then saves the edit in place (avisos_editar).
+    editando <- shiny::reactiveVal(NULL)
+    output$edicion <- shiny::renderUI({
+      e <- editando(); if (is.null(e)) return(NULL)
+      shiny::div(class = "pan-edicion",
+        shiny::div(class = "pan-etiqueta", tr("panorama.publicar.editando", titulo = e$titulo)),
+        if (identical(e$tipo, "solicitud")) shiny::div(class = "pan-meta", tr("panorama.publicar.editar_responsables")),
+        shiny::tags$button(`data-hd-espera` = "no", type = "button", class = "pan-boton pan-boton--claro",
+          onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("cancelar_edicion")),
+          tr("panorama.publicar.cancelar_edicion")))
+    })
+    .limpiar_formulario <- function() {
+      session$sendInputMessage("titulo", list(value = ""))
+      session$sendInputMessage("mensaje", list(value = ""))
+      shiny::updateSelectizeInput(session, "responsables", selected = character())
+    }
+    shiny::observeEvent(input$cancelar_edicion, { editando(NULL); .limpiar_formulario() }, ignoreInit = TRUE)
 
     # ── Kind ──────────────────────────────────────────────────────────────────
     tipo <- shiny::reactiveVal("comunicado")
@@ -220,6 +248,9 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
 
     # ── Publish ───────────────────────────────────────────────────────────────
     shiny::observeEvent(input$publicar, {
+      # T91b: editing one's own publication needs no can_publish_panorama
+      # (only authorship, checked again in avisos_editar).
+      if (!is.null(editando())) { .guardar_edicion(); return() }
       if (!puede_o_avisa(shared, "can_publish_panorama")) return()
       c <- cid(); u <- usr(); if (is.null(c) || is.null(u)) return()
       r <- responsables_posibles()
@@ -265,11 +296,45 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       shiny::showNotification(tr("panorama.publicar.publicado"), type = "message", duration = 4)
     }, ignoreInit = TRUE)
 
+    # T91b: saves the edit in place. The form's checks are Publicar's
+    # (panorama_publicacion); the kind never changes; a solicitud keeps its
+    # recipients. Logged with the text and audience before and after.
+    .guardar_edicion <- function() {
+      e <- editando(); c <- cid(); u <- usr(); if (is.null(e) || is.null(c) || is.null(u)) return()
+      p <- panorama_publicacion(
+        e$tipo, input$titulo, input$mensaje, niveles = seleccion(),
+        responsables = e$responsables, vence = input$vence %||% NA, enlace = NA,
+        vivos = e$responsables, tz = tz())
+      if (!isTRUE(p$ok)) { shiny::showNotification(tr(p$error), type = "warning", duration = 6); return() }
+      cambios <- list(titulo = p$aviso$titulo, cuerpo = p$aviso$cuerpo, vence = p$aviso$vence,
+                      niveles = if (!identical(e$tipo, "solicitud")) p$aviso$niveles)
+      # avisos_editar logs the edit itself (editar_publicacion, before/after);
+      # here only a failure is logged.
+      casa <- tryCatch(shared$home_client_id(), error = function(e) NULL)
+      res <- tryCatch(avisos_editar(c, e$id, cambios, por = u$user, viewer_home = casa), error = function(err) err)
+      ok <- !inherits(res, "error")
+      if (!ok) tryCatch(log_action(
+        user = u$user, module = "panorama", action = "editar_publicacion_fallido",
+        description = paste0("Falló al editar: ", conditionMessage(res)),
+        target_id = e$id, metadata = list(tipo = e$tipo),
+        client_id = c, viewer_home_client_id = casa
+      ), error = function(e) NULL)
+      if (!ok) {
+        message("[panorama] editar falló: ", conditionMessage(res))
+        shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = 6)
+        return()   # the form keeps what was written
+      }
+      editando(NULL); .limpiar_formulario()
+      version(version() + 1L); al_publicar()
+      shiny::showNotification(tr(if (isTRUE(res$cambiado)) "panorama.publicar.editada" else "panorama.publicar.sin_cambios"),
+                              type = "message", duration = 4)
+    }
+
     # ── Publicadas ────────────────────────────────────────────────────────────
     publicadas <- shiny::reactive({
       version()
       vacia <- panorama_publicadas(NULL)
-      if (!isTRUE(abierta()) || !puede_pub()) return(vacia)
+      if (!isTRUE(abierta())) return(vacia)   # T91b: one's own, with or without can_publish_panorama
       c <- cid(); if (is.null(c)) return(vacia)
       # A failed read stop()s: the table shows its "could not load" notice,
       # never an empty list that looks like nothing is published.
@@ -284,7 +349,8 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       recordatorio   = list(texto = "panorama.publicar.tipo.recordatorio",   tono = "aviso"),
       solicitud      = list(texto = "panorama.publicar.tipo.solicitud",      tono = "morado"),
       reconocimiento = list(texto = "panorama.publicar.tipo.reconocimiento", tono = "exito"),
-      urgente        = list(texto = "panorama.publicar.tipo.urgente",        tono = "peligro"))
+      urgente        = list(texto = "panorama.publicar.tipo.urgente",        tono = "peligro"),
+      nota           = list(texto = "panorama.publicar.tipo.nota",           tono = "info"))   # T91b
     tabla <- hd_table_server(
       "tabla", tabla = "avisos_publicados", datos = publicadas,
       columnas = list(
@@ -293,18 +359,25 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
         col_texto("para", "panorama.publicar.col.para"),
         col_texto("por", "panorama.publicar.col.por"),
         col_fecha_hora("creado", "panorama.publicar.col.creado"),
-        col_fecha_hora("vence", "panorama.publicar.col.vence")),
-      acciones_fila = "desactivar",
+        col_fecha_hora("vence", "panorama.publicar.col.vence"),
+        col_fecha_hora("editado_en", "panorama.publicar.col.editado")),   # T91b
+      acciones_fila = c("editar", "eliminar"),   # T91b: Editar (own) and Borrar (own, or moderator)
       vacio = "panorama.publicar.vacio")
 
     shiny::observeEvent(tabla$accion(), {
       a <- tabla$accion()
-      if (!identical(a$accion, "desactivar") || !length(a$ids)) return()
-      if (!puede_o_avisa(shared, "can_publish_panorama")) return()
+      if (!isTRUE(a$accion %in% c("editar", "eliminar")) || !length(a$ids)) return()
       c <- cid(); u <- usr(); if (is.null(c) || is.null(u)) return()
       d <- publicadas()
       filas <- d[d$id %in% a$ids, , drop = FALSE]
       if (!nrow(filas)) return()
+      if (identical(a$accion, "editar")) { .abrir_edicion(filas[1, , drop = FALSE], c, u); return() }
+      # T91b: a note is deleted in Notas del mes (its note and its aviso).
+      if (any(filas$tipo %in% "nota")) {
+        shiny::showNotification(tr("panorama.publicar.nota_en_notas"), type = "warning", duration = 6)
+        filas <- filas[!(filas$tipo %in% "nota"), , drop = FALSE]
+        if (!nrow(filas)) return()
+      }
       # T91a, checked on the server row by row (the ids come from the
       # browser): someone else's publication only with can_moderate_panorama.
       r <- publicadas_retirables(filas, u)
@@ -331,6 +404,31 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       version(version() + 1L)
       al_publicar()
     }, ignoreInit = TRUE)
+
+    # T91b: opens the form on one's own publication (checked on the server:
+    # the id comes from the browser), with what it says now.
+    .abrir_edicion <- function(fila, c, u) {
+      r <- publicadas_editables(fila, u)
+      if (r$rechazadas > 0L) {
+        shiny::showNotification(tr(if (fila$tipo %in% "nota") "panorama.publicar.nota_en_notas" else "panorama.publicar.solo_autor_edita"),
+                                type = "warning", duration = 6)
+        return()
+      }
+      av <- tryCatch(avisos_leer(c), error = function(e) NULL)
+      if (is.null(av)) { shiny::showNotification(tr("comun.error_guardar"), type = "error"); return() }
+      ids <- unlist(strsplit(fila$ids, ",", fixed = TRUE))
+      x <- av[av$id %in% ids, , drop = FALSE]
+      if (!nrow(x)) return()
+      t <- if (identical(fila$tipo, "solicitud")) "solicitud" else if (x$severidad[1] %in% "urgente") "urgente" else avisos_clase(x[1, ])
+      editando(list(id = fila$id, tipo = t, titulo = x$titulo[1],
+                    responsables = unique(unlist(lapply(x$usuarios, .de_json)))))
+      tipo(t)
+      session$sendInputMessage("titulo", list(value = x$titulo[1] %||% ""))
+      session$sendInputMessage("mensaje", list(value = x$cuerpo[1] %||% ""))
+      if (!is.na(x$vence[1])) shiny::updateDateInput(session, "vence", value = as.Date(x$vence[1], tz = tz()))
+      if (!identical(t, "solicitud")) estado(audiencia_estado(.de_json(x$niveles[1]), todos))
+      shinyjs::runjs(sprintf("var b = document.querySelector('[data-seccion=\"%s\"]'); if (b) b.click();", ns("s_nueva")))
+    }
 
     invisible(list(tabla = tabla))
   })

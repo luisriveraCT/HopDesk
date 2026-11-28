@@ -83,6 +83,12 @@ panoramaUI <- function(id) {
   })
 }
 
+# T91b: the "editado · <when>" mark of an edited publication (feed and
+# Destacados; the T95b blocks reuse it). Shown only where panorama_editado()
+# says so: a tier an edit added does not see it as edited.
+.pan_marca_editado <- function(editado_en, tz = "America/Mexico_City")
+  tr("panorama.editado", cuando = panorama_cuando(editado_en, tz = tz))
+
 panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = function(tab) NULL,
                            tz = shiny::reactive("America/Mexico_City")) {
   shiny::moduleServer(id, function(input, output, session) {
@@ -148,7 +154,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       # permission avisos_visibles() already applied).
       fl <- ad_filtro()
       if (!is.null(fl)) v <- avisos_de_filtrar_feed(v, fl$pref, fl$cod)
-      panorama_feed(v, visita(), usuario = usr()$user)
+      panorama_feed(v, visita(), usuario = usr()$user, nivel = usr()$tier)   # T91b: the tier, for an edit that added it
     })
     mis_sol <- shiny::reactive({
       v <- visibles(); u <- usr()
@@ -304,6 +310,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       shiny::div(class = "pan-carrusel", `data-total` = n,
         lapply(seq_len(n), function(i) {
           a <- d[i, ]
+          editado <- isTRUE(panorama_editado(a, usr()$tier))   # T91b
           tono <- switch(a$clase, recordatorio = "ambar", reconocimiento = "lila", "salvia")
           shiny::tags$article(
             class = paste("pan-tarjeta pan-destacado", paste0("pan-tono-", tono), if (i == 1) "activa"),
@@ -317,7 +324,8 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
             shiny::div(class = "pan-destacado-pie",
               shiny::span(class = "pan-autor",
                 tr("panorama.destacados.autor", autor = a$creado_por %||% "",
-                   cuando = panorama_cuando(a$creado, tz = zona()))),
+                   cuando = panorama_cuando(a$creado, tz = zona())),
+                if (editado) paste0(" · ", .pan_marca_editado(a$editado_en, zona()))),
               if (!is.na(a$enlace) && nzchar(a$enlace))
                 shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-boton",
                   onclick = sprintf("Shiny.setInputValue('%s', '%s', {priority: 'event'})",
@@ -482,6 +490,7 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
                    n = as.character(a$sol_atendidas), total = as.character(a$sol_total))
                else tr("panorama.solicitudes.pendiente"))
             meta <- c(if (propia) tr("panorama.feed.tuya"), tr(etiqueta), estado_sol,
+                      if (isTRUE(a$editado)) .pan_marca_editado(a$editado_en, zona()),   # T91b
                       if (nzchar(a$cuerpo %||% "")) a$cuerpo,
                       if ((a$contador %||% 1L) > 1L) tr("panorama.feed.veces", n = as.character(a$contador)))
             if (grepl("^nota\\|", a$clave %||% "")) icono <- "note-sticky"   # T81

@@ -425,19 +425,47 @@ panorama_tipo_feed <- function(df) {
 # The feed: visible avisos newest first, each with its kind and whether it is
 # new since `ultima_visita` (POSIXct or NULL: first visit, nothing is new).
 # T81: with `usuario`, what that user wrote (creado_por) is never new to them.
-panorama_feed <- function(vis, ultima_visita = NULL, usuario = NULL) {
+# T91b: for a reader of tier `nivel`, when each aviso reached them by an edit
+# that added their tier (niveles_alta), else NA.
+panorama_alta_lector <- function(vis, nivel = NULL) {
+  out <- rep(as.POSIXct(NA, tz = "UTC"), nrow(vis))
+  if (is.null(nivel) || !length(nivel) || is.na(nivel[1]) || !"niveles_alta" %in% names(vis)) return(out)
+  for (k in which(!is.na(vis$niveles_alta) & nzchar(vis$niveles_alta))) {
+    a <- tryCatch(jsonlite::fromJSON(vis$niveles_alta[k]), error = function(e) NULL)
+    v <- a[[as.character(nivel[1])]]
+    if (!is.null(v)) out[k] <- as.POSIXct(sub("Z$", "", v), format = "%Y-%m-%dT%H:%M:%OS", tz = "UTC")
+  }
+  out
+}
+
+# T91b: whether each aviso shows "editado" to this reader: edited, and the
+# edit came after it reached them (a tier an edit added sees it as new, not
+# as edited). The one rule for the feed, Destacados and the T95b blocks.
+panorama_editado <- function(vis, nivel = NULL) {
+  if (is.null(vis) || !nrow(vis) || !"editado_en" %in% names(vis)) return(rep(FALSE, NROW(vis)))
+  alta <- panorama_alta_lector(vis, nivel)
+  # half a second: the arrival time is stored with ms, the edit time is a double
+  !is.na(vis$editado_en) & (is.na(alta) | as.numeric(vis$editado_en) - as.numeric(alta) > 0.5)
+}
+
+panorama_feed <- function(vis, ultima_visita = NULL, usuario = NULL, nivel = NULL) {
   if (is.null(vis) || !nrow(vis)) {
-    return(data.frame(id = character(), tipo_feed = character(), nuevo = logical(),
+    return(data.frame(id = character(), tipo_feed = character(), nuevo = logical(), editado = logical(),
                       stringsAsFactors = FALSE))
   }
   cuando <- vis$actualizado
   cuando[is.na(cuando)] <- vis$creado[is.na(cuando)]
+  # T91b: for a tier an edit added, it arrived then (new to them, from then).
+  alta <- panorama_alta_lector(vis, nivel)
+  tarde <- !is.na(alta) & (is.na(cuando) | alta > cuando)
+  cuando[tarde] <- alta[tarde]
   uv <- suppressWarnings(as.POSIXct(ultima_visita %||% NA, tz = "UTC"))
   out <- vis
   out$tipo_feed <- panorama_tipo_feed(vis)
   out$clase_ok  <- avisos_clase(vis)
   out$cuando    <- cuando
   out$nuevo     <- !is.na(uv) & !is.na(cuando) & cuando > uv
+  out$editado   <- panorama_editado(vis, nivel)   # T91b
   yo <- tolower(trimws(as.character(usuario %||% "")[1]))
   if (!is.na(yo) && nzchar(yo)) out$nuevo <- out$nuevo & !(tolower(trimws(vis$creado_por)) %in% yo)
   out[order(out$cuando, decreasing = TRUE, na.last = TRUE), , drop = FALSE]
@@ -676,13 +704,18 @@ panorama_publicacion <- function(tipo, titulo, mensaje, niveles, responsables = 
 panorama_publicadas <- function(df, ahora = Sys.time()) {
   vacia <- data.frame(id = character(), tipo = character(), titulo = character(), para = character(),
                       por = character(), creado = as.POSIXct(character()), vence = as.POSIXct(character()),
-                      ids = character(), stringsAsFactors = FALSE)
+                      ids = character(), editado_en = as.POSIXct(character()), stringsAsFactors = FALSE)
   if (is.null(df) || !nrow(df)) return(vacia)
+  ed <- function(x) if (is.null(x)) as.POSIXct(NA, tz = "UTC") else x   # T91b (rows from before it: NA)
   vig <- !is.na(df$id) & !(df$retirado %in% TRUE) & (is.na(df$vence) | df$vence > ahora)
   cl <- avisos_clase(df)
   pub <- df[vig & df$tipo %in% "publicado", , drop = FALSE]
   sol <- df[vig & df$tipo %in% "personal" & cl %in% "solicitud" &
               grepl("^sol:", df$clave %||% ""), , drop = FALSE]
+  # T91b: public notes (T81) are their author's publications too; they are
+  # edited and deleted in Notas del mes, so here they are only listed.
+  nota <- df[vig & df$tipo %in% "automatico" & grepl("^nota[|]", df$clave %||% "") &
+               !(df$creado_por %in% c(NA, "", "sistema")), , drop = FALSE]
   filas <- list()
   if (nrow(pub)) filas[[1]] <- data.frame(
     id = pub$id,
@@ -691,7 +724,7 @@ panorama_publicadas <- function(df, ahora = Sys.time()) {
     para = vapply(pub$niveles, function(s) paste(vapply(.pan_hechos_raw(s), nivel_nombre, character(1)),
                                                  collapse = ", "), character(1)),
     por = pub$creado_por, creado = pub$creado, vence = pub$vence, ids = pub$id,
-    stringsAsFactors = FALSE)
+    editado_en = ed(pub$editado_en), stringsAsFactors = FALSE)
   if (nrow(sol)) {
     grupo <- sub("[|].*$", "", sol$clave)
     filas[[length(filas) + 1L]] <- do.call(rbind, lapply(split(seq_len(nrow(sol)), grupo), function(k) {
@@ -699,9 +732,15 @@ panorama_publicadas <- function(df, ahora = Sys.time()) {
       data.frame(id = sub("[|].*$", "", s$clave[1]), tipo = "solicitud", titulo = s$titulo[1],
                  para = paste(sort(unique(unlist(lapply(s$usuarios, .pan_hechos_raw)))), collapse = ", "),
                  por = s$creado_por[1], creado = min(s$creado), vence = s$vence[1],
-                 ids = paste(s$id, collapse = ","), stringsAsFactors = FALSE)
+                 ids = paste(s$id, collapse = ","), editado_en = ed(s$editado_en[1]), stringsAsFactors = FALSE)
     }))
   }
+  if (nrow(nota)) filas[[length(filas) + 1L]] <- data.frame(
+    id = nota$id, tipo = "nota", titulo = nota$titulo,
+    para = vapply(nota$niveles, function(s) paste(vapply(.pan_hechos_raw(s), nivel_nombre, character(1)),
+                                                  collapse = ", "), character(1)),
+    por = nota$creado_por, creado = nota$creado, vence = nota$vence, ids = nota$id,
+    editado_en = ed(nota$editado_en), stringsAsFactors = FALSE)
   if (!length(filas)) return(vacia)
   out <- do.call(rbind, filas)
   out[order(out$creado, decreasing = TRUE), , drop = FALSE]
