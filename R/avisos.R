@@ -138,6 +138,27 @@ avisos_leer <- function(client_id) {
   !is.na(df$id) & !(df$retirado %in% TRUE) & (is.na(df$vence) | df$vence > ahora)
 }
 
+# T95b (the Coordinador's call, 2026-11-28): an overdue solicitud stays
+# visible to each recipient who has not marked it done -- a late task must
+# not vanish for whoever has to do it (Panorama shows it first, in red). Only
+# clase "solicitud" (an old row without clase is never one) and only that
+# recipient: everything else, what is done and the author's own view still
+# leave at their vence (.vigente()).
+# avisos_visibles() also gets frames that are not avisos.rds (the vigía's
+# alerts, tests): a missing column reads as NA, never as logical(0) -- that
+# would drop every row.
+.solicitud_vencida_pendiente <- function(df, user, ahora = .ahora()) {
+  n <- nrow(df); user <- tolower(user %||% "")
+  if (!n || !nzchar(user)) return(rep(FALSE, n))
+  col <- function(k, vacio = NA) if (k %in% names(df)) df[[k]] else rep(vacio, n)
+  vence <- as.POSIXct(col("vence"), tz = "UTC")
+  cand <- !is.na(col("id")) & !(col("retirado") %in% TRUE) & col("tipo") %in% "personal" &
+    col("clase") %in% "solicitud" & !is.na(vence) & vence <= ahora
+  usuarios <- col("usuarios", NA_character_); hechos <- col("hechos", NA_character_)
+  cand & vapply(seq_len(n), function(i) cand[i] && user %in% tolower(.de_json(usuarios[i])) &&
+                                          !(user %in% tolower(.de_json(hechos[i]))), logical(1))
+}
+
 # What `usuario` (list(user, tier, permisos), see usuario_sesion() in app.R)
 # may see. Filtered here, on the server, never in the browser.
 #
@@ -165,7 +186,7 @@ avisos_visibles <- function(client_id, usuario, df = NULL, propios = FALSE) {
     is.na(p) || !nzchar(p) || puede(usuario, p)
   }, logical(1))
   vig <- .vigente(df)
-  out <- df[vig & ve, , drop = FALSE]
+  out <- df[(vig | .solicitud_vencida_pendiente(df, user)) & ve, , drop = FALSE]
   if (!isTRUE(propios)) return(out)
   out$propia <- rep(FALSE, nrow(out)); out$sol_atendidas <- NA_integer_; out$sol_total <- NA_integer_
   mio <- vig & nzchar(user) & tolower(trimws(df$creado_por %||% "")) %in% user

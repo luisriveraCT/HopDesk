@@ -195,5 +195,18 @@ ok("C.10 her own open solicitud is in Antes, without the x and without 'Limpiar 
 ok("C.11 Limpiar forced anyway: nothing to clear, so NOTHING written, and it stays",
    r4$escritas == 0L && !length(EVENTOS) && identical(r4$despues, "Recordatorio propio"))
 
+# The whole chain (avisos_visibles -> feed -> blocks -> HTML): a solicitud
+# for ana already past its vence reaches Panorama, first in Pendiente and in
+# red (Chrome showed the old vigencia dropping it before Panorama).
+reiniciar()
+avisos_personales(CID, "ana", list(tipo = "personal", clase = "solicitud", titulo = "Firma atrasada", cuerpo = "",
+                                  clave = "sol:v9", autor = "otro", vence = AHORA - 3600))
+avisos_personales(CID, "ana", list(tipo = "personal", clase = "solicitud", titulo = "Firma a tiempo", cuerpo = "",
+                                  clave = "sol:v10", autor = "otro", vence = AHORA + 86400))
+r5 <- correr(FALSE, function(session, bl, output) list(pend = bl()$pendiente$titulo, html = as.character(output$feed$html)))
+ok("C.12 an overdue solicitud for me reaches Panorama: first in Pendiente, marked Vencida (red)",
+   identical(r5$pend[1], "Firma atrasada") && "Firma a tiempo" %in% r5$pend &&
+     grepl("pan-item--vencida", r5$html, fixed = TRUE) && grepl(tr("panorama.bloques.vencida"), r5$html, fixed = TRUE))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)
