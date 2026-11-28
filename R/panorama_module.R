@@ -86,7 +86,7 @@ panoramaUI <- function(id) {
 # T91b: the "editado · <when>" mark of an edited publication (feed and
 # Destacados; the T95b blocks reuse it). Shown only where panorama_editado()
 # says so: a tier an edit added does not see it as edited.
-.pan_marca_editado <- function(editado_en, tz = "America/Mexico_City")
+.pan_marca_editado <- function(editado_en, tz)   # tz: the reader's zone (zona()), never a fixed one
   tr("panorama.editado", cuando = panorama_cuando(editado_en, tz = tz))
 
 panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = function(tab) NULL,

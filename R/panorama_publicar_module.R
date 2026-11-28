@@ -130,7 +130,7 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       shiny::div(class = "pan-edicion",
         shiny::div(class = "pan-etiqueta", tr("panorama.publicar.editando", titulo = e$titulo)),
         if (identical(e$tipo, "solicitud")) shiny::div(class = "pan-meta", tr("panorama.publicar.editar_responsables")),
-        shiny::tags$button(`data-hd-espera` = "no", type = "button", class = "pan-boton pan-boton--claro",
+        shiny::tags$button(`data-hd-espera` = "auto", type = "button", class = "pan-boton pan-boton--claro",   # it waits for the server (T107)
           onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("cancelar_edicion")),
           tr("panorama.publicar.cancelar_edicion")))
     })

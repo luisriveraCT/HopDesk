@@ -156,6 +156,7 @@ C_CONOCIDAS <- c(
   "quitar_de_agenda_dia_incompleto", "quitar_etiqueta", "quitar_pagos", "quitar_pagos_incompleto",
   "recuperar_papelera_fallo_guardado", "refrescar_metrica", "refrescar_todas_metricas", "reintentar_todo",
   "renombrar_iniciales", "reservar_renombre", "reset_contrasena_cambiada", "restaurar", "restaurar_aviso", "restaurar_documento", "revertir_confirmacion", "revocar_invitacion",
+  "editar_publicacion", "editar_publicacion_fallido",   # T91b: the author of a publication (a client user)
   "sembrar_catalogo", "solicitar_usuarios", "subir_reporte_banco", "vaciar_agenda", "vincular_proveedor")
 todas <- acciones_en_codigo(".")
 ok("4.0 el escáner ve las acciones de todas las fuentes (log_action, eventos, /parte, sin_evento)",
