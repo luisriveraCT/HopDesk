@@ -1965,15 +1965,17 @@ bancosServer <- function(id, shared) {
 
     observeEvent(input$do_import, {
       if (!puede_o_avisa(shared, "can_manage_bancos")) return()
+      shinyjs::disable("do_import")
+      on.exit(shinyjs::enable("do_import"), add = TRUE)
       # T121: never import against an account catalog that could not be read:
       # the movements would carry a cuenta_id nobody validated (the orphan
-      # cuenta_id / blank empresa incident). Nothing is written; retry.
+      # cuenta_id / blank empresa incident). Nothing is written; retry. After
+      # the debounce on purpose (it covers this path too; test_minor_hardening
+      # reads the disable within the observer's first lines).
       if (isTRUE(cuentas_no_leidas())) {
         showNotification(tr("tablas.bancos.aviso.importar_sin_cuentas"), type = "error", duration = 8)
         return()
       }
-      shinyjs::disable("do_import")
-      on.exit(shinyjs::enable("do_import"), add = TRUE)
 
       pv        <- parsed_preview()
       req(pv, nrow(pv) > 0)
