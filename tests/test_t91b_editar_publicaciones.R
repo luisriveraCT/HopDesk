@@ -162,5 +162,32 @@ ok("D.8 publicadas_editables: own yes; someone else's and notes no",
    identical(publicadas_editables(data.frame(por = c("ana", "beto", "ana"), tipo = c("comunicado", "comunicado", "nota")),
                                   list(user = "ana"))$rechazadas, 2L))
 
+cat("== E. Publicar for everyone; Nueva only with can_publish_panorama ==\n")
+SIN <- Filter(function(t) !puede(list(tier = t, permisos = permisos_resueltos(t)), "can_publish_panorama"), NIV)[1]
+if (is.na(SIN)) cat("  (every client tier may publish: E.1-E.2 skipped)\n") else {
+  reiniciar()
+  id <- avisos_agregar(CID, list(tipo = "publicado", clase = "comunicado", titulo = "Mía de antes", cuerpo = "",
+                                  niveles = NIV, vence = Sys.time() + 5 * 86400), por = "caro")
+  vistas <- NULL
+  n <- cuenta(sesion(SIN, "caro", function(session, pub) {
+    vistas <<- pub()
+    session$setInputs(titulo = "Nueva sin permiso", mensaje = "", vence = Sys.Date() + 3, enlace = "")
+    session$setInputs(publicar = 1)
+  }))
+  ok("E.1 without can_publish_panorama: Mis publicaciones lists one's own", identical(vistas$id, id))
+  ok("E.2 ...and Nueva cannot be used, even forcing the button (nothing written)", n == 0L && nrow(leer()) == 1L)
+}
+pp <- paste(readLines("R/panorama_publicar_module.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+pm <- paste(readLines("R/panorama_module.R", warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+ok("E.3 the Nueva tab shows only with can_publish_panorama (server side), and the publish observer still checks it",
+   grepl('shinyjs::toggle("tab_nueva", condition = p)', pp, fixed = TRUE) &&
+     grepl('if (!puede_o_avisa(shared, "can_publish_panorama")) return()', pp, fixed = TRUE))
+ok("E.4 Panorama opens Publicar for everyone (the button says Mis publicaciones without the permission)",
+   grepl('shiny::observeEvent(input$abrir_publicar, modo("publicar"), ignoreInit = TRUE)', pm, fixed = TRUE) &&
+     grepl('"panorama.publicar.publicadas"', pm, fixed = TRUE))
+ok("E.5 (the Chrome finding, T106 pattern) the form's outputs are not suspended while their section is hidden",
+   grepl('for (o in c("edicion", "vista", "tipos", "para", "alcance", "vence_ui"))', pp, fixed = TRUE) &&
+     grepl("shiny::outputOptions(output, o, suspendWhenHidden = FALSE)", pp, fixed = TRUE))
+
 cat(sprintf("\n=== results: %d passed, %d failed ===\n", .pass, .fail))
 if (.fail > 0L) quit(status = 1L)

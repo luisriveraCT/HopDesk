@@ -26,9 +26,9 @@ panoramaPublicarUI <- function(id) {
         "← ", tr("panorama.publicar.volver")),
       shiny::div(class = "pan-kicker", tr("panorama.publicar.kicker"))),
     shiny::div(class = "pan-pestanas", role = "tablist",
-      shiny::tags$button(type = "button", role = "tab", class = "pan-pestana", `data-seccion` = ns("s_nueva"),
+      shiny::tags$button(type = "button", role = "tab", class = "pan-pestana", `data-seccion` = ns("s_nueva"), id = ns("tab_nueva"),
                          `aria-selected` = "true", tr("panorama.publicar.nueva")),
-      shiny::tags$button(type = "button", role = "tab", class = "pan-pestana", `data-seccion` = ns("s_publicadas"),
+      shiny::tags$button(type = "button", role = "tab", class = "pan-pestana", `data-seccion` = ns("s_publicadas"), id = ns("tab_publicadas"),
                          `aria-selected` = "false", tr("panorama.publicar.publicadas"),
                          shiny::span(class = "pan-chip-n", shiny::textOutput(ns("n_vigentes"), inline = TRUE)))),
 
@@ -103,6 +103,25 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
 
     shiny::observeEvent(input$volver, al_volver(), ignoreInit = TRUE)
 
+    # T91b: Publicar opens for everyone (Mis publicaciones); only "Nueva"
+    # needs can_publish_panorama -- its tab and section are not there without
+    # it (the server checks it again when publishing).
+    puede_pub <- shiny::reactive(isTRUE(tryCatch(puede(usr(), "can_publish_panorama"), error = function(e) FALSE)))
+    .ver_seccion <- function(cual) shinyjs::runjs(sprintf(
+      "(function(){ var n = document.getElementById('%s'), p = document.getElementById('%s');
+         if (n) n.hidden = %s; if (p) p.hidden = %s;
+         ['%s','%s'].forEach(function(id, i){ var b = document.getElementById(id);
+           if (b) b.setAttribute('aria-selected', (i === 0) === %s ? 'true' : 'false'); });
+         $(window).trigger('resize'); })();",
+      ns("s_nueva"), ns("s_publicadas"), if (cual == "nueva") "false" else "true", if (cual == "nueva") "true" else "false",
+      ns("tab_nueva"), ns("tab_publicadas"), if (cual == "nueva") "true" else "false"))
+    shiny::observe({
+      if (!isTRUE(abierta())) return()
+      p <- puede_pub()
+      shinyjs::toggle("tab_nueva", condition = p)
+      if (!p && is.null(shiny::isolate(editando()))) .ver_seccion("publicadas")
+    })
+
     # T91b: the publication being edited (NULL = a new one): list(id, tipo,
     # titulo). Publicar then saves the edit in place (avisos_editar).
     editando <- shiny::reactiveVal(NULL)
@@ -120,7 +139,9 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       session$sendInputMessage("mensaje", list(value = ""))
       shiny::updateSelectizeInput(session, "responsables", selected = character())
     }
-    shiny::observeEvent(input$cancelar_edicion, { editando(NULL); .limpiar_formulario() }, ignoreInit = TRUE)
+    shiny::observeEvent(input$cancelar_edicion, {
+      editando(NULL); .limpiar_formulario(); .ver_seccion("publicadas")
+    }, ignoreInit = TRUE)
 
     # ── Kind ──────────────────────────────────────────────────────────────────
     tipo <- shiny::reactiveVal("comunicado")
@@ -324,7 +345,7 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
         shiny::showNotification(tr("comun.error_guardar"), type = "error", duration = 6)
         return()   # the form keeps what was written
       }
-      editando(NULL); .limpiar_formulario()
+      editando(NULL); .limpiar_formulario(); .ver_seccion("publicadas")
       version(version() + 1L); al_publicar()
       shiny::showNotification(tr(if (isTRUE(res$cambiado)) "panorama.publicar.editada" else "panorama.publicar.sin_cambios"),
                               type = "message", duration = 4)
@@ -427,8 +448,15 @@ panoramaPublicarServer <- function(id, shared, abierta = shiny::reactive(TRUE), 
       session$sendInputMessage("mensaje", list(value = x$cuerpo[1] %||% ""))
       if (!is.na(x$vence[1])) shiny::updateDateInput(session, "vence", value = as.Date(x$vence[1], tz = tz()))
       if (!identical(t, "solicitud")) estado(audiencia_estado(.de_json(x$niveles[1]), todos))
-      shinyjs::runjs(sprintf("var b = document.querySelector('[data-seccion=\"%s\"]'); if (b) b.click();", ns("s_nueva")))
+      .ver_seccion("nueva")   # the form, even for an author who no longer publishes
     }
+
+    # T91b (the T106 pattern): the form's outputs keep drawing while their
+    # section is hidden -- an edit fills them from Mis publicaciones, where
+    # the form is not shown, and a suspended output came back stale (the
+    # "Editando" band empty, the preview "Escribe un titulo"; Chrome).
+    for (o in c("edicion", "vista", "tipos", "para", "alcance", "vence_ui"))
+      shiny::outputOptions(output, o, suspendWhenHidden = FALSE)
 
     invisible(list(tabla = tabla))
   })

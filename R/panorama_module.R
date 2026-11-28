@@ -212,10 +212,13 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
       # Always on screen, with or without neblina (T46).
       linea_sap <- sap_al_texto(if (isTRUE(s$cargado)) s$ts, zona())
       n_nuevos <- sum(feed()$nuevo)
-      boton_publicar <- if (puede_pub()) shiny::tags$button(`data-hd-espera` = "auto",
+      # T91b: for everyone -- "Publicar" with the permission, "Mis
+      # publicaciones" without it (one's notes and earlier posts).
+      boton_publicar <- shiny::tags$button(`data-hd-espera` = "auto",
         type = "button", class = "pan-boton",
         onclick = sprintf("Shiny.setInputValue('%s', Date.now(), {priority: 'event'})", ns("abrir_publicar")),
-        shiny::icon("pen-to-square"), " ", tr("panorama.publicar.abrir"))
+        shiny::icon(if (puede_pub()) "pen-to-square" else "list"), " ",
+        tr(if (puede_pub()) "panorama.publicar.abrir" else "panorama.publicar.publicadas"))
       shiny::div(class = "pan-encabezado",
         shiny::div(
           shiny::div(class = "pan-kicker", tr("panorama.kicker", fecha = panorama_fecha_larga(hoy()))),
@@ -238,19 +241,16 @@ panoramaServer <- function(id, shared, activa = shiny::reactive(TRUE), ir_a = fu
     # ── Publicar (B2) ─────────────────────────────────────────────────────────
     puede_pub <- shiny::reactive(isTRUE(tryCatch(puede(usr(), "can_publish_panorama"), error = function(e) FALSE)))
     modo <- shiny::reactiveVal("inicio")
-    shiny::observeEvent(input$abrir_publicar, {
-      if (!puede_o_avisa(shared, "can_publish_panorama")) return()
-      modo("publicar")
-    }, ignoreInit = TRUE)
-    # Losing the permission (or a staff "ver como") closes it.
-    shiny::observe({ if (!puede_pub() && shiny::isolate(modo()) == "publicar") modo("inicio") })
+    # T91b: open for everyone; only its "Nueva" needs can_publish_panorama
+    # (panoramaPublicarServer hides it, and publishing checks it again).
+    shiny::observeEvent(input$abrir_publicar, modo("publicar"), ignoreInit = TRUE)
     shiny::observe({
       pub <- identical(modo(), "publicar")
       shinyjs::toggle("vista_publicar", condition = pub)
       shinyjs::toggle("vista_inicio", condition = !pub)
     })
     panoramaPublicarServer("pub", shared,
-      abierta     = shiny::reactive(isTRUE(activa()) && identical(modo(), "publicar") && puede_pub()),
+      abierta     = shiny::reactive(isTRUE(activa()) && identical(modo(), "publicar")),
       al_volver   = function() modo("inicio"),
       al_publicar = function() version(version() + 1L),
       tz          = zona)
