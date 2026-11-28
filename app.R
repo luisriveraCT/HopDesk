@@ -133,8 +133,8 @@ ui <- bslib::page_navbar(
               tags$script(src = "hd_botones.js?v=1")),
     # Brand tokens (navy, gold, Fraunces) and Panorama, each under its root class.
     tags$link(rel = "stylesheet", type = "text/css", href = "hd_marca.css?v=2"),   # TEMA 6-5: --hd-sube-tinta
-    tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=3"),   # TEMA 6-5: colours by variable; 6-10: gold as text = acento-texto
-    tags$script(src = "panorama.js?v=1"),
+    tags$link(rel = "stylesheet", type = "text/css", href = "panorama.css?v=4"),   # TEMA 6-5: colours by variable; 6-10: gold as text = acento-texto
+    tags$script(src = "panorama.js?v=2"),
     # Hide shinymanager's default floating session/logout widget (uses .mfb-* classes)
     tags$style(HTML("[id*=shinymanager],[class*=shinymanager],[class*=mfb-]{display:none!important}")),
     # T87-M8: every menu entry is born hidden, in every deployment; the first
